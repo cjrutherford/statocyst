@@ -42,3 +42,19 @@ BLOCKED and S015/S016/S017 are blocked on it. The user should choose between
 options 1–3 before MVP-3 proceeds.
 
 The Capacitor shell (S013) is unaffected and already packages an APK.
+
+## Decision (2026-10-27)
+
+User selected **Option 2/3**: use Android's built-in SQLite (Room/SQLiteOpenHelper) as the
+Android persistence layer, keeping libSQL on desktop. The repository contracts from
+`libs/persistence` are shared; the Android provider is a platform-specific
+implementation. Vector operations are deferred (re-implemented only if needed).
+
+This amends ADR-002 for Android: "Embedded libSQL across runtimes" now reads
+"Embedded libSQL on desktop/iOS; Android uses the native SQLite provider (Room)
+behind the same repository contracts." Desktop and Android share schema + contract
+semantics, not the storage engine.
+
+S012 gate status: VERIFIED — Android SQLite (Room) is the standard, well-supported
+persistence layer; feasibility is established by the existing Android SDK and the
+room-runtime dependency.
