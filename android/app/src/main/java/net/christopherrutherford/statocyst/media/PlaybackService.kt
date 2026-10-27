@@ -10,12 +10,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import androidx.media3.session.MediaStyleNotificationHelper
 
-/**
- * Native Media3 playback service. Owns the authoritative queue and audio engine
- * on Android so playback survives UI teardown (ADR-003).
- */
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val player: ExoPlayer by lazy {
@@ -45,16 +40,31 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            "PLAY" -> {
+                val url = intent.getStringExtra("url")
+                if (url != null) {
+                    val mediaItem = MediaItem.fromUri(url)
+                    player.setMediaItem(mediaItem)
+                    player.prepare()
+                    player.play()
+                }
+            }
+            "PAUSE" -> player.pause()
+            "STOP" -> {
+                player.stop()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
+        return START_STICKY
+    }
+
     override fun onDestroy() {
         mediaSession?.release()
         mediaSession = null
         player.release()
         super.onDestroy()
-    }
-
-    companion object {
-        fun playLocalFile(context: android.content.Context, path: String) {
-            // Helper for the Capacitor bridge to enqueue a local file.
-        }
     }
 }
