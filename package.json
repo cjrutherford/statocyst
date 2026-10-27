@@ -22,6 +22,9 @@
     "fixtures": "node tools/generate-fixtures.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
     "@libsql/client": "0.18.0",
     "music-metadata": "12.3.2"
   },
@@ -49,8 +52,8 @@
     "nx": "24.0.2",
     "rxjs": "7.8.2",
     "sass": "1.106.1",
-    "tslib": "2.8.1",
     "tsc-rs": "0.8.0",
+    "tslib": "2.8.1",
     "typescript": "6.0.3",
     "vitest": "4.1.0",
     "zone.js": "0.16.2"
