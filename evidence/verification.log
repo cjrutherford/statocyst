@@ -230,3 +230,28 @@ playback: Pearl Drift 1145ms / 9003ms
 database: /tmp/statocyst-packaged-k3izQs/statocyst.db (4096 bytes)
 PACKAGED SMOKE PASS
 exit=0
+
+=== Import hang fix + S006 Jellyfin spike (2026-10-27) ===
+$ pnpm exec vitest run (contracts 8, media-library 11, persistence 11, playback-core 17, desktop-electron 5)
+exit=0
+$ pnpm exec tsc-rs --noEmit -p libs/contracts/tsconfig.json ; -p libs/media-library/tsconfig.json ; -p apps/desktop/tsconfig.json ; -p apps/desktop-electron/tsconfig.json
+exit=0
+$ XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts
+1 passed (8.0s)
+exit=0
+$ node tools/jellyfin-spike.mjs --versions 12.1
+checks: 39/39 passed (Jellyfin 12.1.0)
+exit=0
+$ node tools/jellyfin-spike.mjs --versions 12.4 --upstream https://jelly.christopherrutherford.net
+checks: 12.4 fixture 39/39 passed; upstream public 4/4 passed
+exit=0
+
+Import hang fix:
+- Folder import over CIFS (/mnt/valhalla/media/music, 2145 audio files) was a single
+  awaited IPC call with no progress/cancel; metadata parse serial (~197-346ms/file
+  over SMB) = 7-18 min apparent hang.
+- Added progress events (scanning/importing phases + total), cancel (AbortController),
+  bounded concurrency (default 4, STATOCYST_IMPORT_CONCURRENCY override), and
+  deterministic result ordering.
+- Verified: full import completed with progress (test duration 1072s); cancel aborts
+  in ~21s and persists partial results.

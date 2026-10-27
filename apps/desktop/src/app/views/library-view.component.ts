@@ -59,6 +59,28 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         </div>
       </header>
 
+      @if (library.importing()) {
+        <div class="import-progress" role="status" aria-live="polite">
+          <div class="import-progress__text">
+            <sc-icon name="folder" />
+            <span>{{ progressLabel() }}</span>
+            @if (library.importProgress()?.currentPath; as current) {
+              <span class="import-progress__path" [title]="current">{{ current }}</span>
+            }
+          </div>
+          <div class="import-progress__track" aria-hidden="true">
+            <div
+              class="import-progress__fill"
+              [class.is-indeterminate]="progressPercent() === null"
+              [style.width.%]="progressPercent() ?? 100"
+            ></div>
+          </div>
+          <button type="button" class="btn btn--quiet" (click)="library.cancelImport()">
+            Cancel
+          </button>
+        </div>
+      }
+
       <div class="stats" role="list" aria-label="Library summary">
         <div class="stat" role="listitem">
           <span class="stat__value">{{ library.stats().tracks }}</span>
@@ -328,6 +350,58 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         display: flex;
         gap: 10px;
         flex-wrap: wrap;
+      }
+      .import-progress {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid rgba(56, 225, 255, 0.22);
+        background: rgba(56, 225, 255, 0.05);
+        font-size: 0.84rem;
+      }
+      .import-progress__text {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        min-width: 0;
+        flex: 1;
+      }
+      .import-progress__path {
+        color: var(--muted);
+        font-size: 0.74rem;
+        font-family: var(--mono);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .import-progress__track {
+        flex: 1;
+        min-width: 120px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--surface-1);
+        overflow: hidden;
+      }
+      .import-progress__fill {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, var(--cyan), #7fd4ff);
+        transition: width 180ms ease;
+      }
+      .import-progress__fill.is-indeterminate {
+        width: 40% !important;
+        animation: import-slide 1.1s ease-in-out infinite;
+      }
+      @keyframes import-slide {
+        0% {
+          transform: translateX(-120%);
+        }
+        100% {
+          transform: translateX(360%);
+        }
       }
       .stats {
         display: flex;
@@ -767,6 +841,22 @@ export class LibraryViewComponent {
   protected readonly search = signal('');
   protected readonly albumFilter = signal<string | null>(null);
   protected readonly sort = signal<SortKey>('artist');
+
+  protected readonly progressLabel = computed(() => {
+    const progress = this.library.importProgress();
+    if (!progress) return 'Preparing…';
+    if (progress.phase === 'scanning') {
+      return progress.total ? `Reading ${progress.scanned} of ${progress.total} files` : `Reading ${progress.scanned} files`;
+    }
+    return `Importing ${progress.imported} of ${progress.total ?? progress.imported}`;
+  });
+
+  protected readonly progressPercent = computed(() => {
+    const progress = this.library.importProgress();
+    if (!progress || !progress.total) return null;
+    const done = progress.phase === 'scanning' ? progress.scanned : progress.imported;
+    return Math.min(100, Math.round((done / progress.total) * 100));
+  });
 
   protected readonly filtered = computed(() => {
     const term = this.search().trim().toLowerCase();

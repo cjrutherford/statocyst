@@ -3,7 +3,7 @@
   "projectType": "application",
   "sourceRoot": "apps/desktop-electron/src",
   "tags": ["type:desktop-host", "scope:desktop"],
-  "implicitDependencies": ["contracts", "playback-core", "persistence", "media-library"],
+  "implicitDependencies": ["contracts", "playback-core", "persistence", "media-library", "jellyfin-client"],
   "targets": {
     "build": {
       "executor": "nx:run-commands",

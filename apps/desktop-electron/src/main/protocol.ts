@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { contentRange, parseRangeHeader } from './range';
+import type { ClientIdentity } from '@statocyst/jellyfin-client';
 
 import { ART_SCHEME, MEDIA_SCHEME } from './schemes';
 
@@ -28,15 +29,23 @@ const IMAGE_MIME: Record<string, string> = {
   gif: 'image/gif',
 };
 
+export interface RemoteTrack {
+  serverUrl: string;
+  itemId: string;
+  token: string;
+}
+
 export interface ProtocolTrack {
   id: string;
   path: string;
   artworkPath: string | null;
+  remote?: RemoteTrack | null;
 }
 
 export interface ProtocolOptions {
   lookupTrack: (trackId: string) => Promise<ProtocolTrack | null>;
   onMediaUnavailable?: (trackId: string) => void;
+  remoteIdentity?: ClientIdentity;
 }
 
 function trackIdFromUrl(url: string, scheme: string): string | null {
@@ -68,6 +77,69 @@ function baseHeaders(type: string): Record<string, string> {
   };
 }
 
+function remoteAuthorization(identity: ClientIdentity | undefined, token: string): string {
+  const client = identity?.client ?? 'Statocyst';
+  const device = identity?.device ?? 'Statocyst';
+  const deviceId = identity?.deviceId ?? 'statocyst-protocol';
+  const version = identity?.version ?? '0.1.0';
+  return `MediaBrowser Client="${client}", Device="${device}", DeviceId="${deviceId}", Version="${version}", Token="${token}"`;
+}
+
+async function proxyRemoteStream(remote: RemoteTrack, request: Request, identity?: ClientIdentity): Promise<Response> {
+  const headers: Record<string, string> = { Authorization: remoteAuthorization(identity, remote.token) };
+  const range = request.headers.get('range');
+  if (range) headers['Range'] = range;
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      `${remote.serverUrl}/Audio/${encodeURIComponent(remote.itemId)}/stream?static=true`,
+      { method: request.method, headers, redirect: 'manual' },
+    );
+  } catch {
+    return new Response('Media unavailable', { status: 502 });
+  }
+  if (upstream.status === 401 || upstream.status === 403 || upstream.status === 404) {
+    return new Response('Media unavailable', { status: 404 });
+  }
+  const responseHeaders: Record<string, string> = {
+    'Content-Type': upstream.headers.get('content-type') ?? 'application/octet-stream',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  for (const name of ['content-length', 'content-range', 'accept-ranges', 'content-disposition']) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders[name] = value;
+  }
+  return new Response(request.method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+}
+
+async function proxyRemoteArt(remote: RemoteTrack, identity?: ClientIdentity): Promise<Response> {
+  let upstream: Response;
+  try {
+    upstream = await fetch(
+      `${remote.serverUrl}/Items/${encodeURIComponent(remote.itemId)}/Images/Primary?maxHeight=512&quality=90`,
+      { headers: { Authorization: remoteAuthorization(identity, remote.token) }, redirect: 'manual' },
+    );
+  } catch {
+    return new Response('Artwork unavailable', { status: 502 });
+  }
+  if (!upstream.ok) return new Response('Artwork not found', { status: 404 });
+  const data = await upstream.arrayBuffer();
+  return new Response(data, {
+    status: 200,
+    headers: {
+      'Content-Type': upstream.headers.get('content-type') ?? 'image/jpeg',
+      'Content-Length': String(data.byteLength),
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
+
 export function registerProtocols(options: ProtocolOptions): void {
   protocol.handle(MEDIA_SCHEME, async (request) => {
     const trackId = trackIdFromUrl(request.url, MEDIA_SCHEME);
@@ -75,6 +147,10 @@ export function registerProtocols(options: ProtocolOptions): void {
 
     const track = await options.lookupTrack(trackId).catch(() => null);
     if (!track) return new Response('Track not found', { status: 404 });
+
+    if (track.remote) {
+      return proxyRemoteStream(track.remote, request, options.remoteIdentity);
+    }
 
     let info;
     try {
@@ -140,7 +216,13 @@ export function registerProtocols(options: ProtocolOptions): void {
     if (!trackId) return new Response('Malformed artwork URL', { status: 400 });
 
     const track = await options.lookupTrack(trackId).catch(() => null);
-    if (!track?.artworkPath) return new Response('Artwork not found', { status: 404 });
+    if (!track) return new Response('Artwork not found', { status: 404 });
+
+    if (track.remote) {
+      return proxyRemoteArt(track.remote, options.remoteIdentity);
+    }
+
+    if (!track.artworkPath) return new Response('Artwork not found', { status: 404 });
 
     try {
       const data = await readFile(track.artworkPath);

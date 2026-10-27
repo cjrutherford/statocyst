@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import type {
   AppInfo,
   DiagnosticsInfo,
+  ImportProgress,
   ImportSummary,
   Result,
   Settings,
@@ -14,6 +15,7 @@ import type { LibraryService } from './library-service';
 import type { Logger } from './logger';
 import type { PlaybackService } from './playback-service';
 import type { SettingsService } from './settings-service';
+import type { JellyfinService } from './jellyfin-service';
 
 export interface IpcContext {
   getWindow: () => BrowserWindow | null;
@@ -25,6 +27,7 @@ export interface IpcContext {
   library: LibraryService;
   playback: PlaybackService;
   settings: SettingsService;
+  jellyfin: JellyfinService;
   logger: Logger;
   version: string;
   packaged: boolean;
@@ -42,6 +45,11 @@ function emptySummary(cancelled: boolean): ImportSummary {
     cancelled,
   };
 }
+
+const IMPORT_CONCURRENCY = (() => {
+  const raw = Number(process.env['STATOCYST_IMPORT_CONCURRENCY']);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 4;
+})();
 
 export function appInfo(context: IpcContext): AppInfo {
   return {
@@ -101,6 +109,38 @@ export function registerIpc(context: IpcContext): void {
     });
   };
 
+  let activeImport: AbortController | null = null;
+
+  const sendImportProgress = (progress: ImportProgress): void => {
+    const window = context.getWindow();
+    if (window && !window.isDestroyed()) {
+      window.webContents.send(CHANNELS.libraryImportProgress, progress);
+    }
+  };
+
+  const beginImport = (): AbortController => {
+    activeImport?.abort();
+    const controller = new AbortController();
+    activeImport = controller;
+    return controller;
+  };
+
+  const runImport = (
+    run: (options: {
+      signal: AbortSignal;
+      onProgress: (progress: ImportProgress) => void;
+    }) => Promise<ImportSummary>,
+  ): Promise<ImportSummary> => {
+    const controller = beginImport();
+    return run({ signal: controller.signal, onProgress: sendImportProgress }).finally(() => {
+      if (activeImport === controller) activeImport = null;
+    });
+  };
+
+  handle(CHANNELS.libraryImportCancel, async () => {
+    activeImport?.abort();
+  });
+
   handle(CHANNELS.appInfo, () => appInfo(context));
 
   handle(CHANNELS.appDiagnostics, () => diagnostics(context));
@@ -127,7 +167,9 @@ export function registerIpc(context: IpcContext): void {
       ],
     });
     if (result.canceled || result.filePaths.length === 0) return emptySummary(true);
-    return context.library.importPaths(result.filePaths, 'local');
+    return runImport((options) =>
+      context.library.importPaths(result.filePaths, 'local', { ...options, maxConcurrency: IMPORT_CONCURRENCY }),
+    );
   });
 
   handle(CHANNELS.libraryPickFolder, async () => {
@@ -139,16 +181,23 @@ export function registerIpc(context: IpcContext): void {
       properties: ['openDirectory', 'multiSelections'],
     });
     if (result.canceled || result.filePaths.length === 0) return emptySummary(true);
-    return context.library.importPaths(result.filePaths, 'local');
+    return runImport((options) =>
+      context.library.importPaths(result.filePaths, 'local', { ...options, maxConcurrency: IMPORT_CONCURRENCY }),
+    );
   });
 
   handle(CHANNELS.libraryImportPaths, async (paths: unknown) => {
     if (!Array.isArray(paths) || paths.length === 0) return emptySummary(false);
-    return context.library.importPaths(paths.slice(0, 10_000).map(String), 'local');
+    const resolved = paths.slice(0, 10_000).map(String);
+    return runImport((options) =>
+      context.library.importPaths(resolved, 'local', { ...options, maxConcurrency: IMPORT_CONCURRENCY }),
+    );
   });
 
   handle(CHANNELS.libraryImportDemo, async () => {
-    return context.library.importPaths([context.demoDirectory], 'demo');
+    return runImport((options) =>
+      context.library.importPaths([context.demoDirectory], 'demo', { ...options, maxConcurrency: IMPORT_CONCURRENCY }),
+    );
   });
 
   handle(CHANNELS.libraryList, () => context.library.listTracks());
@@ -186,6 +235,41 @@ export function registerIpc(context: IpcContext): void {
       return context.settings.update(patch as Partial<Settings>);
     },
   );
+
+  handle(CHANNELS.jellyfinListServers, () => context.jellyfin.listServers());
+
+  handle(CHANNELS.jellyfinAddServer, (url: unknown) => context.jellyfin.addServer(String(url ?? '')));
+
+  handle(CHANNELS.jellyfinLogin, (args: unknown) => {
+    const input = (args ?? {}) as { url?: unknown; username?: unknown; password?: unknown };
+    return context.jellyfin.login(
+      String(input.url ?? ''),
+      String(input.username ?? ''),
+      String(input.password ?? ''),
+    );
+  });
+
+  handle(CHANNELS.jellyfinLogout, (serverId: unknown) => context.jellyfin.logout(String(serverId ?? '')));
+
+  handle(CHANNELS.jellyfinRemoveServer, (serverId: unknown) =>
+    context.jellyfin.removeServer(String(serverId ?? '')),
+  );
+
+  handle(CHANNELS.jellyfinSync, (serverId: unknown) => context.jellyfin.syncCatalog(String(serverId ?? '')));
+
+  handle(CHANNELS.jellyfinQuickConnectInitiate, (url: unknown) => context.jellyfin.initiateQuickConnect(String(url ?? '')));
+
+  handle(CHANNELS.jellyfinQuickConnectPoll, (args: unknown) => {
+    const input = (args ?? {}) as { url?: unknown; secret?: unknown };
+    return context.jellyfin.pollQuickConnect(String(input.url ?? ''), String(input.secret ?? ''));
+  });
+
+  handle(CHANNELS.jellyfinQuickConnectLogin, (args: unknown) => {
+    const input = (args ?? {}) as { url?: unknown; secret?: unknown };
+    return context.jellyfin.loginWithQuickConnect(String(input.url ?? ''), String(input.secret ?? ''));
+  });
+
+  handle(CHANNELS.jellyfinEncryptionAvailable, () => context.jellyfin.encryptionAvailable());
 
   ipcMain.on(CHANNELS.engineEvent, (event, payload: unknown) => {
     const window = context.getWindow();

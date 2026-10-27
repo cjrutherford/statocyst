@@ -1,9 +1,12 @@
 import './schemes';
 import { app, BrowserWindow, Menu, session, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StatocystDatabase } from '@statocyst/persistence';
 import { registerIpc, type IpcContext } from './ipc';
+import { JellyfinService } from './jellyfin-service';
+import { SafeStorageTokenCodec } from './credential-store';
 import { LibraryService } from './library-service';
 import { Logger } from './logger';
 import { PlaybackService } from './playback-service';
@@ -12,6 +15,12 @@ import { SettingsService } from './settings-service';
 
 const APP_NAME = 'Statocyst';
 app.setName(APP_NAME);
+
+// On Linux without a keyring, opt into Electron's basic (hardcoded-key) store so
+// the connector remains testable. Real deployments use the OS keychain.
+if (process.env['STATOCYST_PASSWORD_STORE'] === 'basic') {
+  app.commandLine.appendSwitch('password-store', 'basic');
+}
 
 const dataDirectory = process.env['STATOCYST_DATA_DIR'] ?? app.getPath('userData');
 if (process.env['STATOCYST_DATA_DIR']) {
@@ -35,6 +44,14 @@ const logger = new Logger(logPath, 2 * 1024 * 1024, process.env['STATOCYST_LOG_C
 
 function getWindow(): BrowserWindow | null {
   return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+
+async function getOrCreateDeviceId(db: StatocystDatabase): Promise<string> {
+  const existing = await db.getAppState('device_id');
+  if (existing) return existing;
+  const id = randomUUID();
+  await db.setAppState('device_id', id);
+  return id;
 }
 
 function createWindow(): BrowserWindow {
@@ -108,6 +125,21 @@ async function startServices(): Promise<IpcContext> {
   const settings = new SettingsService(db, logger);
   await settings.init();
 
+  const deviceId = await getOrCreateDeviceId(db);
+  const jellyfinIdentity = {
+    client: 'Statocyst',
+    device: 'Statocyst Desktop',
+    deviceId,
+    version: app.getVersion(),
+  };
+
+  const jellyfin = new JellyfinService({
+    database: db,
+    identity: jellyfinIdentity,
+    codec: new SafeStorageTokenCodec(),
+    logger,
+  });
+
   const library = new LibraryService({
     database: db,
     artworkDirectory,
@@ -138,6 +170,7 @@ async function startServices(): Promise<IpcContext> {
     library,
     playback,
     settings,
+    jellyfin,
     logger,
     version: app.getVersion(),
     packaged: app.isPackaged,
@@ -147,12 +180,17 @@ async function startServices(): Promise<IpcContext> {
     lookupTrack: async (trackId) => {
       const track = await db.getTrack(trackId).catch(() => null);
       if (!track) return null;
-      return { id: track.id, path: track.path, artworkPath: track.artworkPath };
+      const base = { id: track.id, path: track.path, artworkPath: track.artworkPath };
+      if (track.sourceKind !== 'jellyfin') return base;
+      const remote = await jellyfin.resolveRemoteTrack(track.sourceId);
+      if (!remote) return base;
+      return { ...base, remote: { serverUrl: remote.serverUrl, itemId: track.path, token: remote.token } };
     },
     onMediaUnavailable: (trackId) => {
       logger.warn('media.unavailable', { trackId });
       void db.markMissing(trackId, true).catch(() => undefined);
     },
+    remoteIdentity: jellyfinIdentity,
   });
 
   registerIpc(context);

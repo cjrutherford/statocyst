@@ -1,0 +1,32 @@
+# Evidence report: S007
+
+- **Status:** VERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Node v24.22.1, pnpm 10.18.3, Electron 45.0.0. Integration fixture: `jellyfin/jellyfin:12.1` (Docker).
+- **Files changed:**
+  - `libs/jellyfin-client` (new) — typed Jellyfin API client (discover/authenticate/whoami, `Authorization` header, HTTPS enforcement, identity parsing).
+  - `libs/persistence` — migration v2 (`jellyfin_server`, `jellyfin_account` tables) + server/account repository methods.
+  - `libs/contracts` — `JellyfinBridge` + `JellyfinServerView` + `JellyfinResult` types, new IPC channels.
+  - `apps/desktop-electron/src/main/credential-store.ts` — `TokenCodec` + `SafeStorageTokenCodec` (Electron `safeStorage`).
+  - `apps/desktop-electron/src/main/jellyfin-service.ts` — `JellyfinService` (add/login/logout/remove, identity pin, encrypted token storage).
+  - `apps/desktop-electron/src/main/ipc.ts`, `preload/preload.ts`, `main.ts` — wiring, device id, `--password-store=basic` test fallback.
+  - `apps/desktop/src/app/core/jellyfin.store.ts` + `views/settings-view.component.ts` + `app.component.ts` — settings "Jellyfin server" card.
+- **Acceptance criteria and actual observations:**
+  - **Successful real login:** integration test boots stock Jellyfin 12.1, `discover` returns `12.1.0` + id, `authenticate` returns an access token for `statocyst`, and `JellyfinService.login` returns a connected profile. Verified against the real container (`STATOCYST_JELLYFIN_INTEGRATION=1`, 8.2s).
+  - **Token not in DB/logs:** the service stores `safeStorage` ciphertext (opaque `token_ciphertext` column); the unit test asserts the ciphertext differs from the plaintext and the plaintext token string is absent from the on-disk `statocyst.db` bytes. `logger` redaction (ADR-021) covers token/authorization keys.
+  - **Reject unexpected endpoint identity:** the login response's `ServerId` is compared to the `jellyfin_id` pinned at discovery; a mismatch returns `IDENTITY_MISMATCH` (unit-tested).
+  - **TLS enforcement:** plain HTTP is rejected for non-loopback hosts (`NOT_HTTPS`), loopback allowed for local fixtures; the client sends the Jellyfin 12 `Authorization` header (unit-tested against the exact S006 header string).
+  - **Real upstream verification (Quick Connect):** initiated a Quick Connect session against `jelly.christopherrutherford.net`; the user approved, and `AuthenticateWithQuickConnect` returned a 32-char access token for `cjrutherford`. `discover` returned `12.1.0` + `d7b77fc9…`; `whoami` returned `cjrutherford`; `listAudioItems` returned `TotalRecordCount=2145` with a sample item mapping correctly. `resolveRemoteTrack` + token decryption were verified against the fixture; the real token round-trips through the same path.
+- **Commands run with exit codes:**
+  - `pnpm exec vitest run --config libs/jellyfin-client/vitest.config.ts` — 0 (12 tests)
+  - `pnpm exec vitest run --config libs/persistence/vitest.config.ts` — 0 (14 tests)
+  - `pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts` — 0 (10 tests)
+  - `STATOCYST_JELLYFIN_INTEGRATION=1 pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts -t 'logs in'` — 0 (real Docker fixture)
+  - `pnpm exec tsc-rs --noEmit` across all 7 projects — 0
+  - `pnpm exec nx run desktop:build` and `desktop-electron:build` — 0
+- **Tests not run (why):** `safeStorage` real-keychain round-trip is exercised at runtime by the user (unit tests use an injected codec; `--password-store=basic` is available for keychain-less Linux).
+- **Artifacts:** `libs/jellyfin-client/src/lib/jellyfin-client.spec.ts`, `libs/persistence/src/lib/database.spec.ts`, `apps/desktop-electron/src/main/jellyfin-service.spec.ts`, `apps/desktop-electron/src/main/jellyfin-integration.spec.ts`, `apps/desktop-electron/src/main/jellyfin-upstream.spec.ts`.
+- **Safety/security considerations:** The plaintext token never enters persistence or logs; only `safeStorage` ciphertext is stored. `logout`/`removeServer` clear the account (cascade). Endpoint identity is pinned and re-checked on every login. HTTPS is mandatory outside loopback.
+- **Known limitations and deferred follow-up:** Linux without a keyring requires `STATOCYST_PASSWORD_STORE=basic` (hardcoded-key fallback) for local testing; real deployments use the OS keychain. Catalog sync (S008), browsing (S009) and streaming (S010) are not yet wired to the stored token.
+- **Milestone gate affected:** **MVP-2 — Jellyfin Connected Desktop: S007 gate demonstrated** (real login, encrypted token, identity pin). Progresses to S008.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

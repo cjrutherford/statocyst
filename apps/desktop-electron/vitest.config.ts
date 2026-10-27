@@ -8,6 +8,7 @@ export default defineConfig({
       '@statocyst/playback-core': resolve(import.meta.dirname, '../../libs/playback-core/src/index.ts'),
       '@statocyst/persistence': resolve(import.meta.dirname, '../../libs/persistence/src/index.ts'),
       '@statocyst/media-library': resolve(import.meta.dirname, '../../libs/media-library/src/index.ts'),
+      '@statocyst/jellyfin-client': resolve(import.meta.dirname, '../../libs/jellyfin-client/src/index.ts'),
     },
   },
   test: {

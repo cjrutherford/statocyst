@@ -240,3 +240,97 @@ describe('libSQL desktop foundation', () => {
     client.close();
   });
 });
+
+describe('jellyfin server profiles and accounts', () => {
+  it('persists server profiles and reconciles them by URL', async () => {
+    const { db } = await open();
+    const created = await db.upsertJellyfinServer({
+      url: 'https://jelly.example.com',
+      name: 'Test Server',
+      jellyfinId: 'jellyfin-id-1',
+      version: '12.1.0',
+    });
+    expect(created.id).toBeTruthy();
+    expect(created.lastConnectedAt).toBeNull();
+
+    // Same URL updates in place rather than duplicating.
+    const updated = await db.upsertJellyfinServer({
+      url: 'https://jelly.example.com',
+      name: 'Renamed',
+      jellyfinId: 'jellyfin-id-1',
+      version: '12.4.0',
+    });
+    expect(updated.id).toBe(created.id);
+    expect(updated.name).toBe('Renamed');
+
+    const servers = await db.listJellyfinServers();
+    expect(servers).toHaveLength(1);
+
+    await db.touchJellyfinServer(created.id);
+    expect((await db.getJellyfinServer(created.id))?.lastConnectedAt).toBeTruthy();
+
+    expect(await db.removeJellyfinServer(created.id)).toBe(true);
+    expect(await db.listJellyfinServers()).toHaveLength(0);
+    await db.close();
+  });
+
+  it('stores an encrypted account token as an opaque ciphertext blob', async () => {
+    const { db, path } = await open();
+    const server = await db.upsertJellyfinServer({
+      url: 'https://jelly.example.com',
+      name: 'Test Server',
+      jellyfinId: 'jellyfin-id-1',
+      version: '12.1.0',
+    });
+    const plaintextToken = 'secret-access-token-value';
+    const ciphertext = Buffer.from(plaintextToken).toString('base64'); // stand-in for safeStorage output
+    await db.saveJellyfinAccount({
+      serverId: server.id,
+      userId: 'user-1',
+      userName: 'statocyst',
+      tokenCiphertext: ciphertext,
+    });
+
+    const account = await db.getJellyfinAccount(server.id);
+    expect(account?.userId).toBe('user-1');
+    expect(account?.tokenCiphertext).toBe(ciphertext);
+    expect(account?.tokenCiphertext).not.toBe(plaintextToken);
+
+    // The plaintext token never lands in the database file.
+    const { readFileSync } = await import('node:fs');
+    const raw = readFileSync(path, 'utf8');
+    expect(raw).not.toContain(plaintextToken);
+
+    // Re-saving replaces the token (one account per server).
+    await db.saveJellyfinAccount({
+      serverId: server.id,
+      userId: 'user-1',
+      userName: 'statocyst',
+      tokenCiphertext: 'updated-ciphertext',
+    });
+    expect((await db.getJellyfinAccount(server.id))?.tokenCiphertext).toBe('updated-ciphertext');
+
+    await db.removeJellyfinAccount(server.id);
+    expect(await db.getJellyfinAccount(server.id)).toBeNull();
+    await db.close();
+  });
+
+  it('cascades account deletion when the server is removed', async () => {
+    const { db } = await open();
+    const server = await db.upsertJellyfinServer({
+      url: 'https://jelly.example.com',
+      name: 'Test Server',
+      jellyfinId: 'jellyfin-id-1',
+      version: '12.1.0',
+    });
+    await db.saveJellyfinAccount({
+      serverId: server.id,
+      userId: 'user-1',
+      userName: 'statocyst',
+      tokenCiphertext: 'cipher',
+    });
+    await db.removeJellyfinServer(server.id);
+    expect(await db.getJellyfinAccount(server.id)).toBeNull();
+    await db.close();
+  });
+});

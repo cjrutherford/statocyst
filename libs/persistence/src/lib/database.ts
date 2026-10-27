@@ -33,6 +33,7 @@ export interface StoredTrack extends Track {
   lastPlayedAt: string | null;
   playCount: number;
   sourceKind: 'local' | 'demo' | 'jellyfin';
+  jellyfinImageTag: string | null;
 }
 
 export interface TrackUpsert {
@@ -59,6 +60,8 @@ export interface TrackUpsert {
   codec?: string | null;
   format?: string | null;
   artworkPath?: string | null;
+  /** Remote primary-image tag for Jellyfin items; null for local/demo sources. */
+  jellyfinImageTag?: string | null;
 }
 
 export interface TrackUpsertResult {
@@ -76,6 +79,25 @@ export interface StoredPlaybackState {
   positionMs: number;
   shuffle: boolean;
   repeat: RepeatMode;
+}
+
+export interface StoredJellyfinServer {
+  id: string;
+  url: string;
+  name: string;
+  jellyfinId: string;
+  version: string | null;
+  createdAt: string;
+  lastConnectedAt: string | null;
+}
+
+export interface StoredJellyfinAccount {
+  serverId: string;
+  userId: string;
+  userName: string;
+  tokenCiphertext: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LibraryStatsRecord {
@@ -154,6 +176,7 @@ function bool(row: Row, key: string): boolean {
 function toTrack(row: Row): StoredTrack {
   const id = text(row, 'id');
   const artworkPath = nullableText(row, 'artwork_path');
+  const jellyfinImageTag = nullableText(row, 'jellyfin_image_tag');
   return {
     id,
     path: text(row, 'path'),
@@ -177,7 +200,7 @@ function toTrack(row: Row): StoredTrack {
     codec: nullableText(row, 'codec'),
     format: nullableText(row, 'format'),
     artworkPath,
-    artworkUrl: artworkPath ? `statocyst-art://track/${id}` : null,
+    artworkUrl: artworkPath || jellyfinImageTag ? `statocyst-art://track/${id}` : null,
     addedAt: text(row, 'added_at'),
     updatedAt: text(row, 'updated_at'),
     lastPlayedAt: nullableText(row, 'last_played_at'),
@@ -186,6 +209,7 @@ function toTrack(row: Row): StoredTrack {
     sourceId: text(row, 'source_id'),
     sourceLabel: text(row, 'source_label'),
     sourceKind: text(row, 'source_kind') as StoredTrack['sourceKind'],
+    jellyfinImageTag,
   };
 }
 
@@ -335,6 +359,20 @@ export class StatocystDatabase {
     return { id, kind: input.kind, label: input.label, rootPath: input.rootPath, createdAt };
   }
 
+  async getSource(id: string): Promise<StoredMediaSource | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM media_source WHERE id = ?', args: [id] })
+    ).rows[0];
+    if (!row) return null;
+    return {
+      id: text(row, 'id'),
+      kind: text(row, 'kind') as StoredMediaSource['kind'],
+      label: text(row, 'label'),
+      rootPath: nullableText(row, 'root_path'),
+      createdAt: text(row, 'created_at'),
+    };
+  }
+
   async upsertTrack(input: TrackUpsert): Promise<TrackUpsertResult> {
     const existing = (
       await this.client.execute({
@@ -350,7 +388,7 @@ export class StatocystDatabase {
           source_id = ?, path = ?, file_name = ?, ext = ?, size_bytes = ?, mtime_ms = ?,
           title = ?, artist = ?, album = ?, album_artist = ?, track_no = ?, disc_no = ?,
           year = ?, genre = ?, duration_ms = ?, bitrate = ?, sample_rate = ?, channels = ?,
-          codec = ?, format = ?, artwork_path = ?, updated_at = ?, missing = 0
+          codec = ?, format = ?, artwork_path = ?, jellyfin_image_tag = ?, updated_at = ?, missing = 0
           WHERE id = ?`,
         args: [
           input.sourceId,
@@ -374,6 +412,7 @@ export class StatocystDatabase {
           input.codec ?? null,
           input.format ?? null,
           input.artworkPath ?? null,
+          input.jellyfinImageTag ?? null,
           now,
           id,
         ],
@@ -387,8 +426,8 @@ export class StatocystDatabase {
         id, source_id, path, path_key, file_name, ext, size_bytes, mtime_ms,
         title, artist, album, album_artist, track_no, disc_no, year, genre,
         duration_ms, bitrate, sample_rate, channels, codec, format, artwork_path,
-        added_at, updated_at, missing
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        jellyfin_image_tag, added_at, updated_at, missing
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       args: [
         id,
         input.sourceId,
@@ -413,6 +452,7 @@ export class StatocystDatabase {
         input.codec ?? null,
         input.format ?? null,
         input.artworkPath ?? null,
+        input.jellyfinImageTag ?? null,
         now,
         now,
       ],
@@ -579,5 +619,125 @@ export class StatocystDatabase {
   async tableColumns(table: string): Promise<string[]> {
     const result = await this.client.execute(`PRAGMA table_info(${table})`);
     return result.rows.map((row) => text(row, 'name'));
+  }
+
+  async upsertJellyfinServer(input: {
+    url: string;
+    name: string;
+    jellyfinId: string;
+    version: string | null;
+  }): Promise<StoredJellyfinServer> {
+    const existing = (
+      await this.client.execute({ sql: 'SELECT * FROM jellyfin_server WHERE url = ?', args: [input.url] })
+    ).rows[0];
+    const now = new Date().toISOString();
+    if (existing) {
+      const id = text(existing, 'id');
+      await this.client.execute({
+        sql: `UPDATE jellyfin_server SET name = ?, jellyfin_id = ?, version = ? WHERE id = ?`,
+        args: [input.name, input.jellyfinId, input.version, id],
+      });
+      return {
+        id,
+        url: input.url,
+        name: input.name,
+        jellyfinId: input.jellyfinId,
+        version: input.version,
+        createdAt: text(existing, 'created_at'),
+        lastConnectedAt: nullableText(existing, 'last_connected_at'),
+      };
+    }
+    const id = this.idFactory();
+    await this.client.execute({
+      sql: `INSERT INTO jellyfin_server (id, url, name, jellyfin_id, version, created_at, last_connected_at)
+            VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+      args: [id, input.url, input.name, input.jellyfinId, input.version, now],
+    });
+    return {
+      id,
+      url: input.url,
+      name: input.name,
+      jellyfinId: input.jellyfinId,
+      version: input.version,
+      createdAt: now,
+      lastConnectedAt: null,
+    };
+  }
+
+  async listJellyfinServers(): Promise<StoredJellyfinServer[]> {
+    const result = await this.client.execute('SELECT * FROM jellyfin_server ORDER BY created_at ASC');
+    return result.rows.map((row) => this.toJellyfinServer(row));
+  }
+
+  async getJellyfinServer(id: string): Promise<StoredJellyfinServer | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM jellyfin_server WHERE id = ?', args: [id] })
+    ).rows[0];
+    return row ? this.toJellyfinServer(row) : null;
+  }
+
+  async touchJellyfinServer(id: string): Promise<void> {
+    await this.client.execute({
+      sql: 'UPDATE jellyfin_server SET last_connected_at = ? WHERE id = ?',
+      args: [new Date().toISOString(), id],
+    });
+  }
+
+  async removeJellyfinServer(id: string): Promise<boolean> {
+    const result = await this.client.execute({ sql: 'DELETE FROM jellyfin_server WHERE id = ?', args: [id] });
+    return (result.rowsAffected ?? 0) > 0;
+  }
+
+  async saveJellyfinAccount(input: {
+    serverId: string;
+    userId: string;
+    userName: string;
+    tokenCiphertext: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    await this.client.execute({
+      sql: `INSERT INTO jellyfin_account (server_id, user_id, user_name, token_ciphertext, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(server_id) DO UPDATE SET
+              user_id = excluded.user_id,
+              user_name = excluded.user_name,
+              token_ciphertext = excluded.token_ciphertext,
+              updated_at = excluded.updated_at`,
+      args: [input.serverId, input.userId, input.userName, input.tokenCiphertext, now, now],
+    });
+  }
+
+  async getJellyfinAccount(serverId: string): Promise<StoredJellyfinAccount | null> {
+    const row = (
+      await this.client.execute({
+        sql: 'SELECT * FROM jellyfin_account WHERE server_id = ?',
+        args: [serverId],
+      })
+    ).rows[0];
+    if (!row) return null;
+    return {
+      serverId: text(row, 'server_id'),
+      userId: text(row, 'user_id'),
+      userName: text(row, 'user_name'),
+      tokenCiphertext: text(row, 'token_ciphertext'),
+      createdAt: text(row, 'created_at'),
+      updatedAt: text(row, 'updated_at'),
+    };
+  }
+
+  async removeJellyfinAccount(serverId: string): Promise<void> {
+    await this.client.execute({ sql: 'DELETE FROM jellyfin_account WHERE server_id = ?', args: [serverId] });
+  }
+
+  private toJellyfinServer(row: Row): StoredJellyfinServer {
+    return {
+      id: text(row, 'id'),
+      url: text(row, 'url'),
+      name: text(row, 'name'),
+      jellyfinId: text(row, 'jellyfin_id'),
+      version: nullableText(row, 'version'),
+      createdAt: text(row, 'created_at'),
+      lastConnectedAt: nullableText(row, 'last_connected_at'),
+    };
   }
 }

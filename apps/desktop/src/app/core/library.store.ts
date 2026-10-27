@@ -1,6 +1,6 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import type { ImportSummary, LibraryStats, Track } from '@statocyst/contracts';
-import { bridge } from './bridge';
+import type { ImportProgress, ImportSummary, LibraryStats, Track } from '@statocyst/contracts';
+import { bridge, bridgeAvailable } from './bridge';
 import { PlaybackStore } from './playback.store';
 import { ToastStore } from './toast.store';
 
@@ -21,8 +21,11 @@ export class LibraryStore {
   readonly stats = signal<LibraryStats>({ ...EMPTY_STATS });
   readonly loading = signal(false);
   readonly importing = signal(false);
+  readonly importProgress = signal<ImportProgress | null>(null);
   readonly loaded = signal(false);
   readonly lastImport = signal<ImportSummary | null>(null);
+
+  private importProgressUnsubscribe: (() => void) | null = null;
 
   readonly isEmpty = computed(() => this.loaded() && this.tracks().length === 0);
   readonly albums = computed(() => {
@@ -92,6 +95,14 @@ export class LibraryStore {
     return this.runImport(() => bridge().library.importPaths(paths));
   }
 
+  async cancelImport(): Promise<void> {
+    try {
+      await bridge().library.cancelImport();
+    } catch {
+      // Cancellation is best-effort; the running import will resolve on its own.
+    }
+  }
+
   async removeTrack(track: Track): Promise<void> {
     try {
       const result = await bridge().library.removeTrack(track.id);
@@ -111,6 +122,8 @@ export class LibraryStore {
   private async runImport(run: () => Promise<ImportSummary>): Promise<ImportSummary | null> {
     if (this.importing()) return null;
     this.importing.set(true);
+    this.importProgress.set(null);
+    this.ensureProgressSubscription();
     try {
       const summary = await run();
       this.lastImport.set(summary);
@@ -122,7 +135,15 @@ export class LibraryStore {
       return null;
     } finally {
       this.importing.set(false);
+      this.importProgress.set(null);
     }
+  }
+
+  private ensureProgressSubscription(): void {
+    if (this.importProgressUnsubscribe || !bridgeAvailable()) return;
+    this.importProgressUnsubscribe = bridge().library.onImportProgress((progress) => {
+      this.importProgress.set(progress);
+    });
   }
 
   private async announce(summary: ImportSummary): Promise<void> {

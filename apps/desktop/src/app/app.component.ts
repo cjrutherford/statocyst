@@ -11,6 +11,7 @@ import { PlayerBarComponent } from './components/player-bar.component';
 import { AudioEngineService } from './core/audio-engine.service';
 import { bridge, bridgeAvailable } from './core/bridge';
 import { LibraryStore } from './core/library.store';
+import { JellyfinStore } from './core/jellyfin.store';
 import { PlaybackStore } from './core/playback.store';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
@@ -500,6 +501,7 @@ interface NavItem {
 })
 export class AppComponent {
   protected readonly library = inject(LibraryStore);
+  protected readonly jellyfin = inject(JellyfinStore);
   protected readonly playback = inject(PlaybackStore);
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly toasts = inject(ToastStore);
@@ -531,6 +533,7 @@ export class AppComponent {
     this.audio.start();
     await this.playback.init();
     await this.library.init();
+    await this.jellyfin.init();
     try {
       this.info.set(await bridge().app.info());
     } catch {

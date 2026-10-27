@@ -12,6 +12,8 @@ export const CHANNELS = {
   libraryStats: 'library:stats',
   libraryRemove: 'library:remove',
   libraryChanged: 'library:changed',
+  libraryImportProgress: 'library:import-progress',
+  libraryImportCancel: 'library:import-cancel',
 
   playbackGetSnapshot: 'playback:get-snapshot',
   playbackGetQueue: 'playback:get-queue',
@@ -24,6 +26,17 @@ export const CHANNELS = {
 
   settingsGet: 'settings:get',
   settingsUpdate: 'settings:update',
+
+  jellyfinListServers: 'jellyfin:list-servers',
+  jellyfinAddServer: 'jellyfin:add-server',
+  jellyfinLogin: 'jellyfin:login',
+  jellyfinLogout: 'jellyfin:logout',
+  jellyfinRemoveServer: 'jellyfin:remove-server',
+  jellyfinSync: 'jellyfin:sync',
+  jellyfinQuickConnectInitiate: 'jellyfin:quick-connect-initiate',
+  jellyfinQuickConnectPoll: 'jellyfin:quick-connect-poll',
+  jellyfinQuickConnectLogin: 'jellyfin:quick-connect-login',
+  jellyfinEncryptionAvailable: 'jellyfin:encryption-available',
 } as const;
 
 export const IPC_COMMAND_LIMIT = 64;

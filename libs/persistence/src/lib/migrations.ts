@@ -78,6 +78,36 @@ export const MIGRATIONS: readonly Migration[] = [
        VALUES (1, NULL, 0, 0, 'off', CURRENT_TIMESTAMP)`,
     ],
   },
+  {
+    version: 2,
+    name: 'jellyfin_server_profiles',
+    statements: [
+      `CREATE TABLE jellyfin_server (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        jellyfin_id TEXT NOT NULL,
+        version TEXT,
+        created_at TEXT NOT NULL,
+        last_connected_at TEXT
+      )`,
+      `CREATE TABLE jellyfin_account (
+        server_id TEXT PRIMARY KEY REFERENCES jellyfin_server(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        token_ciphertext TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    ],
+  },
+  {
+    version: 3,
+    name: 'jellyfin_remote_artwork',
+    statements: [
+      `ALTER TABLE media_item ADD COLUMN jellyfin_image_tag TEXT`,
+    ],
+  },
 ];
 
 /** Fields that must never be persisted in the catalog. Used by the security test. */

@@ -80,6 +80,13 @@ export interface ScanResult {
   scannedFiles: number;
 }
 
+export interface ScanProgress {
+  scanned: number;
+  imported: number;
+  path: string;
+  total: number | null;
+}
+
 export interface ScanOptions {
   maxFiles?: number;
   maxDepth?: number;
@@ -88,7 +95,9 @@ export interface ScanOptions {
   platform?: NodeJS.Platform;
   signal?: AbortSignal;
   parser?: (path: string) => Promise<IAudioMetadata>;
-  onProgress?: (progress: { scanned: number; imported: number; path: string }) => void;
+  /** Upper bound on simultaneous metadata parses. Default 1 (serial). */
+  maxConcurrency?: number;
+  onProgress?: (progress: ScanProgress) => void;
 }
 
 export function extensionOf(filePath: string): string {
@@ -302,42 +311,106 @@ export async function scanPaths(
   const uniqueFiles = [...new Set(files.map((file) => computePathKey(file, platform)))].length;
   result.duplicates += files.length - uniqueFiles;
 
-  for (const file of files) {
-    if (aborted()) {
-      reject(file, 'ABORTED', 'Import cancelled');
-      break;
-    }
-    const pathKey = computePathKey(file, platform);
-    if (seenPathKeys.has(pathKey)) {
-      result.duplicates += 1;
-      continue;
-    }
-    seenPathKeys.add(pathKey);
-    let fileStat;
-    try {
-      fileStat = await stat(file);
-    } catch (error) {
-      reject(file, 'NOT_FOUND', `Cannot stat file: ${(error as Error).message}`);
-      continue;
-    }
-    if (fileStat.size > MAX_AUDIO_BYTES) {
-      reject(file, 'TOO_LARGE', `File is larger than ${MAX_AUDIO_BYTES} bytes`);
-      continue;
-    }
-    result.scannedFiles += 1;
-    options.onProgress?.({ scanned: result.scannedFiles, imported: result.tracks.length, path: file });
-    try {
-      const metadata = await parser(file);
-      const track = toTrack(file, fileStat, metadata, platform);
-      if (!track) {
-        reject(file, 'PARSE_FAILED', 'No audio codec was detected');
+  const maxConcurrency = Math.max(1, Math.floor(options.maxConcurrency ?? 1));
+  const total = files.length;
+  let nextIndex = 0;
+  let stopped = aborted();
+  let importedCount = 0;
+  const parsedTracks: Array<{ index: number; track: ScannedTrack }> = [];
+
+  const stopOnAbort = (): void => {
+    stopped = true;
+  };
+  options.signal?.addEventListener('abort', stopOnAbort, { once: true });
+
+  const parseWithAbort = (file: string): Promise<IAudioMetadata> =>
+    new Promise((resolveParsed, rejectParsed) => {
+      const signal = options.signal;
+      if (!signal) {
+        void parser(file).then(resolveParsed, rejectParsed);
+        return;
+      }
+      if (signal.aborted) {
+        rejectParsed(new Error('Import aborted'));
+        return;
+      }
+      const onAbort = (): void => rejectParsed(new Error('Import aborted'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      void parser(file).then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort);
+          resolveParsed(value);
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort);
+          rejectParsed(error);
+        },
+      );
+    });
+
+  const worker = async (): Promise<void> => {
+    while (!stopped) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= total) return;
+      const file = files[index];
+      const pathKey = computePathKey(file, platform);
+      if (seenPathKeys.has(pathKey)) {
+        result.duplicates += 1;
         continue;
       }
-      result.tracks.push(track);
-    } catch (error) {
-      reject(file, 'PARSE_FAILED', `Cannot read audio metadata: ${(error as Error).message}`);
+      seenPathKeys.add(pathKey);
+
+      let fileStat;
+      try {
+        fileStat = await stat(file);
+      } catch (error) {
+        if (!stopped) {
+          reject(file, 'NOT_FOUND', `Cannot stat file: ${(error as Error).message}`);
+        }
+        continue;
+      }
+      if (fileStat.size > MAX_AUDIO_BYTES) {
+        reject(file, 'TOO_LARGE', `File is larger than ${MAX_AUDIO_BYTES} bytes`);
+        continue;
+      }
+
+      result.scannedFiles += 1;
+      options.onProgress?.({
+        scanned: result.scannedFiles,
+        imported: importedCount,
+        path: file,
+        total,
+      });
+
+      try {
+        const metadata = await parseWithAbort(file);
+        if (stopped) return;
+        const track = toTrack(file, fileStat, metadata, platform);
+        if (!track) {
+          reject(file, 'PARSE_FAILED', 'No audio codec was detected');
+          continue;
+        }
+        parsedTracks.push({ index, track });
+        importedCount += 1;
+      } catch (error) {
+        if (stopped) return;
+        reject(file, 'PARSE_FAILED', `Cannot read audio metadata: ${(error as Error).message}`);
+      }
     }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(maxConcurrency, total) }, () => worker()),
+  );
+  options.signal?.removeEventListener('abort', stopOnAbort);
+
+  if (aborted() && nextIndex < total) {
+    reject(files[nextIndex], 'ABORTED', 'Import cancelled');
   }
+
+  // Preserve input order regardless of parse completion order.
+  result.tracks = parsedTracks.sort((a, b) => a.index - b.index).map((entry) => entry.track);
 
   return result;
 }

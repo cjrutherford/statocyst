@@ -95,6 +95,18 @@ export type EngineEvent =
   | { type: 'ended'; token: number }
   | { type: 'error'; token: number; code: string; message: string };
 
+export interface ImportProgress {
+  phase: 'scanning' | 'importing';
+  /** Files inspected for metadata so far (scanning phase only). */
+  scanned: number;
+  /** Total audio files discovered, or null until the directory walk completes. */
+  total: number | null;
+  /** Tracks written to the catalog so far (importing phase only). */
+  imported: number;
+  /** Path being processed right now, or null. */
+  currentPath: string | null;
+}
+
 export interface LibraryBridge {
   pickFiles(): Promise<ImportSummary>;
   pickFolder(): Promise<ImportSummary>;
@@ -103,6 +115,8 @@ export interface LibraryBridge {
   listTracks(): Promise<Track[]>;
   stats(): Promise<LibraryStats>;
   removeTrack(trackId: string): Promise<Result<{ removed: boolean }>>;
+  onImportProgress(listener: (progress: ImportProgress) => void): () => void;
+  cancelImport(): Promise<void>;
 }
 
 export interface PlaybackBridge {
@@ -130,6 +144,62 @@ export interface AppBridge {
   quit(): void;
 }
 
+export type JellyfinErrorCode =
+  | 'INVALID_URL'
+  | 'NOT_HTTPS'
+  | 'UNREACHABLE'
+  | 'NOT_JELLYFIN'
+  | 'AUTH_FAILED'
+  | 'UNAUTHORIZED'
+  | 'IDENTITY_MISMATCH'
+  | 'CREDENTIAL_STORAGE_UNAVAILABLE'
+  | 'NOT_FOUND'
+  | 'INTERNAL_ERROR';
+
+export interface JellyfinError {
+  code: JellyfinErrorCode;
+  message: string;
+}
+
+export type JellyfinResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: JellyfinError };
+
+export interface JellyfinServerView {
+  id: string;
+  url: string;
+  name: string;
+  jellyfinId: string;
+  version: string | null;
+  connected: boolean;
+  userName: string | null;
+}
+
+export interface JellyfinSyncSummary {
+  serverId: string;
+  total: number;
+  imported: number;
+  updated: number;
+}
+
+export interface JellyfinQuickConnectInit {
+  secret: string;
+  code: string;
+}
+
+export interface JellyfinBridge {
+  listServers(): Promise<JellyfinServerView[]>;
+  addServer(url: string): Promise<JellyfinResult<JellyfinServerView>>;
+  login(url: string, username: string, password: string): Promise<JellyfinResult<JellyfinServerView>>;
+  logout(serverId: string): Promise<JellyfinResult<{ removed: boolean }>>;
+  removeServer(serverId: string): Promise<JellyfinResult<{ removed: boolean }>>;
+  sync(serverId: string): Promise<JellyfinResult<JellyfinSyncSummary>>;
+  initiateQuickConnect(url: string): Promise<JellyfinResult<JellyfinQuickConnectInit>>;
+  pollQuickConnect(url: string, secret: string): Promise<JellyfinResult<{ authenticated: boolean }>>;
+  loginWithQuickConnect(url: string, secret: string): Promise<JellyfinResult<JellyfinServerView>>;
+  encryptionAvailable(): Promise<boolean>;
+}
+
 export interface ElectronBridgeError {
   code: string;
   message: string;
@@ -146,6 +216,7 @@ export interface StatocystBridge {
   playback: PlaybackBridge;
   engine: EngineBridge;
   settings: SettingsBridge;
+  jellyfin: JellyfinBridge;
 }
 
 export function toBridgeError(error: unknown): ElectronBridgeError {

@@ -7,7 +7,12 @@ import {
   type EngineCommand,
   type EngineEvent,
   type EngineLoadRequest,
+  type ImportProgress,
   type ImportSummary,
+  type JellyfinQuickConnectInit,
+  type JellyfinResult,
+  type JellyfinServerView,
+  type JellyfinSyncSummary,
   type LibraryStats,
   type PlaybackCommand,
   type PlaybackEvent,
@@ -53,6 +58,10 @@ const bridge: StatocystBridge = {
       ipcRenderer.invoke(CHANNELS.libraryRemove, trackId) as Promise<
         Result<{ removed: boolean }>
       >,
+    onImportProgress: (listener: (progress: ImportProgress) => void) =>
+      subscribe<ImportProgress>(CHANNELS.libraryImportProgress, listener),
+    cancelImport: () =>
+      ipcRenderer.invoke(CHANNELS.libraryImportCancel) as Promise<void>,
   },
   playback: {
     getSnapshot: () =>
@@ -78,6 +87,40 @@ const bridge: StatocystBridge = {
     get: () => ipcRenderer.invoke(CHANNELS.settingsGet) as Promise<Settings>,
     update: (patch: Partial<Settings>) =>
       ipcRenderer.invoke(CHANNELS.settingsUpdate, patch) as Promise<Settings>,
+  },
+  jellyfin: {
+    listServers: () =>
+      ipcRenderer.invoke(CHANNELS.jellyfinListServers) as Promise<JellyfinServerView[]>,
+    addServer: (url: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinAddServer, url) as Promise<JellyfinResult<JellyfinServerView>>,
+    login: (url: string, username: string, password: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinLogin, { url, username, password }) as Promise<
+        JellyfinResult<JellyfinServerView>
+      >,
+    logout: (serverId: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinLogout, serverId) as Promise<
+        JellyfinResult<{ removed: boolean }>
+      >,
+    removeServer: (serverId: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinRemoveServer, serverId) as Promise<
+        JellyfinResult<{ removed: boolean }>
+      >,
+    sync: (serverId: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinSync, serverId) as Promise<JellyfinResult<JellyfinSyncSummary>>,
+    initiateQuickConnect: (url: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinQuickConnectInitiate, url) as Promise<
+        JellyfinResult<JellyfinQuickConnectInit>
+      >,
+    pollQuickConnect: (url: string, secret: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinQuickConnectPoll, { url, secret }) as Promise<
+        JellyfinResult<{ authenticated: boolean }>
+      >,
+    loginWithQuickConnect: (url: string, secret: string) =>
+      ipcRenderer.invoke(CHANNELS.jellyfinQuickConnectLogin, { url, secret }) as Promise<
+        JellyfinResult<JellyfinServerView>
+      >,
+    encryptionAvailable: () =>
+      ipcRenderer.invoke(CHANNELS.jellyfinEncryptionAvailable) as Promise<boolean>,
   },
 };
 

@@ -1,0 +1,2080 @@
+{
+  "version": "12.1.0",
+  "imageTag": "jellyfin/jellyfin:12.1",
+  "imageDigest": "jellyfin/jellyfin@sha256:78d3ea1207d1322471fcac39a614f004f2ccf7e878f95ab2977d752f07e4dd7e",
+  "serverId": "6ec9a72de0104f11aaba1d4aa43186f4",
+  "serverName": "98d63e494cbf",
+  "checks": [
+    {
+      "name": "startup wizard completed",
+      "pass": true,
+      "detail": "cfg=204 user=204 done=204"
+    },
+    {
+      "name": "auth returns access token",
+      "pass": true,
+      "detail": "len=32"
+    },
+    {
+      "name": "auth returns user id + server id",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "music library created",
+      "pass": true,
+      "detail": "status=204"
+    },
+    {
+      "name": "library refresh accepted",
+      "pass": true,
+      "detail": "status=204"
+    },
+    {
+      "name": "library scanned (>= 4 audio items, fully populated)",
+      "pass": true,
+      "detail": "audio=4 artists=2"
+    },
+    {
+      "name": "12.1 fixture: public info returns product + version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "12.1 fixture: health endpoint reachable",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "12.1 fixture: user listing requires auth (401)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "12.1 fixture: wrong password rejected (401)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "server identity stable across calls",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "auth returns access token",
+      "pass": true,
+      "detail": "len=32"
+    },
+    {
+      "name": "auth returns user id + server id",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "authenticated /Users/Me matches login user",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "invalid token rejected (401)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "TotalRecordCount equals seeded audio count",
+      "pass": true,
+      "detail": "total=4"
+    },
+    {
+      "name": "page size honoured (Limit=2)",
+      "pass": true,
+      "detail": "p1=2 p2=2"
+    },
+    {
+      "name": "final page is empty",
+      "pass": true,
+      "detail": "p3=0"
+    },
+    {
+      "name": "no duplicate ids across pages",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "item fields present (Id, Name, RunTimeTicks, Type)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "MusicArtist rollup returns artists",
+      "pass": true,
+      "detail": "artists=2"
+    },
+    {
+      "name": "MusicAlbum rollup is empty in Jellyfin 12 (recorded)",
+      "pass": true,
+      "detail": "albums=0"
+    },
+    {
+      "name": "albums derivable from Audio item Album field",
+      "pass": true,
+      "detail": "albums=[Suspended Light | Bathypelagic Sessions]"
+    },
+    {
+      "name": "Fields=MediaSources returns media source details",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "search finds \"Tide Glass\"",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "search is case-insensitive",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "artwork returns an image",
+      "pass": true,
+      "detail": "image/jpeg"
+    },
+    {
+      "name": "artwork without auth is 401 or open (recorded)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "static stream honours Range",
+      "pass": true,
+      "detail": "status=206 cr=bytes 0-1023/313724"
+    },
+    {
+      "name": "static stream content-type is audio/mpeg",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "invalid range returns 416",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "universal stream resolves (200/206/302)",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "download endpoint streams original",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "FLAC direct-play streams",
+      "pass": true,
+      "detail": "status=206 ct=audio/flac"
+    },
+    {
+      "name": "Sessions/Playing accepted (204)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "Sessions/Playing/Stopped accepted (204)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "favourite add accepted (200)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "favourite filter returns the favourited item",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "favourite remove accepted (200)",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Startup/Configuration",
+      "status": 200,
+      "durationMs": 10,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "ServerName": "",
+        "UICulture": "en-US",
+        "MetadataCountryCode": "US",
+        "PreferredMetadataLanguage": "en"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Startup/Configuration",
+      "status": 204,
+      "durationMs": 19,
+      "requestHeaders": {
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Startup/User",
+      "status": 200,
+      "durationMs": 169,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Name": "root"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Startup/User",
+      "status": 204,
+      "durationMs": 205,
+      "requestHeaders": {
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Startup/Complete",
+      "status": 204,
+      "durationMs": 3,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Users/AuthenticateByName",
+      "status": 200,
+      "durationMs": 338,
+      "requestHeaders": {
+        "Authorization": "[redacted]",
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "User": {
+          "Name": "statocyst",
+          "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+          "Id": "c6f58444a05e49ffb9be251b2165c1ac",
+          "HasPassword": "[redacted]",
+          "HasConfiguredPassword": "[redacted]",
+          "HasConfiguredEasyPassword": "[redacted]",
+          "EnableAutoLogin": false,
+          "LastLoginDate": "2026-10-27T17:30:36.4789476Z",
+          "LastActivityDate": "2026-10-27T17:30:36.4789476Z",
+          "Configuration": {
+            "PlayDefaultAudioTrack": true,
+            "SubtitleLanguagePreference": "",
+            "DisplayMissingEpisodes": false,
+            "GroupedFolders": {
+              "count": 0,
+              "first": null
+            },
+            "SubtitleMode": "Default",
+            "DisplayCollectionsView": false,
+            "EnableLocalPassword": "[redacted]",
+            "OrderedViews": {
+              "count": 0,
+              "first": null
+            },
+            "LatestItemsExcludes": {
+              "count": 0,
+              "first": null
+            },
+            "MyMediaExcludes": {
+              "count": 0,
+              "first": null
+            },
+            "HidePlayedInLatest": true,
+            "RememberAudioSelections": true,
+            "RememberSubtitleSelections": true,
+            "EnableNextEpisodeAutoPlay": true,
+            "CastReceiverId": "F007D354"
+          },
+          "Policy": {
+            "IsAdministrator": true,
+            "IsHidden": true,
+            "EnableCollectionManagement": false,
+            "EnableSubtitleManagement": false,
+            "EnableLyricManagement": false,
+            "IsDisabled": false,
+            "BlockedTags": {
+              "count": 0,
+              "first": null
+            },
+            "AllowedTags": {
+              "count": 0,
+              "first": null
+            },
+            "EnableUserPreferenceAccess": true,
+            "AccessSchedules": {
+              "count": 0,
+              "first": null
+            },
+            "BlockUnratedItems": {
+              "count": 0,
+              "first": null
+            },
+            "EnableRemoteControlOfOtherUsers": true,
+            "EnableSharedDeviceControl": true,
+            "EnableRemoteAccess": true,
+            "EnableLiveTvManagement": false,
+            "EnableLiveTvAccess": true,
+            "EnableMediaPlayback": true,
+            "EnableAudioPlaybackTranscoding": true,
+            "EnableVideoPlaybackTranscoding": true,
+            "EnablePlaybackRemuxing": true,
+            "ForceRemoteSourceTranscoding": false,
+            "EnableContentDeletion": true,
+            "EnableContentDeletionFromFolders": {
+              "count": 0,
+              "first": null
+            },
+            "EnableContentDownloading": true,
+            "EnableSyncTranscoding": true,
+            "EnableMediaConversion": true,
+            "EnabledDevices": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllDevices": true,
+            "EnabledChannels": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllChannels": true,
+            "EnabledFolders": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllFolders": true,
+            "InvalidLoginAttemptCount": 0,
+            "LoginAttemptsBeforeLockout": -1,
+            "MaxActiveSessions": 0,
+            "EnablePublicSharing": true,
+            "BlockedMediaFolders": {
+              "count": 0,
+              "first": null
+            },
+            "BlockedChannels": {
+              "count": 0,
+              "first": null
+            },
+            "RemoteClientBitrateLimit": 0,
+            "AuthenticationProviderId": "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider",
+            "PasswordResetProviderId": "[redacted]",
+            "SyncPlayAccess": "CreateAndJoinGroups"
+          }
+        },
+        "SessionInfo": {
+          "PlayState": {
+            "CanSeek": false,
+            "IsPaused": false,
+            "IsMuted": false,
+            "RepeatMode": "RepeatNone",
+            "PlaybackOrder": "Default"
+          },
+          "AdditionalUsers": {
+            "count": 0,
+            "first": null
+          },
+          "Capabilities": {
+            "PlayableMediaTypes": {
+              "count": 0,
+              "first": null
+            },
+            "SupportedCommands": {
+              "count": 0,
+              "first": null
+            },
+            "SupportsMediaControl": false,
+            "SupportsPersistentIdentifier": true
+          },
+          "RemoteEndPoint": "172.17.0.1",
+          "PlayableMediaTypes": {
+            "count": 0,
+            "first": null
+          },
+          "Id": "9f29fc79dda618843f7244d0a2b86372",
+          "UserId": "c6f58444a05e49ffb9be251b2165c1ac",
+          "UserName": "statocyst",
+          "Client": "Statocyst",
+          "LastActivityDate": "2026-10-27T17:30:36.5011311Z",
+          "LastPlaybackCheckIn": "0001-01-01T00:00:00.0000000Z",
+          "DeviceName": "Statocyst Spike",
+          "DeviceId": "1b11ec1a-5bca-44ec-8709-3ed6f0dca52e",
+          "ApplicationVersion": "0.1.0",
+          "IsActive": true,
+          "SupportsMediaControl": false,
+          "SupportsRemoteControl": false,
+          "NowPlayingQueue": {
+            "count": 0,
+            "first": null
+          },
+          "HasCustomDeviceName": false,
+          "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+          "SupportedCommands": {
+            "count": 0,
+            "first": null
+          }
+        },
+        "AccessToken": "[redacted]",
+        "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Library/VirtualFolders?name=Music&collectionType=music&paths=/media/music",
+      "status": 204,
+      "durationMs": 1177,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Library/Refresh",
+      "status": 204,
+      "durationMs": 11,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&Limit=4",
+      "status": 200,
+      "durationMs": 168,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 4,
+          "first": {
+            "Name": "01-sonar-bloom",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "fc57708788ee0037b65d9fb43881ae92",
+            "HasLyrics": false,
+            "ChannelId": null,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "01-sonar-bloom",
+              "ItemId": "fc57708788ee0037b65d9fb43881ae92"
+            },
+            "Artists": {
+              "count": 0,
+              "first": null
+            },
+            "ArtistItems": {
+              "count": 0,
+              "first": null
+            },
+            "AlbumArtists": {
+              "count": 0,
+              "first": null
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=MusicArtist",
+      "status": 200,
+      "durationMs": 48,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 0,
+          "first": null
+        },
+        "TotalRecordCount": 0,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&Limit=4",
+      "status": 200,
+      "durationMs": 24,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 4,
+          "first": {
+            "Name": "Pearl Drift",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "18291dc5842a333584a6ae62a21a5ef7",
+            "HasLyrics": false,
+            "Container": "ogg",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 90000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 1,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "03-pearl-drift",
+              "ItemId": "18291dc5842a333584a6ae62a21a5ef7"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Neritic Choir"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "Album": "Suspended Light",
+            "AlbumArtist": "Neritic Choir",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=MusicArtist",
+      "status": 200,
+      "durationMs": 19,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 2,
+          "first": {
+            "Name": "Neritic Choir",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "1e4e7795b1489582b681036748bfedea",
+            "ChannelId": null,
+            "RunTimeTicks": 90000000,
+            "Type": "MusicArtist",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "Artist-Neritic Choir",
+              "ItemId": "1e4e7795b1489582b681036748bfedea"
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Unknown"
+          }
+        },
+        "TotalRecordCount": 2,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/System/Info/Public",
+      "status": 200,
+      "durationMs": 3,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "LocalAddress": "http://172.17.0.2:8096",
+        "ServerName": "98d63e494cbf",
+        "Version": "12.1.0",
+        "ProductName": "Jellyfin Server",
+        "OperatingSystem": "",
+        "Id": "6ec9a72de0104f11aaba1d4aa43186f4",
+        "StartupWizardCompleted": "[redacted]"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/health",
+      "status": 200,
+      "durationMs": 2,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "text/plain",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 7,
+        "preview": "Healthy"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users",
+      "status": 401,
+      "durationMs": 2,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": "0",
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Users/AuthenticateByName",
+      "status": 401,
+      "durationMs": 3,
+      "requestHeaders": {
+        "Authorization": "[redacted]",
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": "text/plain",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 25,
+        "preview": "Error processing request."
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/System/Info/Public",
+      "status": 200,
+      "durationMs": 2,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "LocalAddress": "http://172.17.0.2:8096",
+        "ServerName": "98d63e494cbf",
+        "Version": "12.1.0",
+        "ProductName": "Jellyfin Server",
+        "OperatingSystem": "",
+        "Id": "6ec9a72de0104f11aaba1d4aa43186f4",
+        "StartupWizardCompleted": "[redacted]"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/System/Info/Public",
+      "status": 200,
+      "durationMs": 1,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "LocalAddress": "http://172.17.0.2:8096",
+        "ServerName": "98d63e494cbf",
+        "Version": "12.1.0",
+        "ProductName": "Jellyfin Server",
+        "OperatingSystem": "",
+        "Id": "6ec9a72de0104f11aaba1d4aa43186f4",
+        "StartupWizardCompleted": "[redacted]"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Users/AuthenticateByName",
+      "status": 200,
+      "durationMs": 95,
+      "requestHeaders": {
+        "Authorization": "[redacted]",
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "User": {
+          "Name": "statocyst",
+          "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+          "Id": "c6f58444a05e49ffb9be251b2165c1ac",
+          "HasPassword": "[redacted]",
+          "HasConfiguredPassword": "[redacted]",
+          "HasConfiguredEasyPassword": "[redacted]",
+          "EnableAutoLogin": false,
+          "LastLoginDate": "2026-10-27T17:30:39.1940368Z",
+          "LastActivityDate": "2026-10-27T17:30:39.1940368Z",
+          "Configuration": {
+            "PlayDefaultAudioTrack": true,
+            "SubtitleLanguagePreference": "",
+            "DisplayMissingEpisodes": false,
+            "GroupedFolders": {
+              "count": 0,
+              "first": null
+            },
+            "SubtitleMode": "Default",
+            "DisplayCollectionsView": false,
+            "EnableLocalPassword": "[redacted]",
+            "OrderedViews": {
+              "count": 0,
+              "first": null
+            },
+            "LatestItemsExcludes": {
+              "count": 0,
+              "first": null
+            },
+            "MyMediaExcludes": {
+              "count": 0,
+              "first": null
+            },
+            "HidePlayedInLatest": true,
+            "RememberAudioSelections": true,
+            "RememberSubtitleSelections": true,
+            "EnableNextEpisodeAutoPlay": true,
+            "CastReceiverId": "F007D354"
+          },
+          "Policy": {
+            "IsAdministrator": true,
+            "IsHidden": true,
+            "EnableCollectionManagement": false,
+            "EnableSubtitleManagement": false,
+            "EnableLyricManagement": false,
+            "IsDisabled": false,
+            "BlockedTags": {
+              "count": 0,
+              "first": null
+            },
+            "AllowedTags": {
+              "count": 0,
+              "first": null
+            },
+            "EnableUserPreferenceAccess": true,
+            "AccessSchedules": {
+              "count": 0,
+              "first": null
+            },
+            "BlockUnratedItems": {
+              "count": 0,
+              "first": null
+            },
+            "EnableRemoteControlOfOtherUsers": true,
+            "EnableSharedDeviceControl": true,
+            "EnableRemoteAccess": true,
+            "EnableLiveTvManagement": false,
+            "EnableLiveTvAccess": true,
+            "EnableMediaPlayback": true,
+            "EnableAudioPlaybackTranscoding": true,
+            "EnableVideoPlaybackTranscoding": true,
+            "EnablePlaybackRemuxing": true,
+            "ForceRemoteSourceTranscoding": false,
+            "EnableContentDeletion": true,
+            "EnableContentDeletionFromFolders": {
+              "count": 0,
+              "first": null
+            },
+            "EnableContentDownloading": true,
+            "EnableSyncTranscoding": true,
+            "EnableMediaConversion": true,
+            "EnabledDevices": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllDevices": true,
+            "EnabledChannels": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllChannels": true,
+            "EnabledFolders": {
+              "count": 0,
+              "first": null
+            },
+            "EnableAllFolders": true,
+            "InvalidLoginAttemptCount": 0,
+            "LoginAttemptsBeforeLockout": -1,
+            "MaxActiveSessions": 0,
+            "EnablePublicSharing": true,
+            "BlockedMediaFolders": {
+              "count": 0,
+              "first": null
+            },
+            "BlockedChannels": {
+              "count": 0,
+              "first": null
+            },
+            "RemoteClientBitrateLimit": 0,
+            "AuthenticationProviderId": "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider",
+            "PasswordResetProviderId": "[redacted]",
+            "SyncPlayAccess": "CreateAndJoinGroups"
+          }
+        },
+        "SessionInfo": {
+          "PlayState": {
+            "CanSeek": false,
+            "IsPaused": false,
+            "IsMuted": false,
+            "RepeatMode": "RepeatNone",
+            "PlaybackOrder": "Default"
+          },
+          "AdditionalUsers": {
+            "count": 0,
+            "first": null
+          },
+          "Capabilities": {
+            "PlayableMediaTypes": {
+              "count": 0,
+              "first": null
+            },
+            "SupportedCommands": {
+              "count": 0,
+              "first": null
+            },
+            "SupportsMediaControl": false,
+            "SupportsPersistentIdentifier": true
+          },
+          "RemoteEndPoint": "172.17.0.1",
+          "PlayableMediaTypes": {
+            "count": 0,
+            "first": null
+          },
+          "Id": "9f29fc79dda618843f7244d0a2b86372",
+          "UserId": "c6f58444a05e49ffb9be251b2165c1ac",
+          "UserName": "statocyst",
+          "Client": "Statocyst",
+          "LastActivityDate": "2026-10-27T17:30:39.202047Z",
+          "LastPlaybackCheckIn": "0001-01-01T00:00:00.0000000Z",
+          "DeviceName": "Statocyst Spike",
+          "DeviceId": "1b11ec1a-5bca-44ec-8709-3ed6f0dca52e",
+          "ApplicationVersion": "0.1.0",
+          "IsActive": true,
+          "SupportsMediaControl": false,
+          "SupportsRemoteControl": false,
+          "NowPlayingQueue": {
+            "count": 0,
+            "first": null
+          },
+          "HasCustomDeviceName": false,
+          "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+          "SupportedCommands": {
+            "count": 0,
+            "first": null
+          }
+        },
+        "AccessToken": "[redacted]",
+        "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/Me",
+      "status": 200,
+      "durationMs": 13,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Name": "statocyst",
+        "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+        "Id": "c6f58444a05e49ffb9be251b2165c1ac",
+        "HasPassword": "[redacted]",
+        "HasConfiguredPassword": "[redacted]",
+        "HasConfiguredEasyPassword": "[redacted]",
+        "EnableAutoLogin": false,
+        "LastLoginDate": "2026-10-27T17:30:39.1940368Z",
+        "LastActivityDate": "2026-10-27T17:30:39.1940368Z",
+        "Configuration": {
+          "PlayDefaultAudioTrack": true,
+          "SubtitleLanguagePreference": "",
+          "DisplayMissingEpisodes": false,
+          "GroupedFolders": {
+            "count": 0,
+            "first": null
+          },
+          "SubtitleMode": "Default",
+          "DisplayCollectionsView": false,
+          "EnableLocalPassword": "[redacted]",
+          "OrderedViews": {
+            "count": 0,
+            "first": null
+          },
+          "LatestItemsExcludes": {
+            "count": 0,
+            "first": null
+          },
+          "MyMediaExcludes": {
+            "count": 0,
+            "first": null
+          },
+          "HidePlayedInLatest": true,
+          "RememberAudioSelections": true,
+          "RememberSubtitleSelections": true,
+          "EnableNextEpisodeAutoPlay": true,
+          "CastReceiverId": "F007D354"
+        },
+        "Policy": {
+          "IsAdministrator": true,
+          "IsHidden": true,
+          "EnableCollectionManagement": false,
+          "EnableSubtitleManagement": false,
+          "EnableLyricManagement": false,
+          "IsDisabled": false,
+          "BlockedTags": {
+            "count": 0,
+            "first": null
+          },
+          "AllowedTags": {
+            "count": 0,
+            "first": null
+          },
+          "EnableUserPreferenceAccess": true,
+          "AccessSchedules": {
+            "count": 0,
+            "first": null
+          },
+          "BlockUnratedItems": {
+            "count": 0,
+            "first": null
+          },
+          "EnableRemoteControlOfOtherUsers": true,
+          "EnableSharedDeviceControl": true,
+          "EnableRemoteAccess": true,
+          "EnableLiveTvManagement": false,
+          "EnableLiveTvAccess": true,
+          "EnableMediaPlayback": true,
+          "EnableAudioPlaybackTranscoding": true,
+          "EnableVideoPlaybackTranscoding": true,
+          "EnablePlaybackRemuxing": true,
+          "ForceRemoteSourceTranscoding": false,
+          "EnableContentDeletion": true,
+          "EnableContentDeletionFromFolders": {
+            "count": 0,
+            "first": null
+          },
+          "EnableContentDownloading": true,
+          "EnableSyncTranscoding": true,
+          "EnableMediaConversion": true,
+          "EnabledDevices": {
+            "count": 0,
+            "first": null
+          },
+          "EnableAllDevices": true,
+          "EnabledChannels": {
+            "count": 0,
+            "first": null
+          },
+          "EnableAllChannels": true,
+          "EnabledFolders": {
+            "count": 0,
+            "first": null
+          },
+          "EnableAllFolders": true,
+          "InvalidLoginAttemptCount": 0,
+          "LoginAttemptsBeforeLockout": -1,
+          "MaxActiveSessions": 0,
+          "EnablePublicSharing": true,
+          "BlockedMediaFolders": {
+            "count": 0,
+            "first": null
+          },
+          "BlockedChannels": {
+            "count": 0,
+            "first": null
+          },
+          "RemoteClientBitrateLimit": 0,
+          "AuthenticationProviderId": "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider",
+          "PasswordResetProviderId": "[redacted]",
+          "SyncPlayAccess": "CreateAndJoinGroups"
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/Me",
+      "status": 401,
+      "durationMs": 6,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": "0",
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&SortOrder=Ascending&StartIndex=0&Limit=2",
+      "status": 200,
+      "durationMs": 19,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 2,
+          "first": {
+            "Name": "Pearl Drift",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "18291dc5842a333584a6ae62a21a5ef7",
+            "HasLyrics": false,
+            "Container": "ogg",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 90000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 1,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "03-pearl-drift",
+              "ItemId": "18291dc5842a333584a6ae62a21a5ef7"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Neritic Choir"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "Album": "Suspended Light",
+            "AlbumArtist": "Neritic Choir",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&SortOrder=Ascending&StartIndex=2&Limit=2",
+      "status": 200,
+      "durationMs": 47,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 2,
+          "first": {
+            "Name": "Tide Glass",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "73e0e24a7434a8d6bcbea6408dd47b12",
+            "HasLyrics": false,
+            "Container": "flac",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 100000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 2,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "02-tide-glass",
+              "ItemId": "73e0e24a7434a8d6bcbea6408dd47b12"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Statocyst Ensemble"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "Album": "Bathypelagic Sessions",
+            "AlbumArtist": "Statocyst Ensemble",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "ImageTags": {
+              "Primary": "7b2b45e228d55d3d7369ad927931e447"
+            },
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {
+              "Primary": {
+                "7b2b45e228d55d3d7369ad927931e447": "eV5FhTX8MtnPkDo#fkadafayR2jYtTX8j[V?e:kDkBkDWAjaogbFWA"
+              }
+            },
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 2
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&SortOrder=Ascending&StartIndex=4&Limit=2",
+      "status": 200,
+      "durationMs": 40,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 0,
+          "first": null
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 4
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=MusicAlbum",
+      "status": 200,
+      "durationMs": 38,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 0,
+          "first": null
+        },
+        "TotalRecordCount": 0,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=MusicArtist",
+      "status": 200,
+      "durationMs": 17,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 2,
+          "first": {
+            "Name": "Neritic Choir",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "1e4e7795b1489582b681036748bfedea",
+            "ChannelId": null,
+            "RunTimeTicks": 90000000,
+            "Type": "MusicArtist",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "Artist-Neritic Choir",
+              "ItemId": "1e4e7795b1489582b681036748bfedea"
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Unknown"
+          }
+        },
+        "TotalRecordCount": 2,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&Fields=MediaSources,Genres,DateCreated,Path&EnableImages=true&Limit=1",
+      "status": 200,
+      "durationMs": 81,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 1,
+          "first": {
+            "Name": "Pearl Drift",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "18291dc5842a333584a6ae62a21a5ef7",
+            "DateCreated": "2026-10-27T14:59:05.4711614Z",
+            "HasLyrics": false,
+            "Container": "ogg",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "MediaSources": {
+              "count": 1,
+              "first": {
+                "Protocol": "File",
+                "Id": "18291dc5842a333584a6ae62a21a5ef7",
+                "Path": "/media/music/03-pearl-drift.ogg",
+                "Type": "Default",
+                "Container": "ogg",
+                "Size": 20582,
+                "Name": "03-pearl-drift",
+                "IsRemote": false,
+                "ETag": "beb905beaa651503e4864c8513f3a162",
+                "RunTimeTicks": 90000000,
+                "ReadAtNativeFramerate": false,
+                "IgnoreDts": false,
+                "IgnoreIndex": false,
+                "GenPtsInput": false,
+                "SupportsTranscoding": true,
+                "SupportsDirectStream": true,
+                "SupportsDirectPlay": true,
+                "IsInfiniteStream": false,
+                "UseMostCompatibleTranscodingProfile": false,
+                "RequiresOpening": false,
+                "RequiresClosing": false,
+                "RequiresLooping": false,
+                "SupportsProbing": true,
+                "MediaStreams": {
+                  "count": 1,
+                  "first": {
+                    "Codec": "vorbis",
+                    "TimeBase": "1/44100",
+                    "Title": "Pearl Drift",
+                    "VideoRange": "Unknown",
+                    "VideoRangeType": "Unknown",
+                    "AudioSpatialFormat": "None",
+                    "LocalizedDefault": "Default",
+                    "LocalizedExternal": "External",
+                    "LocalizedOriginal": "Original",
+                    "DisplayTitle": "Pearl Drift - VORBIS - Mono",
+                    "IsInterlaced": false,
+                    "ChannelLayout": "mono",
+                    "BitRate": 96000,
+                    "Channels": 1,
+                    "SampleRate": 44100,
+                    "IsDefault": false,
+                    "IsForced": false,
+                    "IsHearingImpaired": false,
+                    "IsOriginal": false,
+                    "Type": "Audio",
+                    "Index": 0,
+                    "IsExternal": false,
+                    "IsTextSubtitleStream": false,
+                    "SupportsExternalStream": false
+                  }
+                },
+                "MediaAttachments": {
+                  "count": 0,
+                  "first": null
+                },
+                "Formats": {
+                  "count": 0,
+                  "first": null
+                },
+                "Bitrate": 18295,
+                "RequiredHttpHeaders": {},
+                "TranscodingSubProtocol": "http",
+                "DefaultAudioStreamIndex": 0,
+                "HasSegments": false
+              }
+            },
+            "Path": "/media/music/03-pearl-drift.ogg",
+            "ChannelId": null,
+            "Genres": {
+              "count": 1,
+              "first": "Downtempo"
+            },
+            "RunTimeTicks": 90000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 1,
+            "IsFolder": false,
+            "Type": "Audio",
+            "GenreItems": {
+              "count": 1,
+              "first": {
+                "Name": "Downtempo",
+                "Id": "d51e0fbc45b4513f904b570acc208bdb"
+              }
+            },
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "03-pearl-drift",
+              "ItemId": "18291dc5842a333584a6ae62a21a5ef7"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Neritic Choir"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "Album": "Suspended Light",
+            "AlbumArtist": "Neritic Choir",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Neritic Choir",
+                "Id": "1e4e7795b1489582b681036748bfedea"
+              }
+            },
+            "ImageTags": {},
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {},
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 4,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&searchTerm=Tide",
+      "status": 200,
+      "durationMs": 80,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 1,
+          "first": {
+            "Name": "Tide Glass",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "73e0e24a7434a8d6bcbea6408dd47b12",
+            "HasLyrics": false,
+            "Container": "flac",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 100000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 2,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "02-tide-glass",
+              "ItemId": "73e0e24a7434a8d6bcbea6408dd47b12"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Statocyst Ensemble"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "Album": "Bathypelagic Sessions",
+            "AlbumArtist": "Statocyst Ensemble",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "ImageTags": {
+              "Primary": "7b2b45e228d55d3d7369ad927931e447"
+            },
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {
+              "Primary": {
+                "7b2b45e228d55d3d7369ad927931e447": "eV5FhTX8MtnPkDo#fkadafayR2jYtTX8j[V?e:kDkBkDWAjaogbFWA"
+              }
+            },
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 1,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Recursive=true&IncludeItemTypes=Audio&searchTerm=tide",
+      "status": 200,
+      "durationMs": 21,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 1,
+          "first": {
+            "Name": "Tide Glass",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "73e0e24a7434a8d6bcbea6408dd47b12",
+            "HasLyrics": false,
+            "Container": "flac",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 100000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 2,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 0,
+              "IsFavorite": false,
+              "Played": false,
+              "Key": "02-tide-glass",
+              "ItemId": "73e0e24a7434a8d6bcbea6408dd47b12"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Statocyst Ensemble"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "Album": "Bathypelagic Sessions",
+            "AlbumArtist": "Statocyst Ensemble",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "ImageTags": {
+              "Primary": "7b2b45e228d55d3d7369ad927931e447"
+            },
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {
+              "Primary": {
+                "7b2b45e228d55d3d7369ad927931e447": "eV5FhTX8MtnPkDo#fkadafayR2jYtTX8j[V?e:kDkBkDWAjaogbFWA"
+              }
+            },
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 1,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Items/fc57708788ee0037b65d9fb43881ae92/Images/Primary?maxHeight=300&quality=90",
+      "status": 200,
+      "durationMs": 51,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "image/jpeg",
+        "content-length": "20778",
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": "attachment",
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 19723,
+        "preview": "����\u0000\u0010JFIF\u0000\u0001\u0001\u0000\u0000\u0001\u0000\u0001\u0000\u0000��\u0000C\u0000\u0003\u0002\u0002\u0003\u0002\u0002\u0003\u0003\u0003\u0003\u0004\u0003\u0003\u0004\u0005\b\u0005\u0005\u0004\u0004\u0005\n\u0007\u0007\u0006\b\f\n\f\f\u000b\n\u000b\u000b\r\u000e\u0012\u0010\r\u000e\u0011\u000e\u000b\u000b\u0010\u0016\u0010\u0011\u0013\u0014\u0015\u0015\u0015\f\u000f\u0017\u0018\u0016\u0014\u0018\u0012\u0014\u0015\u0014��\u0000C\u0001\u0003\u0004\u0004\u0005\u0004\u0005\t\u0005\u0005\t\u0014\r\u000b\r\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014\u0014��"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Items/fc57708788ee0037b65d9fb43881ae92/Images/Primary?maxHeight=300",
+      "status": 200,
+      "durationMs": 22,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "image/jpeg",
+        "content-length": "52770",
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": "attachment",
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 49899,
+        "preview": "����\u0000\u0010JFIF\u0000\u0001\u0001\u0000\u0000\u0001\u0000\u0001\u0000\u0000��\u0000C\u0000\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001��\u0000C\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001\u0001��"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Audio/fc57708788ee0037b65d9fb43881ae92/stream?static=true",
+      "status": 206,
+      "durationMs": 38,
+      "requestHeaders": {
+        "Range": "bytes=0-1023",
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "audio/mpeg",
+        "content-length": "1024",
+        "content-range": "bytes 0-1023/313724",
+        "accept-ranges": "bytes",
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 1005,
+        "preview": "ID3\u0003\u0000\u0000\u0000\u0001<\u0006TIT2\u0000\u0000\u0000\r\u0000\u0000\u0000Sonar Bloom\u0000TPE1\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TALB\u0000\u0000\u0000\u0017\u0000\u0000\u0000Bathypelagic Sessions\u0000TPE2\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TRCK\u0000\u0000\u0000\u0003\u0000\u0000\u00001\u0000TYER\u0000\u0000\u0000\u0006\u0000\u0000\u00002026\u0000TCON\u0000"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Audio/fc57708788ee0037b65d9fb43881ae92/stream?static=true",
+      "status": 416,
+      "durationMs": 11,
+      "requestHeaders": {
+        "Range": "bytes=999999999-",
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "audio/mpeg",
+        "content-length": "0",
+        "content-range": "bytes */313724",
+        "accept-ranges": "bytes",
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Audio/fc57708788ee0037b65d9fb43881ae92/universal?UserId=c6f58444a05e49ffb9be251b2165c1ac&DeviceId=1b11ec1a-5bca-44ec-8709-3ed6f0dca52e&MaxStreamingBitrate=140000000&AudioCodec=aac&Container=opus,mp3,aac,flac,ogg",
+      "status": 200,
+      "durationMs": 66,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "audio/mpeg",
+        "content-length": "313724",
+        "content-range": null,
+        "accept-ranges": "bytes",
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 304369,
+        "preview": "ID3\u0003\u0000\u0000\u0000\u0001<\u0006TIT2\u0000\u0000\u0000\r\u0000\u0000\u0000Sonar Bloom\u0000TPE1\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TALB\u0000\u0000\u0000\u0017\u0000\u0000\u0000Bathypelagic Sessions\u0000TPE2\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TRCK\u0000\u0000\u0000\u0003\u0000\u0000\u00001\u0000TYER\u0000\u0000\u0000\u0006\u0000\u0000\u00002026\u0000TCON\u0000"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Items/fc57708788ee0037b65d9fb43881ae92/Download",
+      "status": 200,
+      "durationMs": 21,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "audio/mpeg",
+        "content-length": "313724",
+        "content-range": null,
+        "accept-ranges": "bytes",
+        "content-disposition": "attachment; filename=01-sonar-bloom.mp3; filename*=UTF-8''01-sonar-bloom.mp3",
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 304369,
+        "preview": "ID3\u0003\u0000\u0000\u0000\u0001<\u0006TIT2\u0000\u0000\u0000\r\u0000\u0000\u0000Sonar Bloom\u0000TPE1\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TALB\u0000\u0000\u0000\u0017\u0000\u0000\u0000Bathypelagic Sessions\u0000TPE2\u0000\u0000\u0000\u0014\u0000\u0000\u0000Statocyst Ensemble\u0000TRCK\u0000\u0000\u0000\u0003\u0000\u0000\u00001\u0000TYER\u0000\u0000\u0000\u0006\u0000\u0000\u00002026\u0000TCON\u0000"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Audio/73e0e24a7434a8d6bcbea6408dd47b12/stream?static=true",
+      "status": 206,
+      "durationMs": 10,
+      "requestHeaders": {
+        "Range": "bytes=0-127",
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "audio/flac",
+        "content-length": "128",
+        "content-range": "bytes 0-127/394060",
+        "accept-ranges": "bytes",
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 127,
+        "preview": "fLaC\u0000\u0000\u0000\"\u0012\u0000\u0012\u0000\u0000\u00044\u0000\u000f�\n�Ap\u0000\u0006���c�9=�^\u0003�ZF�;B�\u0006\u0000]R\u0000\u0000\u0000\u0000\u0000\u0000\u0000\nimage/jpeg\u0000\u0000\u0000\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0002\u0000\u0000\u0000\u0000\f\u0000\u0000\u0000\u0000\u0000\u0000](����\u0000\u0010Lavc62.11.100\u0000��\u0000C\u0000\b\f\f\u000e\f\u000e\u0010\u0010\u0010\u0010\u0010\u0010\u0013\u0012\u0013"
+      }
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Sessions/Playing",
+      "status": 204,
+      "durationMs": 129,
+      "requestHeaders": {
+        "Content-Type": "application/json",
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Sessions/Playing/Stopped",
+      "status": 204,
+      "durationMs": 36,
+      "requestHeaders": {
+        "Content-Type": "application/json",
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/FavoriteItems/fc57708788ee0037b65d9fb43881ae92",
+      "status": 200,
+      "durationMs": 16,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 1,
+        "IsFavorite": true,
+        "LastPlayedDate": "2026-10-27T17:30:39.9011029Z",
+        "Played": true,
+        "Key": "Statocyst Ensemble-Bathypelagic Sessions-0001Sonar Bloom",
+        "ItemId": "fc57708788ee0037b65d9fb43881ae92"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/Items?Filters=IsFavorite&IncludeItemTypes=Audio",
+      "status": 200,
+      "durationMs": 42,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "Items": {
+          "count": 1,
+          "first": {
+            "Name": "Sonar Bloom",
+            "ServerId": "6ec9a72de0104f11aaba1d4aa43186f4",
+            "Id": "fc57708788ee0037b65d9fb43881ae92",
+            "HasLyrics": false,
+            "Container": "mp3",
+            "PremiereDate": "2026-01-01T00:00:00.0000000Z",
+            "ChannelId": null,
+            "RunTimeTicks": 120000000,
+            "ProductionYear": 2026,
+            "IndexNumber": 1,
+            "IsFolder": false,
+            "Type": "Audio",
+            "UserData": {
+              "PlaybackPositionTicks": 0,
+              "PlayCount": 1,
+              "IsFavorite": true,
+              "LastPlayedDate": "2026-10-27T17:30:39.9011029Z",
+              "Played": true,
+              "Key": "fc577087-88ee-0037-b65d-9fb43881ae92",
+              "ItemId": "fc57708788ee0037b65d9fb43881ae92"
+            },
+            "Artists": {
+              "count": 1,
+              "first": "Statocyst Ensemble"
+            },
+            "ArtistItems": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "Album": "Bathypelagic Sessions",
+            "AlbumArtist": "Statocyst Ensemble",
+            "AlbumArtists": {
+              "count": 1,
+              "first": {
+                "Name": "Statocyst Ensemble",
+                "Id": "bc8fabc06dccc7776cddcfe7317e3bc4"
+              }
+            },
+            "ImageTags": {
+              "Primary": "5f4f33b307f33042aaf3a4e0287a88fe"
+            },
+            "BackdropImageTags": {
+              "count": 0,
+              "first": null
+            },
+            "ImageBlurHashes": {
+              "Primary": {
+                "5f4f33b307f33042aaf3a4e0287a88fe": "eV5FhTX8MtnPkDo#fkadafayR2jYtTX8j[V?e:kDkBkDWAjaogbFWA"
+              }
+            },
+            "LocationType": "FileSystem",
+            "MediaType": "Audio"
+          }
+        },
+        "TotalRecordCount": 1,
+        "StartIndex": 0
+      }
+    },
+    {
+      "method": "DELETE",
+      "url": "http://127.0.0.1:18096/Users/c6f58444a05e49ffb9be251b2165c1ac/FavoriteItems/fc57708788ee0037b65d9fb43881ae92",
+      "status": 200,
+      "durationMs": 16,
+      "requestHeaders": {
+        "Authorization": "[redacted]"
+      },
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "PlaybackPositionTicks": 0,
+        "PlayCount": 1,
+        "IsFavorite": false,
+        "LastPlayedDate": "2026-10-27T17:30:39.9011029Z",
+        "Played": true,
+        "Key": "Statocyst Ensemble-Bathypelagic Sessions-0001Sonar Bloom",
+        "ItemId": "fc57708788ee0037b65d9fb43881ae92"
+      }
+    }
+  ]
+}
