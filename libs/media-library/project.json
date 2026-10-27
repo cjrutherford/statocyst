@@ -1,0 +1,22 @@
+{
+  "name": "media-library",
+  "projectType": "library",
+  "sourceRoot": "libs/media-library/src",
+  "tags": ["type:media", "scope:desktop"],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config libs/media-library/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p libs/media-library/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

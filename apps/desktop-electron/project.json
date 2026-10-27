@@ -1,0 +1,51 @@
+{
+  "name": "desktop-electron",
+  "projectType": "application",
+  "sourceRoot": "apps/desktop-electron/src",
+  "tags": ["type:desktop-host", "scope:desktop"],
+  "implicitDependencies": ["contracts", "playback-core", "persistence", "media-library"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["desktop:build"],
+      "outputs": ["{workspaceRoot}/dist/apps/desktop-electron"],
+      "options": {
+        "command": "node tools/build-electron.mjs",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config apps/desktop-electron/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/dev.mjs",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "package": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["desktop:build", "build"],
+      "options": {
+        "commands": [
+          "NODE_ENV=production node tools/build-electron.mjs",
+          "electron-builder --dir --config electron-builder.yml"
+        ],
+        "parallel": false,
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

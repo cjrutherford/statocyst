@@ -1,0 +1,23 @@
+{
+  "name": "playback-core",
+  "projectType": "library",
+  "sourceRoot": "libs/playback-core/src",
+  "tags": ["type:runtime-core", "scope:shared"],
+  "implicitDependencies": ["contracts"],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config libs/playback-core/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p libs/playback-core/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

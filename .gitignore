@@ -147,3 +147,27 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+node_modules/
+dist/
+release/
+tmp/
+coverage/
+.nx/
+.angular/
+.vite/
+test-results/
+playwright-report/
+blob-report/
+*.tsbuildinfo
+.DS_Store
+*.log
+.env
+.env.local
+fixtures/audio/*.mp3
+fixtures/audio/*.flac
+fixtures/audio/*.ogg
+fixtures/audio/*.wav
+!fixtures/audio/README.md
+
+# keep the verification log as committed evidence
+!evidence/verification.log

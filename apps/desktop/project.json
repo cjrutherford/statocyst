@@ -1,0 +1,65 @@
+{
+  "name": "desktop",
+  "projectType": "application",
+  "sourceRoot": "apps/desktop/src",
+  "tags": ["type:desktop-renderer", "scope:desktop"],
+  "targets": {
+    "build": {
+      "executor": "@angular/build:application",
+      "outputs": ["{workspaceRoot}/dist/apps/desktop"],
+      "options": {
+        "outputPath": "dist/apps/desktop",
+        "browser": "apps/desktop/src/main.ts",
+        "index": "apps/desktop/src/index.html",
+        "tsConfig": "apps/desktop/tsconfig.app.json",
+        "assets": [
+          {
+            "glob": "**/*",
+            "input": "apps/desktop/public"
+          }
+        ],
+        "styles": ["apps/desktop/src/styles.scss"],
+        "polyfills": []
+      },
+      "configurations": {
+        "production": {
+          "optimization": {
+            "scripts": true,
+            "styles": {
+              "minify": true,
+              "inlineCritical": false
+            },
+            "fonts": true
+          },
+          "sourceMap": false,
+          "outputHashing": "all",
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "900kb",
+              "maximumError": "1.5mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "24kb",
+              "maximumError": "40kb"
+            }
+          ]
+        },
+        "development": {
+          "optimization": false,
+          "sourceMap": true,
+          "outputHashing": "none"
+        }
+      },
+      "defaultConfiguration": "production"
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p apps/desktop/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+# Evidence report: S003
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64, Xwayland `DISPLAY=:0`. Node v24.22.1, `music-metadata` 12.3.2, Vitest 4.1.0, Playwright 1.64.1.
+- **Files changed:**
+  - `libs/media-library/src/lib/media-library.ts` — bounded recursive scan, extension/MIME support, metadata + embedded artwork extraction, path-key normalisation, cancellation, rejection reporting.
+  - `libs/media-library/src/lib/media-library.spec.ts` — 9 tests over real fixtures.
+  - `apps/desktop-electron/src/main/library-service.ts` — native pickers, demo import, artwork persistence, library listing/stats/removal.
+  - `apps/desktop-electron/src/main/ipc.ts` — import/list/stats/remove handlers.
+  - `resources/demo/*` — four bundled demo tracks (MP3/FLAC/OGG/WAV) with embedded artwork on MP3/FLAC.
+- **Acceptance criteria and actual observations:**
+  - **Import fixtures:** MP3, FLAC, OGG and WAV fixtures are scanned with real metadata (title/artist/album/duration); MP3 and FLAC expose embedded artwork. Demo import in the running app exposes exactly 4 tracks and stores two 512×512 JPEG artwork files.
+  - **Reject missing/unsupported media safely:** missing paths, unsupported extensions, corrupt files, relative paths, hidden files, symlinks, depth/file limits and cancellation are reported without throwing; a failing parser does not abort the scan.
+  - **Catalog reload:** tracks persist through libSQL and reappear after app restart (verified in the S005 E2E restart step); library stats report 4 tracks / 3 albums / 3 artists / 1 minute.
+  - **Provenance:** each track records a local/demo media source and a normalised path key; re-import deduplicates by path key.
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit -p libs/media-library/tsconfig.json` — 0
+  - `pnpm exec vitest run --config libs/media-library/vitest.config.ts` — 0 (1 file, 9 tests passed)
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json` — 0
+  - `XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts` — 0
+  - `XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs` — 0
+- **Tests not run (why):** Native file/folder picker dialogs are Electron modal APIs and are not automated; the E2E and packaged smoke use the equivalent bundled-demo import path. No large-library performance benchmark (10k-file cap is enforced but not stress-tested).
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/verification.log`
+  - `evidence/screenshots/02-library-tracks.png`
+  - `evidence/screenshots/08-packaged.png`
+  - `evidence/artifacts/playwright-report/index.html`
+- **Safety/security considerations:** Scans are absolute-path-only, bounded by depth/file count, and never follow symlinks by default. Artwork is decoded/copied into the app data directory. File paths are accepted only from the host (dialog or bounded demo directory), never arbitrary renderer strings. No network access.
+- **Known limitations and deferred follow-up:** OGG/WAV demo files intentionally have no embedded art, so the UI falls back to branded artwork. Extended metadata (genre, replay gain, disc subtitles) is stored where available but not surfaced in the library table. Watcher-based live library updates are deferred.
+- **Milestone gate affected:** MVP-1 local import; supplies the catalog used by S004/S005.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

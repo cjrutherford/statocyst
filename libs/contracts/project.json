@@ -1,0 +1,22 @@
+{
+  "name": "contracts",
+  "projectType": "library",
+  "sourceRoot": "libs/contracts/src",
+  "tags": ["type:contract", "scope:shared"],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config libs/contracts/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p libs/contracts/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

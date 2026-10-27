@@ -1,0 +1,39 @@
+# Evidence report: S004
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64, Xwayland (`DISPLAY=:0`, Electron `--no-sandbox --disable-gpu`). Node v24.22.1, Electron 45.0.0 (Chromium 156), Playwright 1.64.1.
+- **Files changed:**
+  - `apps/desktop-electron/src/main/schemes.ts` — privileged `statocyst-media:`/`statocyst-art:` registration, imported first by `main.ts`.
+  - `apps/desktop-electron/src/main/protocol.ts` — protocol handlers, byte ranges, CORS, MIME mapping, streamed responses.
+  - `apps/desktop-electron/src/main/range.ts` — `Range` parsing/formatting (5 tests).
+  - `apps/desktop-electron/src/main/playback-service.ts` — authoritative queue/playback state, engine load/command dispatch, persistence.
+  - `apps/desktop-electron/src/main/main.ts` — services start before the first `BrowserWindow`.
+  - `apps/desktop/src/app/core/audio-engine.service.ts` — renderer transport over HTML `<audio>`.
+  - `apps/desktop/src/app/core/playback.store.ts`, `components/player-bar.component.ts`, `views/now-playing.component.ts`, `views/queue-view.component.ts`.
+- **Acceptance criteria and actual observations:**
+  - **Real local playback:** selecting a demo track transitions `idle → playing`; the snapshot position advances past 600 ms while duration reports 9.0 s (OGG) / 12.0 s (MP3). Verified in dev and packaged builds (packaged smoke: `Pearl Drift 1147ms / 9003ms`).
+  - **Controls:** pause enters `paused`; seeking to 3000 ms reports ≥2900 ms; next track changes `currentEntryId` and keeps playing; the player bar reflects title/artist/position continuously.
+  - **Media protocol:** `statocyst-media://track/<id>` serves streamed audio. A `Range: bytes=0-99` request returns HTTP `206`, exactly 100 bytes, `Content-Range: bytes 0-99/<size>`, `Accept-Ranges: bytes`, and `Content-Type: audio/mpeg` for the MP3.
+  - **Artwork protocol:** `statocyst-art://track/<id>` returns a decodable 512×512 image; renderer `Image.decode()` succeeds after the scheme/order fix.
+  - **Scheme-ordering fix:** privileged schemes are registered at module import; protocol handlers are installed before the first window is created. Without this, early renderer requests failed with `ERR_UNKNOWN_URL_SCHEME` (reproduced and then re-verified).
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop/tsconfig.json` — 0
+  - `pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts` — 0 (5 range tests passed)
+  - `pnpm exec vitest run --config libs/playback-core/vitest.config.ts` — 0 (17 tests passed)
+  - `pnpm exec nx build desktop --skip-nx-cache` — 0
+  - `node tools/build-electron.mjs` — 0
+  - `XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts` — 0
+  - `XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs` — 0 (`PACKAGED SMOKE PASS`)
+- **Tests not run (why):** No automated native-picker flow (demo path used). No exhaustive codec matrix; Electron's bundled ffmpeg determines support. No Bluetooth/audio-device switching test.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/screenshots/03-library-playing.png`
+  - `evidence/screenshots/04-now-playing.png`
+  - `evidence/screenshots/08-packaged.png`
+  - `evidence/artifacts/playwright-report/index.html`
+  - `evidence/verification.log`
+- **Safety/security considerations:** Media/art URLs are host-generated and track-id based; handlers resolve ids through the database and reject unknown ids. Range inputs are clamped and malformed/multi-range requests are rejected. Responses are limited to the selected file; no arbitrary path is accepted from the renderer. CSP permits only the two custom schemes for media/art (script-src stays `'self'`; critical-CSS inlining was disabled so no inline script is emitted).
+- **Known limitations and deferred follow-up:** Playback uses Chromium `<audio>`, not a native media backend; gapless/crossfade and exclusive output modes are deferred. Packaged Linux test used `--no-sandbox` because the SUID sandbox is unavailable in this environment. Custom schemes must remain registered before the first window — documented in `schemes.ts`.
+- **Milestone gate affected:** MVP-1 real playback; core of the standalone-player gate.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

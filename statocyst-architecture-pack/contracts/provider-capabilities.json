@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "features": ["standardJellyfinLogin", "catalogRead", "audioStreaming", "favoriteSync", "extendedEventSync", "acousticFeatureImport", "metadataWrite", "deviceAuthorization"],
+  "rules": ["capabilitiesAreExplicitNotAssumed", "unsupportedFeaturesDisableGracefully", "noCredentialReuseAcrossUnverifiedEndpoints"],
+  "note": "Exploratory capability vocabulary, not a validated Jellyfin endpoint manifest."
+}

@@ -1,0 +1,95 @@
+{
+  "track": {
+    "id": "track-01",
+    "title": "Sonar Bloom",
+    "artist": "Statocyst Ensemble",
+    "album": "Bathypelagic Sessions",
+    "albumArtist": "Statocyst Ensemble",
+    "durationMs": 184000,
+    "artworkUrl": "statocyst-art://track/track-01",
+    "sourceId": "local-source",
+    "sourceLabel": "Local Files",
+    "trackNo": 1,
+    "year": 2026,
+    "format": "MPEG 1 Layer 3",
+    "missing": false
+  },
+  "entry": {
+    "entryId": "entry-01",
+    "trackId": "track-01",
+    "track": {
+      "id": "track-01",
+      "title": "Sonar Bloom",
+      "artist": "Statocyst Ensemble",
+      "album": "Bathypelagic Sessions",
+      "durationMs": 184000,
+      "artworkUrl": null,
+      "sourceId": "local-source",
+      "sourceLabel": "Local Files",
+      "trackNo": 1,
+      "year": 2026,
+      "format": "MPEG 1 Layer 3",
+      "missing": false
+    }
+  },
+  "events": [
+    {
+      "type": "stateChanged",
+      "snapshot": {
+        "state": "playing",
+        "currentEntryId": "entry-01",
+        "positionMs": 1000,
+        "durationMs": 184000,
+        "volume": 0.8,
+        "muted": false,
+        "shuffle": false,
+        "repeat": "off",
+        "track": {
+          "id": "track-01",
+          "title": "Sonar Bloom",
+          "artist": "Statocyst Ensemble",
+          "album": "Bathypelagic Sessions",
+          "durationMs": 184000,
+          "artworkUrl": "statocyst-art://track/track-01",
+          "sourceId": "local-source",
+          "sourceLabel": "Local Files",
+          "trackNo": 1,
+          "year": 2026,
+          "format": "MPEG 1 Layer 3",
+          "missing": false
+        }
+      }
+    },
+    { "type": "positionChanged", "positionMs": 1000, "durationMs": 184000 },
+    {
+      "type": "queueChanged",
+      "queue": {
+        "entries": [
+          {
+            "entryId": "entry-01",
+            "trackId": "track-01",
+            "track": {
+              "id": "track-01",
+              "title": "Sonar Bloom",
+              "artist": "Statocyst Ensemble",
+              "album": "Bathypelagic Sessions",
+              "durationMs": 184000,
+              "artworkUrl": "statocyst-art://track/track-01",
+              "sourceId": "local-source",
+              "sourceLabel": "Local Files",
+              "trackNo": 1,
+              "year": 2026,
+              "format": "MPEG 1 Layer 3",
+              "missing": false
+            }
+          }
+        ],
+        "currentEntryId": "entry-01",
+        "shuffle": false,
+        "repeat": "off"
+      }
+    },
+    { "type": "trackChanged", "entry": { "entryId": "entry-01", "trackId": "track-01", "track": { "id": "track-01", "title": "Sonar Bloom", "artist": "Statocyst Ensemble", "album": "Bathypelagic Sessions", "durationMs": 184000, "artworkUrl": "statocyst-art://track/track-01", "sourceId": "local-source", "sourceLabel": "Local Files", "trackNo": 1, "year": 2026, "format": "MPEG 1 Layer 3", "missing": false } } },
+    { "type": "error", "error": { "code": "TRACK_NOT_FOUND", "message": "Track not found", "details": { "trackId": "missing" } } }
+  ]
+}

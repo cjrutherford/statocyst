@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://statocyst.local/contracts/playback.schema.json",
+  "title": "Statocyst playback contract",
+  "description": "Language-neutral command, event and snapshot contract shared by every Statocyst playback runtime.",
+  "schemaVersion": 1,
+  "$defs": {
+    "repeatMode": { "enum": ["off", "all", "one"] },
+    "playbackState": { "enum": ["idle", "buffering", "playing", "paused", "ended", "error"] },
+    "errorCode": {
+      "enum": [
+        "INVALID_ARGUMENT",
+        "TRACK_NOT_FOUND",
+        "ENTRY_NOT_FOUND",
+        "NO_CURRENT_TRACK",
+        "UNSUPPORTED_MEDIA",
+        "MEDIA_UNAVAILABLE",
+        "ENGINE_UNAVAILABLE",
+        "DATABASE_ERROR",
+        "IMPORT_FAILED",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "track": {
+      "type": "object",
+      "required": ["id", "title", "artist", "album", "durationMs", "sourceId", "sourceLabel", "missing"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "artist": { "type": "string" },
+        "album": { "type": "string" },
+        "albumArtist": { "type": "string" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "artworkUrl": { "type": ["string", "null"] },
+        "sourceId": { "type": "string" },
+        "sourceLabel": { "type": "string" },
+        "trackNo": { "type": ["integer", "null"], "minimum": 1 },
+        "year": { "type": ["integer", "null"] },
+        "format": { "type": ["string", "null"] },
+        "missing": { "type": "boolean" }
+      }
+    },
+    "queueEntry": {
+      "type": "object",
+      "required": ["entryId", "trackId"],
+      "additionalProperties": false,
+      "properties": {
+        "entryId": { "type": "string", "minLength": 1 },
+        "trackId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "queueEntryView": {
+      "type": "object",
+      "required": ["entryId", "trackId", "track"],
+      "additionalProperties": false,
+      "properties": {
+        "entryId": { "type": "string", "minLength": 1 },
+        "trackId": { "type": "string", "minLength": 1 },
+        "track": { "$ref": "#/$defs/track" }
+      }
+    },
+    "playbackSnapshot": {
+      "type": "object",
+      "required": [
+        "state",
+        "currentEntryId",
+        "positionMs",
+        "durationMs",
+        "volume",
+        "muted",
+        "shuffle",
+        "repeat",
+        "track"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": { "$ref": "#/$defs/playbackState" },
+        "currentEntryId": { "type": ["string", "null"] },
+        "positionMs": { "type": "number", "minimum": 0 },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "muted": { "type": "boolean" },
+        "shuffle": { "type": "boolean" },
+        "repeat": { "$ref": "#/$defs/repeatMode" },
+        "track": { "anyOf": [{ "$ref": "#/$defs/track" }, { "type": "null" }] }
+      }
+    },
+    "queueSnapshot": {
+      "type": "object",
+      "required": ["entries", "currentEntryId", "shuffle", "repeat"],
+      "additionalProperties": false,
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/queueEntryView" } },
+        "currentEntryId": { "type": ["string", "null"] },
+        "shuffle": { "type": "boolean" },
+        "repeat": { "$ref": "#/$defs/repeatMode" }
+      }
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "play" },
+            "trackId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "entryId"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "playEntry" },
+            "entryId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "const": "pause" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "positionMs"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "seek" },
+            "positionMs": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "const": "skipNext" } }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "const": "skipPrevious" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "trackIds"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "enqueue" },
+            "trackIds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "position": { "enum": ["end", "next"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "trackId"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "playNext" },
+            "trackId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "entryId"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "remove" },
+            "entryId": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "entryId", "toIndex"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "reorder" },
+            "entryId": { "type": "string", "minLength": 1 },
+            "toIndex": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "enabled"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "setShuffle" },
+            "enabled": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "mode"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "setRepeat" },
+            "mode": { "$ref": "#/$defs/repeatMode" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "volume"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "setVolume" },
+            "volume": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "muted"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "setMuted" },
+            "muted": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "const": "clear" } }
+        }
+      ]
+    },
+    "commandError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "$ref": "#/$defs/errorCode" },
+        "message": { "type": "string", "minLength": 1 },
+        "details": { "type": "object" }
+      }
+    },
+    "event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "snapshot"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "stateChanged" },
+            "snapshot": { "$ref": "#/$defs/playbackSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "positionMs", "durationMs"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "positionChanged" },
+            "positionMs": { "type": "number", "minimum": 0 },
+            "durationMs": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "queue"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "queueChanged" },
+            "queue": { "$ref": "#/$defs/queueSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "entry"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "trackChanged" },
+            "entry": { "$ref": "#/$defs/queueEntryView" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "error"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "error" },
+            "error": { "$ref": "#/$defs/commandError" }
+          }
+        }
+      ]
+    },
+    "commandResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["ok", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "ok": { "const": true },
+            "value": { "$ref": "#/$defs/playbackSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["ok", "error"],
+          "additionalProperties": false,
+          "properties": {
+            "ok": { "const": false },
+            "error": { "$ref": "#/$defs/commandError" }
+          }
+        }
+      ]
+    }
+  }
+}

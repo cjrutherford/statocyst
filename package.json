@@ -1,0 +1,65 @@
+{
+  "name": "statocyst",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Statocyst — local-first, Jellyfin-oriented music player",
+  "main": "dist/apps/desktop-electron/main.js",
+  "packageManager": "pnpm@10.18.3",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "build": "nx build desktop && nx build desktop-electron",
+    "start": "nx run desktop-electron:serve",
+    "test": "nx run-many -t test -p contracts playback-core persistence media-library desktop-electron",
+    "typecheck": "nx run-many -t typecheck -p contracts playback-core persistence media-library desktop desktop-electron",
+    "e2e": "pnpm run build && playwright test --config e2e/playwright.config.ts",
+    "e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
+    "package": "nx run desktop-electron:package",
+    "graph": "nx graph",
+    "fixtures": "node tools/generate-fixtures.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "0.18.0",
+    "music-metadata": "12.3.2"
+  },
+  "devDependencies": {
+    "@angular/build": "22.2.3",
+    "@angular/cli": "22.2.3",
+    "@angular/common": "22.2.3",
+    "@angular/compiler": "22.2.3",
+    "@angular/compiler-cli": "22.2.3",
+    "@angular/core": "22.2.3",
+    "@angular/forms": "22.2.3",
+    "@angular/platform-browser": "22.2.3",
+    "@angular/router": "22.2.3",
+    "@nx/angular": "24.0.2",
+    "@nx/devkit": "24.0.2",
+    "@nx/js": "24.0.2",
+    "@nx/workspace": "24.0.2",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.10.1",
+    "ajv": "8.20.0",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "jsdom": "27.0.0",
+    "nx": "24.0.2",
+    "rxjs": "7.8.2",
+    "sass": "1.106.1",
+    "tslib": "2.8.1",
+    "tsc-rs": "0.8.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.0",
+    "zone.js": "0.16.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "sass"
+    ]
+  }
+}

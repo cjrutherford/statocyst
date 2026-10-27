@@ -1,0 +1,11 @@
+[
+  { "type": "seek", "positionMs": -1 },
+  { "type": "setVolume", "volume": 1.5 },
+  { "type": "setRepeat", "mode": "sometimes" },
+  { "type": "enqueue", "trackIds": [] },
+  { "type": "enqueue", "trackIds": ["track-01", "track-01"] },
+  { "type": "reorder", "entryId": "entry-01", "toIndex": -2 },
+  { "type": "playNext" },
+  { "type": "unknown" },
+  { "type": "pause", "unexpected": true }
+]

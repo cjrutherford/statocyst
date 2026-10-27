@@ -1,0 +1,24 @@
+appId: app.statocyst.desktop
+productName: Statocyst
+copyright: Copyright © 2026 Statocyst contributors
+directories:
+  output: release
+  buildResources: resources/icons
+files:
+  - dist/apps/desktop/**/*
+  - dist/apps/desktop-electron/**/*
+  - resources/**/*
+  - package.json
+asar: true
+asarUnpack:
+  - node_modules/@libsql/**/*
+  - node_modules/libsql/**/*
+npmRebuild: false
+electronVersion: 45.0.0
+linux:
+  target:
+    - dir
+  category: AudioVideo
+  icon: resources/icons/statocyst-512.png
+  executableName: statocyst
+  artifactName: statocyst-${version}-${arch}.${ext}

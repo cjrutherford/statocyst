@@ -1,0 +1,40 @@
+# Evidence report: S000
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64, running under Xwayland (`DISPLAY=:0`). Node v24.22.1 (fnm `lts-latest`), pnpm 10.18.3, Nx 24.0.2, Angular 22.2.3, Electron 45.0.0, TypeScript 6.0.3, `tsc-rs` 0.8.0, Vitest 4.1.0, Playwright 1.64.1, electron-builder 26.18.0.
+- **Reference OS:** Linux/Ubuntu is the only desktop OS validated. macOS and Windows are not claimed.
+- **Files changed:**
+  - Workspace root: `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `nx.json`, `tsconfig.base.json`, `vitest.config.ts`, `electron-builder.yml`.
+  - `apps/desktop/` Angular 22 standalone application shell (`src/main.ts`, `index.html`, `project.json`, tsconfigs, `public/branding/*`).
+  - `apps/desktop-electron/` Electron host (`src/main/*`, `src/preload/preload.ts`, project/tsconfig/vitest config).
+  - `libs/contracts`, `libs/playback-core`, `libs/persistence`, `libs/media-library` project scaffolding.
+  - `tools/build-electron.mjs`, `tools/dev.mjs`, `tools/generate-fixtures.mjs`.
+- **Acceptance criteria and actual observations:**
+  - **Nx project graph:** `nx show projects` returns `desktop-electron`, `media-library`, `playback-core`, `persistence`, `contracts`, `desktop` — the renderer, host, and four shared libraries from the architecture.
+  - **Desktop shell build:** `nx build desktop` succeeds (222.85 kB initial bundle, 58.02 kB transfer) and `node tools/build-electron.mjs` emits `dist/apps/desktop-electron/main.js` + `preload.js`.
+  - **Launch:** Electron starts against the built renderer, opens `sc-root`, and renders the shell (`app.starting`, `playback.initialised`, `ipc.registered`, `app.ready` in logs).
+  - **Source tree:** app/lib split matches the pack: `type=desktop-renderer`, `type=desktop-host`, shared libs; `tsc-rs` typechecks pass for all six projects.
+- **Commands run with exit codes:**
+  - `pnpm install` — 0
+  - `pnpm exec nx show projects` — 0 (six projects)
+  - `pnpm exec tsc-rs --noEmit -p libs/contracts/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p libs/playback-core/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p libs/persistence/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p libs/media-library/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json` — 0
+  - `pnpm exec nx build desktop --skip-nx-cache` — 0
+  - `node tools/build-electron.mjs` — 0
+  - `pnpm exec nx run desktop-electron:package --skip-nx-cache` — 0
+  - `XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts` — 0 (1 test passed)
+- **Tests not run (why):** No macOS/Windows builds; no CI runner configured (ADR-031 work deferred). Native mobile projects are out of MVP-1 scope.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/verification.log` (all commands above with exit codes)
+  - `evidence/screenshots/01-library-empty.png`
+  - `evidence/artifacts/playwright-report/index.html`
+  - `release/linux-unpacked/statocyst` (packaged Linux dir target)
+- **Safety/security considerations:** Renderer is sandboxed with `contextIsolation`, no Node integration; only a typed preload bridge is exposed. Custom media schemes are privileged but scoped to `statocyst-media:`/`statocyst-art:`. No network requests are required for local playback.
+- **Known limitations and deferred follow-up:** Electron requires `--no-sandbox` in this environment (SUID sandbox unavailable); production Linux packaging should revisit this. Angular AOT requires `isolatedModules: true` in `apps/desktop/tsconfig.json`. `.gitignore` currently excludes fixture audio; demo media lives in `resources/demo` so packaged evidence is reproducible.
+- **Milestone gate affected:** MVP-1 foundation; enables S001–S005.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

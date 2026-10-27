@@ -1,0 +1,35 @@
+# Evidence report: S005
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64, Xwayland `DISPLAY=:0`. Node v24.22.1, pnpm 10.18.3, Nx 24.0.2, Electron 45.0.0, electron-builder 26.18.0 (`--dir`), Playwright 1.64.1.
+- **Files changed:**
+  - `e2e/desktop.spec.ts`, `e2e/playwright.config.ts` — full MVP-1 acceptance test and evidence capture.
+  - `tools/smoke-packaged.mjs` — packaged-build smoke test.
+  - `electron-builder.yml` — Linux `dir` target, asar with `@libsql`/`libsql` unpacked, demo resources included.
+  - `apps/desktop/src/app/core/playback.store.ts`, `settings.store.ts`, `library.store.ts`, `app.component.ts`, `views/*`, `components/*`, `styles.scss` — usability pass, theme/density, diagnostics.
+  - `apps/desktop-electron/src/main/settings-service.ts` — persisted theme/density/volume/mute.
+  - `tools/build-electron.mjs`, `apps/desktop/project.json` — production build fixes (`outfile`/`outdir` conflict, CSP-safe CSS output).
+- **Acceptance criteria and actual observations:**
+  - **Queue-edit recovery:** after importing 4 tracks, moving the first entry down and removing the last one leaves 3 entries. After closing and relaunching the app on the same data directory, the library still has 4 tracks and the queue still has 3 entries in the persisted order.
+  - **Resume valid state:** before restart the app is paused at 4000 ms; after relaunch `currentEntryId`, track id and position (≥3900 ms) are restored, state is `paused`/`idle`, and pressing Play resumes the same track with position >4000 ms and real audio.
+  - **Usability checklist:** empty state → demo import toast/stats; search/sort/album filters; play/pause/seek/next; now-playing hero with artwork and queue context; queue move/remove; settings shows database/file paths, size, schema version, Electron/Chromium versions and `Database healthy`; light/dark/system theme and comfortable/compact density apply immediately and persist.
+  - **Packaged demo:** `electron-builder --dir` produces `release/linux-unpacked/statocyst`; app runs from `app.asar` with unpacked `@libsql/linux-x64-gnu`, imports the bundled demo, decodes embedded artwork, plays real audio and writes `statocyst.db`. Smoke test reports `packaged app v0.1.0 (Electron 45.0.0)`, `artwork: Sonar Bloom 512×512`, `playback: Pearl Drift 1147ms / 9003ms`, `PACKAGED SMOKE PASS`, zero renderer errors.
+- **Commands run with exit codes:**
+  - `pnpm exec nx run desktop-electron:package --skip-nx-cache` — 0
+  - `XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts` — 0 (1 test passed, 8.4 s)
+  - `XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json` — 0
+  - Full unit run (contracts 8, playback-core 17, persistence 11, media-library 9, desktop-electron 5) — 0
+- **Tests not run (why):** No Windows/macOS packaging (Linux is the documented reference OS). Native file pickers are not automated. No installer/signing (AppImage/deb, code signing) — the gate asks for a reproducible demo, delivered as an unpacked Linux dir plus packaged smoke.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/screenshots/01-library-empty.png` … `07-restored.png`, `08-packaged.png`, `09-review-dark.png`
+  - `evidence/artifacts/playwright-report/index.html`
+  - `evidence/artifacts/playwright-output/` (traces retained on failure only)
+  - `evidence/verification.log`
+  - `release/linux-unpacked/statocyst`
+- **Safety/security considerations:** Data directory is isolated per run in tests (`STATOCYST_DATA_DIR`); smoke data is removed unless `STATOCYST_KEEP_SMOKE_DATA=1`. No credentials or network calls. Restart recovery validates persisted media paths before use and marks missing tracks rather than crashing.
+- **Known limitations and deferred follow-up:** Linux-only demonstration; `--no-sandbox` needed in this environment. Packaged app is a `dir` target, not a signed installer. Jellyfin, mobile, Android Auto and sync are intentionally out of scope for MVP-1.
+- **Milestone gate affected:** **MVP-1 — Standalone Desktop Player: gate demonstrated** (local import, real playback, persistent queue, restart recovery, packaged demo). Progress to MVP-2 is a human release-readiness decision.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

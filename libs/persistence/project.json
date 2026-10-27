@@ -1,0 +1,23 @@
+{
+  "name": "persistence",
+  "projectType": "library",
+  "sourceRoot": "libs/persistence/src",
+  "tags": ["type:persistence", "scope:desktop"],
+  "implicitDependencies": ["contracts"],
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run --config libs/persistence/vitest.config.ts",
+        "cwd": "{workspaceRoot}"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc-rs --noEmit -p libs/persistence/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      }
+    }
+  }
+}

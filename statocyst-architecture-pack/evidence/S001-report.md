@@ -1,0 +1,30 @@
+# Evidence report: S001
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64. Node v24.22.1, `@libsql/client` 0.18.0 with native `libsql` 0.5.29 (`linux-x64-gnu`), Vitest 4.1.0, `tsc-rs` 0.8.0.
+- **Files changed:**
+  - `libs/persistence/src/lib/database.ts` — `StatocystDatabase`: migration runner, WAL, integrity check, catalog/queue/app-state APIs.
+  - `libs/persistence/src/lib/migrations.ts` — migration ledger (`initial_catalog_queue_state`), applied atomically, refuses silent changes to applied migrations.
+  - `libs/persistence/src/lib/database.spec.ts` — 11 real-file tests.
+  - `libs/persistence/src/index.ts`, `project.json`, `tsconfig.json`, `vitest.config.ts`.
+  - `apps/desktop-electron/src/main/main.ts` — database path under `userData`/`STATOCYST_DATA_DIR`, bootstrap and shutdown.
+- **Acceptance criteria and actual observations:**
+  - **Persist records:** sources, tracks, queue entries, queue state, app state and settings are written to `<dataDir>/statocyst.db`.
+  - **Restart and recover:** the suite reopens a real on-disk database at the process level and reads the previously written source/track; the application-level restart assertion is demonstrated in S005 and the E2E test.
+  - **Migration/integrity on real libSQL binary:** migration runs under WAL, `PRAGMA integrity_check` returns `ok`, a failed migration rolls back with a consistent ledger, and altering an applied migration is rejected.
+  - **Additional invariants verified:** path-key deduplication with metadata update, media-source reuse by root path, queue cascade on track deletion, atomic queue replacement preserving order, hostile text stored as data (parameterized SQL), concurrent readers under WAL, and no credential-shaped columns in the catalog.
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit -p libs/persistence/tsconfig.json` — 0
+  - `pnpm exec vitest run --config libs/persistence/vitest.config.ts` — 0 (1 file, 11 tests passed)
+  - `pnpm exec nx run desktop-electron:package --skip-nx-cache` — 0 (native `@libsql/linux-x64-gnu` unpacked into `app.asar.unpacked`)
+  - `XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs` — 0 (database created at runtime, app.asar path)
+- **Tests not run (why):** Android/iOS libSQL viability is an MVP-3 gate and was not attempted. No fsync/power-loss fault injection; WAL durability is covered by the reopen and integrity tests only.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/verification.log` (persistence test run and exit code)
+  - `/tmp/statocyst-packaged-*` during smoke run (removed unless `STATOCYST_KEEP_SMOKE_DATA=1`)
+  - `release/linux-unpacked/resources/app.asar.unpacked/node_modules/@libsql/linux-x64-gnu`
+- **Safety/security considerations:** Database path is inside the app data directory; no credentials are stored (enforced by a schema test). Queries use parameter binding. Attachments (artwork) are copied into the app data directory rather than referencing arbitrary paths.
+- **Known limitations and deferred follow-up:** Migration rollback behavior is tested at the transaction level, not with an actual process crash. Schema is MVP-1 only (no Jellyfin credentials/tokens). libSQL remains the accepted embedded database; no substitute was introduced.
+- **Milestone gate affected:** MVP-1 persistence foundation; unblocks S002 and S005 recovery work.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

@@ -1,0 +1,232 @@
+$ pnpm exec tsc-rs --noEmit -p libs/contracts/tsconfig.json
+exit=0
+
+$ pnpm exec tsc-rs --noEmit -p libs/playback-core/tsconfig.json
+exit=0
+
+$ pnpm exec tsc-rs --noEmit -p libs/persistence/tsconfig.json
+exit=0
+
+$ pnpm exec tsc-rs --noEmit -p libs/media-library/tsconfig.json
+exit=0
+
+$ pnpm exec tsc-rs --noEmit -p apps/desktop/tsconfig.json
+exit=0
+
+$ pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json
+exit=0
+
+$ pnpm exec vitest run --config libs/contracts/vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (libs/contracts/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/cjrutherford/workspace/statocyst/libs/contracts[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 11:34:17
+[2m   Duration [22m 196ms[2m (transform 41ms, setup 0ms, import 109ms, tests 8ms, environment 0ms)[22m
+
+exit=0
+
+$ pnpm exec vitest run --config libs/playback-core/vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (libs/playback-core/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/cjrutherford/workspace/statocyst/libs/playback-core[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 11:34:18
+[2m   Duration [22m 116ms[2m (transform 30ms, setup 0ms, import 39ms, tests 7ms, environment 0ms)[22m
+
+exit=0
+
+$ pnpm exec vitest run --config libs/persistence/vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (libs/persistence/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/cjrutherford/workspace/statocyst/libs/persistence[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m   Start at [22m 11:34:19
+[2m   Duration [22m 178ms[2m (transform 30ms, setup 0ms, import 68ms, tests 35ms, environment 0ms)[22m
+
+exit=0
+
+$ pnpm exec vitest run --config libs/media-library/vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (libs/media-library/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/cjrutherford/workspace/statocyst/libs/media-library[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 11:34:19
+[2m   Duration [22m 168ms[2m (transform 26ms, setup 0ms, import 55ms, tests 41ms, environment 0ms)[22m
+
+exit=0
+
+$ pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (apps/desktop-electron/vitest.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/cjrutherford/workspace/statocyst/apps/desktop-electron[39m
+
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 11:34:20
+[2m   Duration [22m 102ms[2m (transform 18ms, setup 0ms, import 25ms, tests 3ms, environment 0ms)[22m
+
+exit=0
+
+$ pnpm exec nx build desktop --skip-nx-cache
+
+ NX   1 task: 1 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      1.8s
+  Cache:             Skipped (--skip-nx-cache)
+  Critical path:     1.8s (1 task)
+  Recoverable time:  <1ms
+exit=0
+
+$ node tools/build-electron.mjs
+
+  dist/apps/desktop-electron/preload.js       3.1kb
+  dist/apps/desktop-electron/preload.js.map  10.1kb
+
+⚡ Done in 4ms
+
+  dist/apps/desktop-electron/main.js       90.3kb
+  dist/apps/desktop-electron/main.js.map  173.5kb
+
+⚡ Done in 7ms
+Electron bundles written to /home/cjrutherford/workspace/statocyst/dist/apps/desktop-electron
+exit=0
+
+$ XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs
+PACKAGED SMOKE FAIL
+page.evaluate: TypeError: window.statocyst.info is not a function
+    at eval (eval at evaluate (:370:30), <anonymous>:1:24)
+    at UtilityScript.evaluate (<anonymous>:372:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+    at main (/home/cjrutherford/workspace/statocyst/tools/smoke-packaged.mjs:57:33) {
+  log: []
+}
+exit=1
+$ XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs
+packaged app v0.1.0 (Electron 45.0.0)
+artwork: Sonar Bloom 512x512
+playback: Pearl Drift 1147ms / 9003ms
+database: /tmp/statocyst-packaged-hc6Rlq/statocyst.db (4096 bytes)
+PACKAGED SMOKE PASS
+exit=0
+$ pnpm exec nx run desktop-electron:package --skip-nx-cache
+
+ NX   3 tasks: 3 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      4.9s
+  Cache:             Skipped (--skip-nx-cache)
+  Critical path:     4.9s (3 tasks)
+  Recoverable time:  <1ms
+exit=0
+$ XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts
+
+Running 1 test using 1 worker
+
+  ✓  1 e2e/desktop.spec.ts:83:5 › local import, real playback, queue edits and restart recovery (8.1s)
+
+  1 passed (8.4s)
+exit=0
+$ pnpm typecheck
+
+> statocyst@0.1.0 typecheck /home/cjrutherford/workspace/statocyst
+> nx run-many -t typecheck -p contracts playback-core persistence media-library desktop desktop-electron
+
+
+ NX   6 tasks: 6 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      254ms
+  Cache:             0/6 hit (0%)
+  Critical path:     137ms (1 task)
+  Recoverable time:  106ms (42% of the run)
+exit=0
+$ pnpm build
+
+> statocyst@0.1.0 build /home/cjrutherford/workspace/statocyst
+> nx build desktop && nx build desktop-electron
+
+
+ NX   1 task: 1 succeeded, 1 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      16ms
+  Cache:             1/1 hit (100%)
+  Critical path:     2ms (1 task)
+  Recoverable time:  <1ms
+
+ NX   2 tasks: 2 succeeded, 2 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      25ms
+  Cache:             2/2 hit (100%)
+  Critical path:     2ms (2 tasks)
+  Recoverable time:  <1ms
+exit=0
+$ XAUTHORITY=... DISPLAY=:0 pnpm exec playwright test --config e2e/playwright.config.ts
+
+Running 1 test using 1 worker
+
+  ✓  1 e2e/desktop.spec.ts:83:5 › local import, real playback, queue edits and restart recovery (7.8s)
+
+  1 passed (8.1s)
+exit=0
+$ pnpm test
+
+> statocyst@0.1.0 test /home/cjrutherford/workspace/statocyst
+> nx run-many -t test -p contracts playback-core persistence media-library desktop-electron
+
+
+ NX   5 tasks: 5 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      892ms
+  Cache:             0/5 hit (0%)
+  Critical path:     492ms (1 task)
+  Recoverable time:  400ms (45% of the run)
+exit=0
+$ pnpm exec nx run desktop-electron:package --skip-nx-cache
+exit=0
+$ XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs
+packaged app v0.1.0 (Electron 45.0.0)
+artwork: Sonar Bloom 512x512
+playback: Pearl Drift 1145ms / 9003ms
+database: /tmp/statocyst-packaged-k3izQs/statocyst.db (4096 bytes)
+PACKAGED SMOKE PASS
+exit=0

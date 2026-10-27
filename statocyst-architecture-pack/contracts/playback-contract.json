@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "commands": ["play", "pause", "seek", "skipNext", "skipPrevious", "enqueue", "playNext", "remove", "reorder", "setShuffle", "setRepeat"],
+  "events": ["stateChanged", "positionChanged", "queueChanged", "trackChanged", "error"],
+  "state": ["idle", "buffering", "playing", "paused", "ended", "error"],
+  "invariants": ["oneAuthoritativeQueuePerRuntime", "stableEntryIds", "nativeAndroidPlaybackIndependentOfWebView", "persistQueueWithoutCredentials"],
+  "note": "Conceptual cross-language contract; formal JSON Schemas and runtime bindings must be generated in a dedicated slice."
+}

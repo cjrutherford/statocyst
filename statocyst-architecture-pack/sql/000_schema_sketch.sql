@@ -1,0 +1,7 @@
+-- DRAFT ONLY. Not an executable/libSQL-validated migration.
+-- Stored here to avoid prematurely treating Argon's original SQL as accepted runnable code.
+-- Design requires: server/account-scoped media source IDs; locally imported media;
+-- source-aware queue entries; separate credential aliases; schema migration ledger;
+-- telemetry event outbox with stable event IDs; download manifests; vector schemas
+-- introduced only after native libSQL compatibility and index syntax are validated.
+-- Agent S001 must create tested executable migrations in its implementation workspace.

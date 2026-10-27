@@ -1,0 +1,19 @@
+[
+  { "type": "play" },
+  { "type": "play", "trackId": "track-01" },
+  { "type": "playEntry", "entryId": "entry-01" },
+  { "type": "pause" },
+  { "type": "seek", "positionMs": 42000 },
+  { "type": "skipNext" },
+  { "type": "skipPrevious" },
+  { "type": "enqueue", "trackIds": ["track-01", "track-02"] },
+  { "type": "enqueue", "trackIds": ["track-03"], "position": "next" },
+  { "type": "playNext", "trackId": "track-04" },
+  { "type": "remove", "entryId": "entry-01" },
+  { "type": "reorder", "entryId": "entry-02", "toIndex": 0 },
+  { "type": "setShuffle", "enabled": true },
+  { "type": "setRepeat", "mode": "one" },
+  { "type": "setVolume", "volume": 0.65 },
+  { "type": "setMuted", "muted": true },
+  { "type": "clear" }
+]

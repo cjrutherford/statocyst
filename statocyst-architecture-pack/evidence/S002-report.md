@@ -1,0 +1,36 @@
+# Evidence report: S002
+
+- **Status:** VERIFIED
+- **Commit/branch:** n/a — workspace is not a git repository; no commits made.
+- **Environment:** Ubuntu 26.04.1 LTS, Linux 7.0.0-38-generic x86_64. Node v24.22.1, TypeScript 6.0.3 / `tsc-rs` 0.8.0, Vitest 4.1.0, Ajv 8.20.0.
+- **Files changed:**
+  - `libs/contracts/src/lib/playback.ts` — transport enums, commands, events, snapshots, typed `Result`.
+  - `libs/contracts/src/lib/validate.ts` — runtime guards for IPC payloads.
+  - `libs/contracts/src/lib/bridge.ts` — `StatocystBridge`, `AppInfo`, library/settings/engine interfaces.
+  - `libs/contracts/src/lib/channels.ts` — IPC channel names.
+  - `libs/contracts/schema/playback.schema.json` and `libs/contracts/fixtures/{commands.valid,commands.invalid,events}.json`.
+  - `libs/playback-core/src/lib/queue.ts` — pure queue state machine (selection, history, repeat, shuffle, reorder, removal).
+  - `apps/desktop-electron/src/preload/preload.ts`, `apps/desktop/src/app/core/bridge.ts` — adapters over the same contract.
+  - Specs: `libs/contracts/src/lib/playback.spec.ts` (8), `libs/playback-core/src/lib/queue.spec.ts` (17).
+- **Acceptance criteria and actual observations:**
+  - **Fixture assertions:** every valid command fixture is accepted and every invalid fixture is rejected by the schema and runtime guard; event fixtures and complete snapshots validate.
+  - **Typed errors:** queue operations return typed failures instead of throwing for empty queue, unknown track/entry, and invalid arguments, and rejections do not mutate the queue.
+  - **Enums in lockstep:** JSON-schema vocabulary matches TypeScript constants and supersets the architecture-pack contract vocabulary.
+  - **Queue semantics:** stable entry ids, enqueue end/next, deduplicating play, history-based skip, repeat off/all/one at end, remove-current selection rules, clear/reorder clamping, shuffle bag exhaustion/refill, and input immutability.
+  - **Adapter parity:** preload and renderer bridge expose the same shape, with renderer-side availability detection when the host is absent.
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit -p libs/contracts/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p libs/playback-core/tsconfig.json` — 0
+  - `pnpm exec vitest run --config libs/contracts/vitest.config.ts` — 0 (1 file, 8 tests passed)
+  - `pnpm exec vitest run --config libs/playback-core/vitest.config.ts` — 0 (1 file, 17 tests passed)
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop/tsconfig.json` — 0
+  - `pnpm exec tsc-rs --noEmit -p apps/desktop-electron/tsconfig.json` — 0
+- **Tests not run (why):** No mobile/native host adapter exists yet (MVP-3+). The contract is exercised only through the desktop host and renderer.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/verification.log`
+  - `libs/contracts/schema/playback.schema.json`
+  - `libs/contracts/fixtures/`
+- **Safety/security considerations:** IPC handlers validate sender and payload shape; unknown commands are rejected with typed errors. No `eval`/dynamic dispatch from renderer input. Commands carry tokens/track ids, not filesystem paths chosen by the renderer.
+- **Known limitations and deferred follow-up:** Shuffle implementation is deterministic per queue mutation but has no persisted RNG state across restarts (queue order is persisted). Gapless/crossfade are out of scope per ADR-014.
+- **Milestone gate affected:** MVP-1 shared playback contract; unblocks S004 and renderer integration.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.
