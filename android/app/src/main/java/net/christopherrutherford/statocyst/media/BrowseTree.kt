@@ -32,6 +32,7 @@ object BrowseIds {
         if (contextId == null) "track::$id" else "track::$id$CONTEXT_SEP$contextId"
     private const val CONTEXT_SEP = "@@"
     fun queueItem(entryId: String): String = "queue::$entryId"
+    fun search(query: String): String = "search::$query"
 
     fun trackEntityId(mediaId: String): String? =
         if (mediaId.startsWith("track::")) mediaId.removePrefix("track::").substringBefore(CONTEXT_SEP) else null
@@ -157,7 +158,48 @@ object BrowseTree {
         contextId.startsWith("album::") -> albumTrackIds(contextId, data.tracks)
         contextId.startsWith("artist::") -> artistTrackIds(contextId, data.tracks)
         contextId == BrowseIds.TRACKS -> allTrackIds(data.tracks)
+        contextId.startsWith("search::") -> search(contextId.removePrefix("search::"), data)
         else -> null
+    }
+
+    /** Search results as browse nodes; tracks carry the search as their folder so play queues the results. */
+    fun searchResult(query: String, data: BrowseData, page: Int = 0, pageSize: Int = Int.MAX_VALUE): List<BrowseNode> =
+        paged(trackNodes(search(query, data), data, BrowseIds.search(query)), page, pageSize)
+
+    private fun normalize(text: String): String =
+        text.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+
+    /**
+     * Voice/text search over the catalog. An exact artist or album name returns that whole
+     * artist/album (so "play Audioslave" plays Audioslave); otherwise every query word must
+     * appear in the title/artist/album, ranked exact title > title prefix > title > artist/album.
+     */
+    fun search(query: String, data: BrowseData, limit: Int = 100): List<String> {
+        val q = normalize(query)
+        if (q.isEmpty()) return emptyList()
+        val tracks = data.tracks
+        tracks.firstOrNull { normalize(it.albumArtist ?: it.artist) == q }?.let {
+            return artistTrackIds(BrowseIds.artist(it.albumArtist ?: it.artist), tracks).take(limit)
+        }
+        tracks.firstOrNull { normalize(it.album) == q }?.let {
+            return albumTrackIds(BrowseIds.album(it.albumArtist ?: it.artist, it.album), tracks).take(limit)
+        }
+        val words = q.split(' ')
+        return tracks.mapNotNull { t ->
+            val title = normalize(t.title)
+            val hay = "$title ${normalize(t.artist)} ${normalize(t.album)}"
+            if (words.any { it !in hay }) return@mapNotNull null
+            val score = when {
+                title == q -> 100
+                title.startsWith(q) -> 80
+                words.all { it in title } -> 60
+                else -> 40
+            }
+            Triple(t, score, title)
+        }
+            .sortedWith(compareByDescending<Triple<MediaItemEntity, Int, String>> { it.second }.thenBy { it.third })
+            .take(limit)
+            .map { it.first.id }
     }
 
     /** Bounded slice of [ids] around [at], so one tap never ships thousands of items over Binder. */

@@ -4,4 +4,7 @@
     <string name="title_activity_main">Statocyst</string>
     <string name="package_name">net.christopherrutherford.statocyst</string>
     <string name="custom_url_scheme">net.christopherrutherford.statocyst</string>
+    <string name="auto_shuffle">Shuffle</string>
+    <string name="auto_repeat">Repeat</string>
+    <string name="auto_favorite">Favorite</string>
 </resources>

@@ -32,6 +32,26 @@ abstract class UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertRecent(row: RecentEntity)
 
+    @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM favorite")
+    abstract suspend fun nextFavoritePosition(): Int
+
+    @Query("DELETE FROM favorite WHERE trackId = :trackId")
+    abstract suspend fun removeFavorite(trackId: String)
+
+    @Query("SELECT COUNT(*) FROM favorite WHERE trackId = :trackId")
+    abstract suspend fun isFavorite(trackId: String): Int
+
+    /** Flips a favorite and returns the new state. */
+    @Transaction
+    open suspend fun toggleFavorite(trackId: String): Boolean {
+        if (isFavorite(trackId) > 0) {
+            removeFavorite(trackId)
+            return false
+        }
+        insertFavorites(listOf(FavoriteEntity(trackId, nextFavoritePosition())))
+        return true
+    }
+
     @Query("DELETE FROM favorite")
     abstract suspend fun clearFavorites()
 

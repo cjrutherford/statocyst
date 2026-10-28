@@ -1,7 +1,7 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import type { Track } from '@statocyst/contracts';
 import { LibraryStore } from './library.store';
-import { pushNativeUserState } from './native-user-state';
+import { initNativeUserState, pushNativeUserState } from './native-user-state';
 
 const STORAGE_KEY = 'statocyst.favorites';
 
@@ -11,7 +11,17 @@ export class FavoritesStore {
   private readonly ids = signal<Set<string>>(this.load());
 
   constructor() {
-    pushNativeUserState({ favorites: [...this.ids()] });
+    initNativeUserState([...this.ids()], (ids) => this.adopt(ids));
+  }
+
+  /** Favorites changed natively (the car): take them as the truth. */
+  private adopt(ids: string[]): void {
+    this.ids.set(new Set(ids));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    } catch {
+      /* ignore quota errors */
+    }
   }
 
   readonly favoriteIds = this.ids.asReadonly();

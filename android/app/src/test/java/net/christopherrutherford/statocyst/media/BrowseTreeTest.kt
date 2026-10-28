@@ -225,4 +225,34 @@ class BrowseTreeTest {
         val second = BrowseTree.children(BrowseIds.ALBUMS, data).map { it.id }
         assertEquals(first, second)
     }
+
+    @Test
+    fun searchByExactArtistReturnsThatArtistsTracks() {
+        assertEquals(listOf("t4"), BrowseTree.search("audioslave", data))
+        assertEquals(setOf("t1", "t2", "t3"), BrowseTree.search("A Perfect Circle", data).toSet())
+    }
+
+    @Test
+    fun searchByExactAlbumKeepsAlbumOrder() {
+        assertEquals(listOf("t1", "t2"), BrowseTree.search("eat the elephant", data))
+    }
+
+    @Test
+    fun searchRanksTitleMatchesAndIgnoresPunctuationAndCase() {
+        assertEquals("t3", BrowseTree.search("THE hollow!", data).first())
+        assertEquals(listOf("t4"), BrowseTree.search("cochise", data))
+        // Words may come from title + artist ("song by artist").
+        assertEquals(listOf("t4"), BrowseTree.search("cochise audioslave", data))
+        assertEquals(emptyList<String>(), BrowseTree.search("nothing like this", data))
+        assertEquals(emptyList<String>(), BrowseTree.search("   ", data))
+    }
+
+    @Test
+    fun searchResultsCarrySearchContextAndPage() {
+        val nodes = BrowseTree.searchResult("perfect circle", data)
+        assertEquals(3, nodes.size)
+        assertEquals(BrowseIds.search("perfect circle"), BrowseIds.contextOf(nodes.first().id))
+        assertEquals(BrowseTree.search("perfect circle", data), BrowseTree.contextTrackIds(BrowseIds.search("perfect circle"), data))
+        assertEquals(1, BrowseTree.searchResult("perfect circle", data, 1, 2).size)
+    }
 }

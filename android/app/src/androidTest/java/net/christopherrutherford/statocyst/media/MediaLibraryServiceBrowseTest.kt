@@ -9,6 +9,7 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -199,6 +200,70 @@ class MediaLibraryServiceBrowseTest {
 
         // Starting playback recorded the track as recent.
         app { browser.pause() }
+    }
+
+    @Test
+    fun carButtonsToggleShuffleRepeatAndFavorite() {
+        val ids = fixtureIds.take(3)
+        seedUserState(ids)
+        PlaybackService.onUserStateChanged()
+        val first = children("playlist::zz-test")[0]
+        app { browser.setMediaItem(first) }
+        waitFor { app { browser.mediaItemCount } == 3 }
+
+        val buttons = app { browser.mediaButtonPreferences }
+        assertEquals(
+            listOf("statocyst.shuffle", "statocyst.repeat", "statocyst.favorite"),
+            buttons.map { it.sessionCommand?.customAction },
+        )
+
+        fun send(action: String) =
+            app { browser.sendCustomCommand(SessionCommand(action, android.os.Bundle()), android.os.Bundle()) }
+                .get(10, TimeUnit.SECONDS)
+
+        send("statocyst.shuffle")
+        waitFor { app { browser.shuffleModeEnabled } }
+        send("statocyst.shuffle")
+        waitFor { !app { browser.shuffleModeEnabled } }
+
+        send("statocyst.repeat")
+        waitFor { app { browser.repeatMode } == androidx.media3.common.Player.REPEAT_MODE_ALL }
+        send("statocyst.repeat")
+        waitFor { app { browser.repeatMode } == androidx.media3.common.Player.REPEAT_MODE_ONE }
+        send("statocyst.repeat")
+        waitFor { app { browser.repeatMode } == androidx.media3.common.Player.REPEAT_MODE_OFF }
+
+        // Current track is ids[0], which the seed already favorited: toggling unfavorites it.
+        val before = children(BrowseIds.FAVORITES).size
+        send("statocyst.favorite")
+        waitFor { children(BrowseIds.FAVORITES).size == before - 1 }
+        send("statocyst.favorite")
+        waitFor { children(BrowseIds.FAVORITES).size == before }
+    }
+
+    @Test
+    fun searchAndVoiceRequestsFindAndQueueTracks() {
+        app { browser.search("ZZ Fixture 007", null) }.get(10, TimeUnit.SECONDS)
+        val results = app { browser.getSearchResult("ZZ Fixture 007", 0, 20, null) }.get(10, TimeUnit.SECONDS)
+        assertEquals(listOf("zz-fix-007"), results.value!!.map { BrowseIds.trackEntityId(it.mediaId) })
+
+        // Assistant-style request: no media id, only a search query.
+        val voice = MediaItem.Builder()
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("ZZ Fixture 012").build())
+            .build()
+        app { browser.setMediaItem(voice) }
+        // The controller briefly shows its own placeholder; wait for the session's resolved item.
+        waitFor {
+            app { browser.currentMediaItem?.mediaMetadata?.extras?.getString("trackId") } == "zz-fix-012"
+        }
+        assertEquals(1, app { browser.mediaItemCount })
+
+        // Artist voice request queues every track by that artist (fixtures + ordering by title).
+        val artistVoice = MediaItem.Builder()
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("zz artist").build())
+            .build()
+        app { browser.setMediaItem(artistVoice) }
+        waitFor { app { browser.mediaItemCount } == 100 }
     }
 
     private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) {

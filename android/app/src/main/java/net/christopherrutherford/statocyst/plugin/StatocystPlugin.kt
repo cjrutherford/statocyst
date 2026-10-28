@@ -141,9 +141,13 @@ class StatocystPlugin : Plugin() {
     override fun load() {
         super.load()
         connectController()
+        PlaybackService.favoritesListener = { ids ->
+            emit("favoritesChanged", JSObject().put("favorites", JSArray(ids)))
+        }
     }
 
     override fun handleOnDestroy() {
+        PlaybackService.favoritesListener = null
         mainHandler.removeCallbacksAndMessages(null)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null
@@ -717,6 +721,24 @@ class StatocystPlugin : Plugin() {
     }
 
     /**
+     * Native is authoritative for favorites once seeded, because the car can toggle them
+     * while the WebView is not running. The web layer adopts this at startup.
+     */
+    @PluginMethod
+    fun getUserState(call: PluginCall) {
+        io {
+            try {
+                val seeded = context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+                    .getBoolean("user_state_seeded", false)
+                val favorites = db.userDao().favorites().map { it.trackId }
+                call.resolve(JSObject().put("seeded", seeded).put("favorites", JSArray(favorites)))
+            } catch (error: Exception) {
+                call.reject(error.message ?: "getUserState failed", error)
+            }
+        }
+    }
+
+    /**
      * Mirrors the web layer's favorites and playlists into Room so the Android Auto
      * browse tree (which has no WebView) can list them. Replaces the whole mirror.
      */
@@ -740,6 +762,8 @@ class StatocystPlugin : Plugin() {
                     }
                 }
                 db.userDao().replaceUserState(favoriteRows, playlistRows, trackRows)
+                context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+                    .edit().putBoolean("user_state_seeded", true).apply()
                 PlaybackService.onUserStateChanged()
                 call.resolve(JSObject().put("favorites", favoriteRows.size).put("playlists", playlistRows.size))
             } catch (error: Exception) {
