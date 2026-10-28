@@ -123,10 +123,33 @@ import { formatBytes } from '../core/format';
             <li>Back in Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
             <li>Reconnect to the car. Statocyst appears in the media app list.</li>
           </ol>
+          @if (browseAccess(); as access) {
+            <h3 class="section-label">Head units and controllers</h3>
+            @if (access.denied.length === 0 && access.allowed.length === 0) {
+              <p class="card__hint">
+                None blocked. If your head unit shows an empty browse list, reconnect it and come
+                back: a blocked app will be listed here so you can allow it.
+              </p>
+            }
+            @for (pkg of access.denied; track pkg) {
+              <div class="access-row">
+                <code>{{ pkg }}</code>
+                <span class="card__hint">Blocked</span>
+                <button type="button" class="btn" (click)="setBrowseAllowed(pkg, true)">Allow</button>
+              </div>
+            }
+            @for (pkg of access.allowed; track pkg) {
+              <div class="access-row">
+                <code>{{ pkg }}</code>
+                <span class="card__hint">Allowed</span>
+                <button type="button" class="btn btn--quiet" (click)="setBrowseAllowed(pkg, false)">Remove</button>
+              </div>
+            }
+          }
           <p class="card__hint">
             Tips: say "play radio like <em>song</em>" to start a song radio, or use the Shuffle and
             Repeat buttons on the head unit. Browse is limited to the Android Auto system and
-            Google Assistant; other apps are blocked.
+            Google Assistant; other apps stay blocked until you allow them above.
           </p>
         </section>
         }
@@ -565,6 +588,17 @@ import { formatBytes } from '../core/format';
         color: var(--text);
         box-shadow: inset 0 0 0 1px rgba(56, 225, 255, 0.3);
       }
+      .access-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        padding: 6px 0;
+      }
+      .access-row code {
+        flex: 1 1 100%;
+        overflow-wrap: anywhere;
+      }
       .car-steps {
         margin: 12px 0;
         padding-left: 1.25rem;
@@ -847,8 +881,27 @@ export class SettingsViewComponent {
 
   protected readonly isPackaged = computed(() => this.info()?.packaged ?? false);
 
+  protected readonly browseAccess = signal<{ allowed: string[]; denied: string[] } | null>(null);
+
   constructor() {
     void this.refresh();
+    void this.refreshBrowseAccess();
+  }
+
+  protected async refreshBrowseAccess(): Promise<void> {
+    if (!isNativePlatform()) return;
+    try {
+      const api = bridge();
+      if (api.getBrowseAccess) this.browseAccess.set(await api.getBrowseAccess());
+    } catch {
+      this.browseAccess.set(null);
+    }
+  }
+
+  protected async setBrowseAllowed(packageName: string, allowed: boolean): Promise<void> {
+    const api = bridge();
+    if (!api.setBrowseAllowed) return;
+    this.browseAccess.set(await api.setBrowseAllowed({ packageName, allowed }));
   }
 
   protected async refresh(): Promise<void> {

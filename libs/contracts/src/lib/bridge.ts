@@ -313,6 +313,14 @@ export interface StatocystBridge {
   cache: CacheBridge;
   /** Song radio (Android): the seed first, then similar songs. Absent on desktop. */
   radio?(request: { trackId: string; limit?: number }): Promise<{ trackIds: string[]; source: string }>;
+  /** Android Auto browse access: controllers the user allowed and ones that were denied. Absent on desktop. */
+  getBrowseAccess?(): Promise<BrowseAccess>;
+  setBrowseAllowed?(request: { packageName: string; allowed: boolean }): Promise<BrowseAccess>;
+}
+
+export interface BrowseAccess {
+  allowed: string[];
+  denied: string[];
 }
 
 export function toBridgeError(error: unknown): ElectronBridgeError {

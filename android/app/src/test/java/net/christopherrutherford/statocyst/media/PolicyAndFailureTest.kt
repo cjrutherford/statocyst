@@ -11,6 +11,14 @@ class PolicyAndFailureTest {
     private val own = "net.christopherrutherford.statocyst"
 
     @Test
+    fun userAllowedPackageMayBrowse() {
+        val own = "net.christopherrutherford.statocyst"
+        assertFalse(ControllerPolicy.mayBrowse("com.example.headunit", own, false))
+        assertTrue(ControllerPolicy.mayBrowse("com.example.headunit", own, false, setOf("com.example.headunit")))
+        assertFalse(ControllerPolicy.mayBrowse("com.example.other", own, false, setOf("com.example.headunit")))
+    }
+
+    @Test
     fun knownCarAndSystemControllersMayBrowse() {
         assertTrue(ControllerPolicy.mayBrowse("com.google.android.projection.gearhead", own, false))
         assertTrue(ControllerPolicy.mayBrowse("com.google.android.autosimulator", own, false))

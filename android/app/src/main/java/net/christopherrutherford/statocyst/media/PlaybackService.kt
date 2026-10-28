@@ -482,8 +482,16 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun mayBrowse(browser: MediaSession.ControllerInfo): Boolean {
-        val allowed = ControllerPolicy.mayBrowse(browser.packageName, packageName, browser.isTrusted)
-        if (!allowed) android.util.Log.w(TAG, "browse denied for ${browser.packageName}")
+        val allowed = ControllerPolicy.mayBrowse(
+            browser.packageName,
+            packageName,
+            browser.isTrusted,
+            BrowseAccess.allowed(this),
+        )
+        if (!allowed) {
+            android.util.Log.w(TAG, "browse denied for ${browser.packageName}")
+            BrowseAccess.recordDenied(this, browser.packageName)
+        }
         return allowed
     }
 

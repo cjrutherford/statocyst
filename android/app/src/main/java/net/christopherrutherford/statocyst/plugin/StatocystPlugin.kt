@@ -26,6 +26,7 @@ import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.downloads.DownloadManager
 import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.LibraryImporter
+import net.christopherrutherford.statocyst.media.BrowseAccess
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.QueueItems
@@ -742,6 +743,26 @@ class StatocystPlugin : Plugin() {
      * Native is authoritative for favorites once seeded, because the car can toggle them
      * while the WebView is not running. The web layer adopts this at startup.
      */
+    @PluginMethod
+    fun getBrowseAccess(call: PluginCall) {
+        call.resolve(
+            JSObject()
+                .put("allowed", JSArray(BrowseAccess.allowed(context).sorted()))
+                .put("denied", JSArray(BrowseAccess.denied(context))),
+        )
+    }
+
+    @PluginMethod
+    fun setBrowseAllowed(call: PluginCall) {
+        val packageName = call.getString("packageName")
+        if (packageName.isNullOrBlank()) {
+            call.reject("packageName is required")
+            return
+        }
+        BrowseAccess.setAllowed(context, packageName, call.getBoolean("allowed", true) ?: true)
+        getBrowseAccess(call)
+    }
+
     @PluginMethod
     fun getUserState(call: PluginCall) {
         io(call) {

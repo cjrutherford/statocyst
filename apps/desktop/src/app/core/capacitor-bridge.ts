@@ -996,6 +996,24 @@ export class CapacitorBridge {
   };
 
   /** Song radio from the native plugin (Jellyfin instant mix topped up by the local scorer). */
+  private toBrowseAccess(result: any): { allowed: string[]; denied: string[] } {
+    return {
+      allowed: Array.isArray(result?.allowed) ? result.allowed.map(String) : [],
+      denied: Array.isArray(result?.denied) ? result.denied.map(String) : [],
+    };
+  }
+
+  async getBrowseAccess(): Promise<{ allowed: string[]; denied: string[] }> {
+    return this.toBrowseAccess(await this.plugin().getBrowseAccess());
+  }
+
+  async setBrowseAllowed(request: {
+    packageName: string;
+    allowed: boolean;
+  }): Promise<{ allowed: string[]; denied: string[] }> {
+    return this.toBrowseAccess(await this.plugin().setBrowseAllowed(request));
+  }
+
   async radio(request: { trackId: string; limit?: number }): Promise<{ trackIds: string[]; source: string }> {
     const result = await this.plugin().radio({ trackId: request.trackId, limit: request.limit ?? 50 });
     return {

@@ -19,7 +19,12 @@ object ControllerPolicy {
     private val KNOWN_PREFIXES = listOf("com.android.car.", "com.google.android.apps.automotive.")
 
     /** [trusted] is Media3's check for system apps and holders of media-control permissions. */
-    fun mayBrowse(packageName: String, ownPackage: String, trusted: Boolean): Boolean =
+    fun mayBrowse(
+        packageName: String,
+        ownPackage: String,
+        trusted: Boolean,
+        userAllowed: Set<String> = emptySet(),
+    ): Boolean =
         trusted || packageName == ownPackage || packageName in KNOWN_PACKAGES ||
-            KNOWN_PREFIXES.any { packageName.startsWith(it) }
+            packageName in userAllowed || KNOWN_PREFIXES.any { packageName.startsWith(it) }
 }
