@@ -9,7 +9,7 @@ import os, sqlite3, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADB = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Android/Sdk/platform-tools/adb")
-PKG = "net.christopherrutherford.statocyst"
+PKG = "com.hopefulaspirationsindustries.statocyst"
 FIX = os.path.join(ROOT, "fixtures/audio")
 
 def adb(*a, **k):

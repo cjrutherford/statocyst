@@ -13,3 +13,8 @@ Follows the 10-slice Android/Auto overhaul. Each slice ends with: tests green, a
 | 17 | Verification and release | Final proof | All suites rerun, S019 report updated (VERIFIED only if a DHU/car run is recorded), `RELEASING.md` updated, final APK |
 
 Out of scope / needs the user: real-car or phone-attached DHU run (slice 11 provides the script), a real Jellyfin server run, and any signing key.
+
+## Outcome (2026-10-28)
+
+- Slices 11-17 complete. Final build: versionCode 16 / 1.0.0, release-signed, applicationId `com.hopefulaspirationsindustries.statocyst`, published as `statocyst-android.apk`.
+- Remaining limits: single emulator, no real Jellyfin server run, Android Auto browse artwork for Jellyfin still tokenless, shuffle order not persisted, browser-fallback stream URL still uses `api_key`, no DHU recheck of the 1.0.0 build.

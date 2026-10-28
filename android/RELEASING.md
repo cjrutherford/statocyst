@@ -25,30 +25,27 @@ versionName "0.2.0"  // human-readable
 Android only installs an upgrade when `versionCode` increases. A published
 `versionCode` is immutable.
 
-## 3. Create the signing key (once)
+## 3. Signing key
+
+A release key was generated for the `com.hopefulaspirationsindustries.statocyst`
+application ID (RSA 4096, alias `statocyst`, valid ~30 years):
+
+- keystore: `~/.statocyst-signing/statocyst-release.jks` (outside the repo)
+- `android/keystore.properties` points at it (git-ignored); a copy of the
+  properties file is kept at `~/.statocyst-signing/keystore.properties.bak`
+- certificate SHA-256: `7d850daeb5e087ff221cc8ae9c590c2d2b381c7c911c069ee148fda8ee7be416`
+
+**Back both files up somewhere off this machine.** Losing the key means future
+builds cannot upgrade installed copies; users would have to uninstall and lose
+local state. To regenerate (new identity, no upgrades from existing installs):
 
 ```bash
-keytool -genkeypair -v \
-  -keystore android/statocyst-release.jks \
-  -alias statocyst \
-  -keyalg RSA -keysize 4096 -validity 10000
+keytool -genkeypair -v -keystore ~/.statocyst-signing/statocyst-release.jks \
+  -alias statocyst -keyalg RSA -keysize 4096 -validity 10950
 ```
 
-Then create `android/keystore.properties` (both files are git-ignored):
-
-```properties
-storeFile=statocyst-release.jks
-storePassword=…
-keyAlias=statocyst
-keyPassword=…
-```
-
-Back the keystore and its passwords up outside the repository. Losing the key
-means future builds cannot upgrade installed copies — users must uninstall and
-lose local state.
-
-Current status: no release keystore exists yet. `assembleRelease` therefore
-produces an unsigned APK, and the published artifact is the debug build.
+and write `android/keystore.properties` with `storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`.
 
 ## 4. Build and verify
 
@@ -89,25 +86,31 @@ sha256sum /tmp/statocyst.apk   # must equal release/SHA256SUMS
 The current public download is
 `https://nirvana.tail5a4a0.ts.net/statocyst-android-debug.apk`.
 
-## 6. Upgrade expectations from a debug install
+## 6. Upgrade expectations
 
-Android refuses to install a release-signed APK over a debug-signed one with
-the same `applicationId`. Plan one of these when moving to signed builds:
+The application ID changed from `net.christopherrutherford.statocyst` to
+`com.hopefulaspirationsindustries.statocyst` in 1.0.0 (versionCode 16). Android
+treats it as a different app: it installs alongside the old one, with a fresh
+library and settings. Uninstall the old app after installing the new one so
+Android Auto lists only one Statocyst. The Kotlin/Java package namespace is
+unchanged (`net.christopherrutherford.statocyst`).
 
-- Publish the signed release under a new `applicationId`
-  (e.g. `net.christopherrutherford.statocyst.release`) so both can coexist, or
-- announce a one-time uninstall/reinstall and treat local data as forfeited.
+Release-signed and debug-signed builds of the same application ID cannot
+upgrade each other. Use the release APK for real devices; the debug build is for
+the emulator and `connectedDebugAndroidTest` (which uninstalls the app, so
+reinstall the release APK afterwards).
 
-Until then, keep publishing the debug APK so existing installs upgrade in
-place.
+One-step publish: `tools/android-publish.sh --release` builds the signed APK,
+verifies the signature, publishes `statocyst-android.apk` and checks the public
+bytes. `tools/android-publish.sh` (no flag) still publishes the debug APK.
 
 ## 7. Distribution integrity
 
 - The Funnel host serves only the `release/` directory; no credentials are
   placed there.
 - Every published APK has a `SHA256SUMS` file beside it.
-- Debug APKs are self-signed with the standard Android debug key and are not
-  suitable as a long-term trust anchor.
+- Release APKs are signed with the key in section 3; debug APKs use the standard
+  Android debug key and are not a trust anchor.
 - The app itself makes no analytics or update-check requests; users update by
   downloading the APK again.
 

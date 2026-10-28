@@ -6,7 +6,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ADB="${ADB:-$HOME/Android/Sdk/platform-tools/adb}"
-PKG=net.christopherrutherford.statocyst
+PKG=com.hopefulaspirationsindustries.statocyst
 OUT="${1:-evidence/s015}"
 mkdir -p "$OUT"
 

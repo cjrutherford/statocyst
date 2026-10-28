@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'net.christopherrutherford.statocyst',
+  appId: 'com.hopefulaspirationsindustries.statocyst',
   appName: 'Statocyst',
   webDir: 'dist/apps/desktop/browser',
   server: {

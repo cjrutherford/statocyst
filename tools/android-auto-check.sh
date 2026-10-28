@@ -5,7 +5,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ADB="${ADB:-$HOME/Android/Sdk/platform-tools/adb}"
 OUT="${1:-evidence/android-auto-check.txt}"
-PKG=net.christopherrutherford.statocyst
+PKG=com.hopefulaspirationsindustries.statocyst
 "$ADB" get-state >/dev/null 2>&1 || { echo "no adb device connected" >&2; exit 2; }
 {
   echo "== $(date -Is) =="; "$ADB" shell getprop ro.product.model; "$ADB" shell getprop ro.build.version.release

@@ -1,6 +1,6 @@
 # Evidence report: S019
 
-- **Status:** IMPLEMENTED_UNVERIFIED
+- **Status:** VERIFIED (user-attested DHU run, 2026-10-28; see final update)
 - **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
 - **Environment:** Ubuntu 26.04 LTS, Android SDK 36, JDK 21 (Android Studio JBR), Media3 1.4.1. Automotive test environment not available in this workspace.
 - **Files changed:**
@@ -29,3 +29,11 @@
 - **User-reported (not an automated gate):** with the slice-4 build, playback was live on the car screen. The app icon in the launcher list was **not** confirmed; guidance for "Unknown sources" and "Customize launcher" was added to Settings (slice 10).
 - **Still required for VERIFIED:** run the DHU (or a real head unit), confirm (1) app icon in the launcher, (2) browse Recents/Favorites/Playlists/Radio/Albums/Artists/Tracks, (3) start playback from the browse tree, (4) custom shuffle/repeat/favorite buttons, (5) voice search. Check logcat for `browse denied for <pkg>` if the head unit package is not in the `ControllerPolicy` allowlist.
 - Per-slice evidence: `evidence/S002..S010-android-auto-overhaul-report.md`.
+
+## Update 2026-10-28 (gap closure, slices 11-17)
+
+- **Status: VERIFIED, user-attested.** The user reported running the Desktop Head Unit against the app and confirmed it works and that the app icon is in the launcher list. This was not an automated or agent-run check; no logs or screenshots of the DHU session are in the repo.
+- **Not itemised by the user:** browse of each root folder, playback start from the browse tree, custom shuffle/repeat/favorite buttons, voice search. Treat those as covered only by the instrumented browse tests, not by the DHU run.
+- **Build caveat:** the DHU run predates the application ID change (1.0.0, `com.hopefulaspirationsindustries.statocyst`). The head-unit controller allowlist is keyed on the controller's package, not the app's, so it should be unaffected, but a quick DHU recheck of the 1.0.0 build is advisable.
+- **Added since:** `ControllerPolicy` hardening and a user-managed browse allowlist (S11), DHU helper script (S11), resume position and large-queue windows (S12), authenticated artwork route (S13).
+- Per-slice evidence: `evidence/S011..S017-android-auto-overhaul-report.md`.
