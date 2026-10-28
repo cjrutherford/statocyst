@@ -120,8 +120,19 @@ export class PlaybackStore {
     return result;
   }
 
-  async playTrack(trackId: string): Promise<void> {
-    await this.command({ type: 'play', trackId });
+  /**
+   * Plays a track. With `contextTrackIds` (the album/list it was picked from)
+   * the queue becomes that context, so next/previous/shuffle follow it. The
+   * context is windowed around the track to keep the native queue bounded.
+   */
+  async playTrack(trackId: string, contextTrackIds?: readonly string[]): Promise<void> {
+    if (!contextTrackIds || contextTrackIds.length <= 1) {
+      await this.command({ type: 'play', trackId });
+      return;
+    }
+    const at = Math.max(0, contextTrackIds.indexOf(trackId));
+    const windowed = contextTrackIds.slice(Math.max(0, at - 50), at + 250);
+    await this.command({ type: 'play', trackId, contextTrackIds: [...windowed] });
   }
 
   async playEntry(entryId: string): Promise<void> {

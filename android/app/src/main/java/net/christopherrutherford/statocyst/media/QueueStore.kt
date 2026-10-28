@@ -4,36 +4,56 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class QueuedTrack(
-    val trackId: String,
-    val position: Int,
+/** One queue slot: [entryId] is the unique slot id, [trackId] the library track. */
+data class QueueSlot(val entryId: String, val trackId: String)
+
+data class SavedQueue(
+    val slots: List<QueueSlot>,
+    val index: Int,
+    val positionMs: Long,
+    val shuffle: Boolean,
+    val repeatMode: Int,
 )
 
+/**
+ * Persists the native playback queue, position and shuffle/repeat modes so a
+ * service restart (or a car reconnecting after the process died) resumes the
+ * same state. The ExoPlayer instance is the source of truth while running.
+ */
 class QueueStore(private val context: Context) {
     private val prefs by lazy { context.getSharedPreferences("statocyst_queue", Context.MODE_PRIVATE) }
 
-    fun saveQueue(trackIds: List<String>, currentIndex: Int) {
+    fun save(queue: SavedQueue) {
         val arr = JSONArray()
-        trackIds.forEach { arr.put(it) }
+        queue.slots.forEach { arr.put(JSONObject().put("e", it.entryId).put("t", it.trackId)) }
         prefs.edit()
-            .putString("queue", arr.toString())
-            .putInt("currentIndex", currentIndex)
+            .putString("slots", arr.toString())
+            .putInt("index", queue.index)
+            .putLong("positionMs", queue.positionMs)
+            .putBoolean("shuffle", queue.shuffle)
+            .putInt("repeatMode", queue.repeatMode)
             .putLong("updatedAt", System.currentTimeMillis())
             .apply()
     }
 
-    fun loadQueue(): Pair<List<String>, Int> {
-        val json = prefs.getString("queue", null) ?: return emptyList<String>() to -1
+    fun load(): SavedQueue? {
+        val json = prefs.getString("slots", null) ?: return null
         return try {
             val arr = JSONArray(json)
-            val list = mutableListOf<String>()
-            for (i in 0 until arr.length()) {
-                list.add(arr.getString(i))
+            val slots = (0 until arr.length()).map {
+                val o = arr.getJSONObject(it)
+                QueueSlot(o.getString("e"), o.getString("t"))
             }
-            val idx = prefs.getInt("currentIndex", if (list.isEmpty()) -1 else 0)
-            list to idx
+            if (slots.isEmpty()) return null
+            SavedQueue(
+                slots = slots,
+                index = prefs.getInt("index", 0).coerceIn(0, slots.size - 1),
+                positionMs = prefs.getLong("positionMs", 0L).coerceAtLeast(0L),
+                shuffle = prefs.getBoolean("shuffle", false),
+                repeatMode = prefs.getInt("repeatMode", 0),
+            )
         } catch (e: Exception) {
-            emptyList<String>() to -1
+            null
         }
     }
 

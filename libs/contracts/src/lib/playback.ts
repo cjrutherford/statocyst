@@ -90,7 +90,12 @@ export interface PlaybackSnapshot {
 }
 
 export type PlaybackCommand =
-  | { type: 'play'; trackId?: string }
+  /**
+   * `contextTrackIds` is the list the track was picked from (album, search
+   * result, playlist). When given, it replaces the queue so next/previous and
+   * shuffle operate on that context instead of on stale queue leftovers.
+   */
+  | { type: 'play'; trackId?: string; contextTrackIds?: string[] }
   | { type: 'playEntry'; entryId: string }
   | { type: 'pause' }
   | { type: 'seek'; positionMs: number }

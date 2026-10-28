@@ -1,47 +1,65 @@
 package net.christopherrutherford.statocyst.media
 
 import android.content.Context
+import android.net.Uri
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
-import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
-import org.json.JSONObject
+import net.christopherrutherford.statocyst.downloads.DownloadManager
 
 data class StreamResolution(
     val uri: String,
     val expiresInSeconds: Long? = null,
 )
 
+/** A track ready for the player: its catalog row and the URI to play. */
+data class PreparedTrack(val entity: MediaItemEntity, val uri: String, val remote: Boolean)
+
 /**
- * Headless source resolver. Turns a browse track id into a playable stream URI
- * using the local catalog + stored Jellyfin session. Never touches UI/WebView.
+ * Headless source resolver. Turns a track id into a playable URI using the local
+ * catalog, pinned downloads, the rolling cache and the stored Jellyfin session,
+ * in that order. Never touches UI/WebView, so it works with the app closed.
  */
 class SourceResolver(private val context: Context) {
     private val dao by lazy { StatocystDatabase.getInstance(context).mediaItemDao() }
+    private val downloads by lazy { DownloadManager(context) }
+    private val cache by lazy { MediaCache(context) }
     private val prefs by lazy { context.getSharedPreferences("statocyst", Context.MODE_PRIVATE) }
 
-    suspend fun resolve(trackId: String): StreamResolution? = withContext(Dispatchers.IO) {
+    suspend fun prepare(trackId: String): PreparedTrack? = withContext(Dispatchers.IO) {
         val entity = dao.getById(trackId) ?: return@withContext null
-        if (entity.sourceKind == "jellyfin" || entity.sourceKind == "jellyfin-library") {
-            val url = prefs.getString("jellyfin_url", null) ?: return@withContext null
-            val token = prefs.getString("jellyfin_token", null) ?: return@withContext null
-            if (url.isEmpty() || token.isEmpty()) return@withContext null
-            try {
-                // Catalog ids carry a local "jf-" prefix; the Jellyfin API id does not.
-                val itemId = trackId.removePrefix("jf-")
-                val streamUrl = "${url.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=$token"
-                return@withContext StreamResolution(streamUrl)
-            } catch (e: Exception) {
-                return@withContext null
-            }
-        } else {
-            // Local file path
-            if (entity.path.isNotEmpty()) {
-                return@withContext StreamResolution(entity.path)
-            }
+        val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
+        if (local != null) {
+            return@withContext localUri(local)?.let { PreparedTrack(entity, it, remote = false) }
         }
-        null
+        if (entity.sourceKind.startsWith("jellyfin")) {
+            return@withContext remoteStreamUrl(entity)?.let { PreparedTrack(entity, it, remote = true) }
+        }
+        File(entity.path).takeIf { it.isFile }
+            ?.let { file -> localUri(file)?.let { PreparedTrack(entity, it, remote = false) } }
+    }
+
+    suspend fun resolve(trackId: String): StreamResolution? =
+        prepare(trackId)?.let { StreamResolution(it.uri) }
+
+    /** Starts the rolling-cache prefetch for a remote track on a worker thread. */
+    fun prefetch(trackId: String) {
+        val budget = prefs.getLong("cache_budget_bytes", 0L)
+        if (budget <= 0) return
+        Thread { runCatching { cache.prefetch(trackId, budget) } }.start()
+    }
+
+    private fun localUri(file: File): String? =
+        LocalMediaServer.localUri(context.applicationContext, file)
+
+    private fun remoteStreamUrl(track: MediaItemEntity): String? {
+        val serverUrl = prefs.getString("jellyfin_url", null)?.takeIf { it.isNotEmpty() } ?: return null
+        val token = prefs.getString("jellyfin_token", null)?.takeIf { it.isNotEmpty() } ?: return null
+        val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
+        return "${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=${Uri.encode(token)}"
     }
 
     /**

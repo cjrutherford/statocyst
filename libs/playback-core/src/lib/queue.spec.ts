@@ -214,9 +214,8 @@ describe('queue semantics', () => {
     expect(after.queue.currentEntryId).not.toBeNull();
   });
 
-  // Slice 1 repro (Android Auto overhaul). These document known defects and are
-  // expected to fail until slice 2 fixes them; slice 2 flips `it.fails` to `it`.
-  it.fails('repeat all + shuffle with a single entry replays it instead of stopping', () => {
+  // Regression tests for repeat-all edge cases found in the Android Auto analysis.
+  it('repeat all + shuffle with a single entry replays it instead of stopping', () => {
     let queue = apply(createQueue(), { type: 'enqueue', trackIds: ['a'] }).queue;
     queue = apply(queue, { type: 'setShuffle', enabled: true }).queue;
     queue = apply(queue, { type: 'setRepeat', mode: 'all' }).queue;
@@ -224,11 +223,32 @@ describe('queue semantics', () => {
     expect(outcome.selection?.reason).not.toBe('none');
   });
 
-  it.fails('repeat all with a single entry reports a restart so the engine seeks to 0', () => {
+  it('repeat all with a single entry reports a restart so the engine seeks to 0', () => {
     let queue = apply(createQueue(), { type: 'enqueue', trackIds: ['a'] }).queue;
     queue = apply(queue, { type: 'setRepeat', mode: 'all' }).queue;
     const outcome = apply(queue, { type: 'skipNext' });
     expect(outcome.selection?.reason).toBe('restart');
+  });
+
+  it('play with a context list replaces the queue so next/previous follow the context', () => {
+    let queue = apply(createQueue(), { type: 'enqueue', trackIds: ['d'] }).queue;
+    const outcome = apply(queue, { type: 'play', trackId: 'b', contextTrackIds: ['a', 'b', 'c'] });
+    queue = outcome.queue;
+    expect(queue.entries.map((entry) => entry.trackId)).toEqual(['a', 'b', 'c']);
+    expect(currentEntry(queue)?.trackId).toBe('b');
+    expect(outcome.queueChanged).toBe(true);
+    expect(apply(queue, { type: 'skipNext' }).queue.currentEntryId).toBe(queue.entries[2].entryId);
+  });
+
+  it('play with a context list under shuffle visits every context entry once', () => {
+    let queue = apply(createQueue(), { type: 'setShuffle', enabled: true }).queue;
+    queue = apply(queue, { type: 'play', trackId: 'a', contextTrackIds: ['a', 'b', 'c', 'd'] }).queue;
+    const seen = new Set([currentEntry(queue)!.trackId]);
+    for (let i = 0; i < 3; i += 1) {
+      queue = apply(queue, { type: 'skipNext' }, context(undefined, seeded(i + 1))).queue;
+      seen.add(currentEntry(queue)!.trackId);
+    }
+    expect(seen.size).toBe(4);
   });
 
   it('does not mutate the input queue', () => {

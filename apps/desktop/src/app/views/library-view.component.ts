@@ -1377,7 +1377,7 @@ export class LibraryViewComponent {
   }
 
   protected play(track: Track): void {
-    void this.playback.playTrack(track.id);
+    void this.playback.playTrack(track.id, this.filtered().map((t) => t.id));
   }
 
   protected playNext(track: Track): void {

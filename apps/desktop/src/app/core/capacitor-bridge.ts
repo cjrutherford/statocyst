@@ -44,12 +44,28 @@ import {
  * lives in the renderer. Playback uses the WebView's <audio> element (the same
  * AudioEngineService as on desktop).
  */
+interface NativePlayerState {
+  state: PlaybackSnapshot['state'];
+  entryId: string | null;
+  trackId: string | null;
+  positionMs: number;
+  durationMs: number;
+  shuffle: boolean;
+  repeat: PlaybackSnapshot['repeat'];
+}
+
+interface NativePlayerQueue {
+  entries: Array<{ entryId: string; trackId: string }>;
+  currentEntryId: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class CapacitorBridge {
 
   constructor() {
     this.queueReady = this.restoreQueue();
     void this.mirrorSessionToNative();
+    void this.initNativePlayback();
   }
 
   private queue: QueueModel = createQueue();
@@ -163,6 +179,164 @@ export class CapacitorBridge {
     await this.mirrorSessionToNative();
   }
 
+  // ------------------------------------------------------------------
+  // Native playback (Android). The ExoPlayer in PlaybackService owns audio,
+  // the queue order, shuffle and repeat, so the notification, lock screen and
+  // Android Auto all control the same player. Here the queue model only
+  // computes edits; transport and modes are delegated and state is mirrored.
+  // ------------------------------------------------------------------
+
+  private nativePlayback = false;
+
+  private async initNativePlayback(): Promise<void> {
+    const plugin = this.plugin();
+    if (!plugin?.setQueue || !plugin?.getPlaybackState || !plugin?.addListener) return;
+    this.nativePlayback = true;
+    void plugin.addListener('playerState', (raw: NativePlayerState) => this.adoptNativeState(raw));
+    void plugin.addListener('playerQueue', (raw: NativePlayerQueue) => this.adoptNativeQueue(raw));
+    void plugin.addListener('playerPosition', (raw: { positionMs: number; durationMs: number }) => {
+      this.snapshot = {
+        ...this.snapshot,
+        positionMs: raw.positionMs,
+        durationMs: raw.durationMs || this.snapshot.durationMs,
+      };
+      this.emitPosition();
+    });
+    try {
+      const initial = await plugin.getPlaybackState();
+      this.adoptNativeQueue(initial.queue);
+      this.adoptNativeState(initial.state);
+    } catch {
+      // The listeners above still deliver the first state change.
+    }
+  }
+
+  private adoptNativeQueue(raw: NativePlayerQueue): void {
+    this.queue = {
+      ...this.queue,
+      entries: (raw.entries ?? []).map((entry) => ({ entryId: entry.entryId, trackId: entry.trackId })),
+      currentEntryId: raw.currentEntryId ?? null,
+      shuffleRemaining: [],
+    };
+    this.emitQueue();
+  }
+
+  private adoptNativeState(raw: NativePlayerState): void {
+    const track = raw.trackId ? (this.tracks.get(raw.trackId) ?? null) : null;
+    this.queue = {
+      ...this.queue,
+      shuffle: !!raw.shuffle,
+      repeat: raw.repeat ?? 'off',
+      currentEntryId: raw.entryId ?? null,
+    };
+    this.snapshot = {
+      ...this.snapshot,
+      state: raw.state,
+      currentEntryId: raw.entryId ?? null,
+      positionMs: raw.positionMs,
+      durationMs: raw.durationMs || track?.durationMs || 0,
+      shuffle: !!raw.shuffle,
+      repeat: raw.repeat ?? 'off',
+      track,
+    };
+    this.emitState();
+  }
+
+  /** Pushes the JS-computed queue (after an edit) down to the native player. */
+  private async pushQueueToNative(opts: { play: boolean; keepCurrent: boolean }): Promise<void> {
+    const settings = await this.getSettings().catch(() => null);
+    await this.plugin().setQueue({
+      entries: this.queue.entries.map((e) => ({ entryId: e.entryId, trackId: e.trackId })),
+      currentEntryId: this.queue.currentEntryId,
+      startPositionMs: 0,
+      play: opts.play,
+      keepCurrent: opts.keepCurrent,
+      cacheBudgetBytes: settings?.cacheBudgetBytes,
+    });
+  }
+
+  private async applyNativeCommand(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>> {
+    const plugin = this.plugin();
+    const fail = (code: string, message: string): Result<PlaybackSnapshot> =>
+      ({ ok: false, error: { code: code as never, message } });
+    try {
+      switch (command.type) {
+        case 'play': {
+          if (!command.trackId) {
+            await plugin.play();
+            break;
+          }
+          const outcome = applyQueueCommand(this.queue, command, this.context());
+          if (outcome.error) return fail(outcome.error.code, outcome.error.message);
+          this.queue = outcome.queue;
+          if (outcome.queueChanged) {
+            await this.pushQueueToNative({ play: true, keepCurrent: false });
+          } else if (outcome.selection?.entryId) {
+            await plugin.playEntry({ entryId: outcome.selection.entryId });
+          }
+          break;
+        }
+        case 'playEntry':
+          await plugin.playEntry({ entryId: command.entryId });
+          break;
+        case 'pause':
+          await plugin.pause();
+          break;
+        case 'seek':
+          if (!Number.isFinite(command.positionMs) || command.positionMs < 0) {
+            return fail('INVALID_ARGUMENT', 'Seek position must be a non-negative number');
+          }
+          await plugin.seekTo({ positionMs: command.positionMs });
+          this.snapshot = { ...this.snapshot, positionMs: command.positionMs };
+          this.emitPosition();
+          break;
+        case 'skipNext':
+          if (this.queue.entries.length === 0) return fail('NO_CURRENT_TRACK', 'The queue is empty');
+          await plugin.skipNext();
+          break;
+        case 'skipPrevious':
+          if (this.queue.entries.length === 0) return fail('NO_CURRENT_TRACK', 'The queue is empty');
+          await plugin.skipPrevious();
+          break;
+        case 'setShuffle':
+          await plugin.setShuffle({ enabled: command.enabled });
+          this.queue = { ...this.queue, shuffle: command.enabled };
+          this.snapshot = { ...this.snapshot, shuffle: command.enabled };
+          this.emitState();
+          break;
+        case 'setRepeat':
+          await plugin.setRepeat({ mode: command.mode });
+          this.queue = { ...this.queue, repeat: command.mode };
+          this.snapshot = { ...this.snapshot, repeat: command.mode };
+          this.emitState();
+          break;
+        case 'setVolume':
+          this.snapshot = { ...this.snapshot, volume: command.volume };
+          await plugin.setVolume({ volume: command.volume, muted: this.snapshot.muted });
+          break;
+        case 'setMuted':
+          this.snapshot = { ...this.snapshot, muted: command.muted };
+          await plugin.setVolume({ volume: this.snapshot.volume, muted: command.muted });
+          break;
+        default: {
+          // enqueue / playNext / remove / reorder / clear: compute the edit,
+          // then push the new order down while the current item keeps playing.
+          const wasPlaying = this.snapshot.state === 'playing' || this.snapshot.state === 'buffering';
+          const outcome = applyQueueCommand(this.queue, command, this.context());
+          if (outcome.error) return fail(outcome.error.code, outcome.error.message);
+          this.queue = outcome.queue;
+          if (outcome.queueChanged) {
+            await this.pushQueueToNative({ play: wasPlaying, keepCurrent: true });
+          }
+        }
+      }
+    } catch (error) {
+      return fail('INTERNAL_ERROR', String(error));
+    }
+    this.emitQueue();
+    return { ok: true, value: this.snapshotOf() };
+  }
+
   private context(): QueueContext {
     return {
       isKnownTrack: (trackId) => this.tracks.has(trackId),
@@ -269,6 +443,17 @@ export class CapacitorBridge {
     this.onLoadCb?.(request);
   }
 
+  /** The native state can arrive before the library loads; fill the track in late. */
+  private refreshCurrentTrack(): void {
+    if (!this.nativePlayback || this.snapshot.track) return;
+    const entry = this.queue.entries.find((e) => e.entryId === this.snapshot.currentEntryId);
+    const track = entry ? this.tracks.get(entry.trackId) : undefined;
+    if (!track) return;
+    this.snapshot = { ...this.snapshot, track, durationMs: this.snapshot.durationMs || track.durationMs };
+    this.emitState();
+    this.emitQueue();
+  }
+
   private snapshotOf(): PlaybackSnapshot {
     return { ...this.snapshot };
   }
@@ -309,6 +494,7 @@ export class CapacitorBridge {
   }
 
   async applyCommand(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>> {
+    if (this.nativePlayback) return this.applyNativeCommand(command);
     // Apply queue commands via the shared state machine.
     if (['play', 'playEntry', 'skipNext', 'skipPrevious', 'enqueue', 'playNext', 'remove', 'reorder', 'setShuffle', 'setRepeat', 'clear'].includes(command.type)) {
       const outcome = applyQueueCommand(this.queue, command, this.context());
@@ -434,6 +620,7 @@ export class CapacitorBridge {
       const tracks: Track[] = rawTracks.map((t) => this.toTrack(t, serverUrl, serverToken));
       this.tracks.clear();
       for (const t of tracks) this.tracks.set(t.id, t);
+      this.refreshCurrentTrack();
       // A queue restored before the library was readable may hold placeholders;
       // republish it now that real track metadata exists.
       if (this.queue.entries.length > 0) this.emitQueue();

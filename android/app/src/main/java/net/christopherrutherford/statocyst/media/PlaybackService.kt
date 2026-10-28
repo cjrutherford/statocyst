@@ -1,38 +1,42 @@
 package net.christopherrutherford.statocyst.media
 
-import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import net.christopherrutherford.statocyst.R
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 
 /**
- * Android Auto / MediaBrowser entry point. Serves a deterministic browse tree
- * straight from the local Room catalog with no WebView involvement.
- * Headless source resolution (S020) and queue persistence (S021).
+ * The single owner of audio on Android. The ExoPlayer here holds the real queue
+ * (including shuffle/repeat), and is driven by the WebView (through a
+ * MediaController), the notification, hardware buttons and Android Auto alike,
+ * so every surface sees the same state. Serves the Auto browse tree from the
+ * local Room catalog with no WebView involvement.
  */
 class PlaybackService : MediaLibraryService() {
 
@@ -55,9 +59,13 @@ class PlaybackService : MediaLibraryService() {
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     persistQueue()
+                    prefetchCurrent(mediaItem)
                 }
-                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                    persistQueue()
+                override fun onTimelineChanged(timeline: Timeline, reason: Int) = persistQueue()
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = persistQueue()
+                override fun onRepeatModeChanged(repeatMode: Int) = persistQueue()
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (!isPlaying) persistQueue()
                 }
                 override fun onPositionDiscontinuity(
                     oldPosition: Player.PositionInfo,
@@ -70,11 +78,8 @@ class PlaybackService : MediaLibraryService() {
                         persistQueue()
                     }
                 }
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    // Surface to Android Auto via the session; Media3 propagates
-                    // playback errors to controllers automatically. Keep the
-                    // service alive so a controller can recover/retry.
-                    lastError = error
+                override fun onPlayerError(error: PlaybackException) {
+                    android.util.Log.w(TAG, "player error: ${error.errorCodeName}", error)
                 }
             })
         }
@@ -84,9 +89,6 @@ class PlaybackService : MediaLibraryService() {
 
     @Volatile
     private var cachedTracks: List<MediaItemEntity>? = null
-
-    @Volatile
-    private var lastError: androidx.media3.common.PlaybackException? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -124,6 +126,7 @@ class PlaybackService : MediaLibraryService() {
                 .build()
             setMediaNotificationProvider(notificationProvider)
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "notification provider setup failed", e)
         }
         // Ensure foreground service is started for media playback
         try {
@@ -140,6 +143,7 @@ class PlaybackService : MediaLibraryService() {
                 startForeground(1, notification)
             }
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "startForeground failed", e)
         }
         restoreQueue()
     }
@@ -148,112 +152,21 @@ class PlaybackService : MediaLibraryService() {
         controllerInfo: MediaSession.ControllerInfo,
     ): MediaLibraryService.MediaLibrarySession = librarySession
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            "PLAY" -> {
-                val url = intent.getStringExtra("url")
-                val trackId = intent.getStringExtra("trackId")
-                if (url != null) {
-                    val mediaItem = MediaItem.fromUri(url)
-                    player.setMediaItem(mediaItem)
-                    player.prepare()
-                    player.play()
-                    persistQueue()
-                } else if (trackId != null) {
-                    scope.launch {
-                        try {
-                            val res = resolver.resolve(trackId)
-                            if (res != null) {
-                                val entity = dao.getById(trackId)
-                                val meta = MediaMetadata.Builder()
-                                    .setTitle(entity?.title)
-                                    .setArtist(entity?.artist)
-                                entity?.albumId?.let { meta.setAlbumTitle(entity.album) }
-                                resolver.artworkUrl(entity?.albumId, entity?.jellyfinImageTag)?.let { meta.setArtworkUri(Uri.parse(it)) }
-                                val mediaItem = MediaItem.Builder()
-                                    .setMediaId(trackId)
-                                    .setUri(Uri.parse(res.uri))
-                                    .setMediaMetadata(meta.build())
-                                    .build()
-                                player.setMediaItem(mediaItem)
-                                player.prepare()
-                                player.play()
-                                persistQueue()
-                            }
-                        } catch (e: Exception) {
-                            android.util.Log.w("PlaybackService", "PLAY failed for $trackId", e)
-                        }
-                    }
-                }
-            }
-            "PLAY_TRACK" -> {
-                val trackId = intent.getStringExtra("trackId") ?: return START_STICKY
-                scope.launch {
-                    try {
-                        val entity = dao.getById(trackId) ?: return@launch
-                        val res = resolver.resolve(trackId) ?: return@launch
-                        val meta = MediaMetadata.Builder()
-                            .setTitle(entity.title)
-                            .setArtist(entity.artist)
-                            .setAlbumTitle(entity.album)
-                        resolver.artworkUrl(entity.albumId, entity.jellyfinImageTag)?.let { meta.setArtworkUri(Uri.parse(it)) }
-                        val mediaItem = MediaItem.Builder()
-                            .setMediaId(trackId)
-                            .setUri(Uri.parse(res.uri))
-                            .setMediaMetadata(meta.build())
-                            .build()
-                        player.setMediaItem(mediaItem)
-                        player.prepare()
-                        player.play()
-                        persistQueue()
-                    } catch (e: Exception) {
-                    }
-                }
-            }
-            "ENQUEUE" -> {
-                val trackId = intent.getStringExtra("trackId") ?: return START_STICKY
-                scope.launch {
-                    try {
-                        val entity = dao.getById(trackId) ?: return@launch
-                        val res = resolver.resolve(trackId) ?: return@launch
-                        val mediaItem = MediaItem.Builder()
-                            .setMediaId(trackId)
-                            .setUri(Uri.parse(res.uri))
-                            .setMediaMetadata(
-                                MediaMetadata.Builder()
-                                    .setTitle(entity.title)
-                                    .setArtist(entity.artist)
-                                    .build(),
-                            )
-                            .build()
-                        player.addMediaItem(mediaItem)
-                        if (player.playbackState == Player.STATE_IDLE) {
-                            player.prepare()
-                        }
-                        persistQueue()
-                    } catch (e: Exception) {
-                    }
-                }
-            }
-            "PAUSE" -> player.pause()
-            "STOP" -> {
-                persistQueue()
-                player.stop()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
-        }
-        return START_STICKY
-    }
-
     override fun onDestroy() {
         try {
             persistQueue()
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "final persist failed", e)
         }
+        scope.cancel()
         librarySession.release()
         player.release()
         super.onDestroy()
+    }
+
+    /** Drops the cached browse catalog so the next browse reads fresh rows. */
+    fun invalidateCatalog() {
+        cachedTracks = null
     }
 
     private fun tracks(): List<MediaItemEntity> {
@@ -263,44 +176,76 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    private fun prefetchCurrent(item: MediaItem?) {
+        item ?: return
+        val trackId = QueueItems.trackIdOf(item)
+        if (item.localConfiguration?.uri?.host?.let { it != "127.0.0.1" } == true) {
+            resolver.prefetch(trackId)
+        }
+    }
+
+    /** Resolves a queue slot placeholder into a playable item with full metadata. */
+    private suspend fun resolveItem(item: MediaItem): MediaItem? {
+        val trackId = QueueItems.trackIdOf(item)
+        val prepared = resolver.prepare(trackId) ?: return null
+        val entityMeta = MediaMetadata.Builder()
+            .setTitle(prepared.entity.title)
+            .setArtist(prepared.entity.artist)
+            .setAlbumTitle(prepared.entity.album)
+            .setAlbumArtist(prepared.entity.albumArtist)
+            .setDurationMs(prepared.entity.durationMs.takeIf { it > 0 })
+            .setIsPlayable(true)
+            .setIsBrowsable(false)
+            .setExtras(android.os.Bundle().apply { putString(QueueItems.EXTRA_TRACK_ID, trackId) })
+        resolver.artworkUrl(prepared.entity.albumId, prepared.entity.jellyfinImageTag)
+            ?.let { entityMeta.setArtworkUri(Uri.parse(it)) }
+        val entryId = if (QueueItems.isSlot(item)) item.mediaId else QueueItems.newEntryId()
+        return MediaItem.Builder()
+            .setMediaId(entryId)
+            .setUri(Uri.parse(prepared.uri))
+            .setMediaMetadata(entityMeta.build())
+            .build()
+    }
+
     private fun restoreQueue() {
         scope.launch {
             try {
-                val (ids, idx) = queueStore.loadQueue()
-                if (ids.isEmpty()) return@launch
-                val list = ids.mapNotNull { id -> dao.getById(id) }
-                if (list.isEmpty()) return@launch
-                val items = list.mapNotNull { entity ->
-                    resolver.resolve(entity.id)?.let { res ->
-                        MediaItem.Builder()
-                            .setMediaId(entity.id)
-                            .setUri(Uri.parse(res.uri))
-                            .setMediaMetadata(
-                                MediaMetadata.Builder()
-                                    .setTitle(entity.title)
-                                    .setArtist(entity.artist)
-                                    .build(),
-                            )
-                            .build()
-                    }
+                val saved = queueStore.load() ?: return@launch
+                val items = mutableListOf<MediaItem>()
+                var index = saved.index
+                saved.slots.forEachIndexed { i, slot ->
+                    val resolved = resolveItem(QueueItems.placeholder(slot.entryId, slot.trackId))
+                    if (resolved != null) items.add(resolved) else if (i < saved.index) index -= 1
                 }
-                if (items.isNotEmpty()) {
-                    player.setMediaItems(items, if (idx >= 0 && idx < items.size) idx else 0, 0L)
-                    player.prepare()
-                }
+                if (items.isEmpty()) return@launch
+                player.shuffleModeEnabled = saved.shuffle
+                player.repeatMode = saved.repeatMode
+                player.setMediaItems(items, index.coerceIn(0, items.size - 1), saved.positionMs)
+                player.prepare()
             } catch (e: Exception) {
+                android.util.Log.w(TAG, "restoreQueue failed", e)
             }
         }
     }
 
     private fun persistQueue() {
         try {
-            val items = mutableListOf<String>()
-            for (i in 0 until player.mediaItemCount) {
-                items.add(player.getMediaItemAt(i).mediaId)
+            if (player.mediaItemCount == 0) return
+            val slots = (0 until player.mediaItemCount).map {
+                val item = player.getMediaItemAt(it)
+                QueueSlot(item.mediaId, QueueItems.trackIdOf(item))
             }
-            queueStore.saveQueue(items, player.currentMediaItemIndex)
+            queueStore.save(
+                SavedQueue(
+                    slots = slots,
+                    index = player.currentMediaItemIndex.coerceAtLeast(0),
+                    positionMs = player.currentPosition.coerceAtLeast(0),
+                    shuffle = player.shuffleModeEnabled,
+                    repeatMode = player.repeatMode,
+                ),
+            )
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "persistQueue failed", e)
         }
     }
 
@@ -365,26 +310,34 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(LibraryResult.ofItemList(children, params))
         }
 
+        /**
+         * Turns queue placeholders (WebView) and browse items (Android Auto) into
+         * playable slots. Resolution is async so the session thread never blocks.
+         * Unresolvable items are dropped; controllers re-sync from the queue event.
+         */
         override fun onAddMediaItems(
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
-            val resolved = mutableListOf<MediaItem>()
-            for (item in mediaItems) {
-                val trackId = BrowseIds.trackEntityId(item.mediaId) ?: item.mediaId
-                val res = runBlocking { resolver.resolve(trackId) }
-                if (res != null) {
-                    resolved.add(
-                        item.buildUpon()
-                            .setUri(Uri.parse(res.uri))
-                            .build(),
-                    )
-                } else {
-                    resolved.add(item)
+            val future = SettableFuture.create<MutableList<MediaItem>>()
+            scope.launch {
+                try {
+                    val resolved = mediaItems.mapNotNull { item ->
+                        resolveItem(item).also {
+                            if (it == null) android.util.Log.w(TAG, "dropping unresolvable ${item.mediaId}")
+                        }
+                    }.toMutableList()
+                    future.set(resolved)
+                } catch (e: Exception) {
+                    future.setException(e)
                 }
             }
-            return Futures.immediateFuture(resolved)
+            return future
         }
+    }
+
+    companion object {
+        private const val TAG = "PlaybackService"
     }
 }

@@ -107,7 +107,11 @@
           "additionalProperties": false,
           "properties": {
             "type": { "const": "play" },
-            "trackId": { "type": "string", "minLength": 1 }
+            "trackId": { "type": "string", "minLength": 1 },
+            "contextTrackIds": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
           }
         },
         {

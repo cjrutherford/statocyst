@@ -25,6 +25,18 @@ import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.PlaybackService
+import net.christopherrutherford.statocyst.media.QueueItems
+import android.content.ComponentName
+import android.os.Handler
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import org.json.JSONArray
 
 @CapacitorPlugin(name = "Statocyst")
 class StatocystPlugin : Plugin() {
@@ -110,49 +122,286 @@ class StatocystPlugin : Plugin() {
         }
     }
 
-    @PluginMethod
-    fun play(call: PluginCall) {
-        val url = call.getString("url")
-        val trackId = call.getString("trackId")
-        val intent = Intent(context, PlaybackService::class.java)
-        if (!url.isNullOrEmpty()) {
-            intent.action = "PLAY"
-            intent.putExtra("url", url)
-        } else if (!trackId.isNullOrEmpty()) {
-            intent.action = "PLAY_TRACK"
-            intent.putExtra("trackId", trackId)
-        } else {
-            call.reject("url or trackId required")
-            return
+    // ------------------------------------------------- native playback (S2)
+    //
+    // The ExoPlayer in PlaybackService owns audio, the queue, shuffle and repeat.
+    // The WebView drives it through a MediaController and mirrors its state from
+    // the playerState / playerQueue / playerPosition events below.
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var controller: MediaController? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private val pendingWork = mutableListOf<(MediaController) -> Unit>()
+    private var ticking = false
+
+    override fun load() {
+        super.load()
+        connectController()
+    }
+
+    override fun handleOnDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controller = null
+        super.handleOnDestroy()
+    }
+
+    private fun connectController() {
+        if (controllerFuture != null) return
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val future = MediaController.Builder(context, token).buildAsync()
+        controllerFuture = future
+        future.addListener({
+            try {
+                val c = future.get()
+                controller = c
+                c.addListener(playerListener)
+                pendingWork.toList().also { pendingWork.clear() }.forEach { it(c) }
+                emitState(c)
+                emitQueue(c)
+            } catch (e: Exception) {
+                android.util.Log.w("StatocystPlugin", "media controller connect failed", e)
+                controllerFuture = null
+                pendingWork.clear()
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    /** Runs [block] on the main thread once the controller is connected. */
+    private fun withController(call: PluginCall?, block: (MediaController) -> Unit) {
+        mainHandler.post {
+            val c = controller
+            try {
+                if (c != null) {
+                    block(c)
+                } else {
+                    pendingWork.add { block(it) }
+                    connectController()
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("StatocystPlugin", "controller call failed", e)
+                call?.reject(e.message ?: "playback error")
+            }
         }
-        context.startForegroundService(intent)
-        call.resolve()
+    }
+
+    private val playerListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            val c = player as? MediaController ?: return
+            if (events.containsAny(
+                    Player.EVENT_PLAYBACK_STATE_CHANGED,
+                    Player.EVENT_PLAY_WHEN_READY_CHANGED,
+                    Player.EVENT_IS_PLAYING_CHANGED,
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                    Player.EVENT_REPEAT_MODE_CHANGED,
+                    Player.EVENT_PLAYER_ERROR,
+                    Player.EVENT_POSITION_DISCONTINUITY,
+                )
+            ) {
+                emitState(c)
+            }
+            if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                emitQueue(c)
+            }
+            if (c.isPlaying) startTicker()
+        }
+    }
+
+    private fun startTicker() {
+        if (ticking) return
+        ticking = true
+        mainHandler.post(object : Runnable {
+            override fun run() {
+                val c = controller
+                if (c == null || !c.isPlaying) {
+                    ticking = false
+                    return
+                }
+                notifyListeners(
+                    "playerPosition",
+                    JSObject().put("positionMs", c.currentPosition).put("durationMs", durationOf(c)),
+                )
+                mainHandler.postDelayed(this, 500)
+            }
+        })
+    }
+
+    private fun durationOf(c: MediaController): Long =
+        if (c.duration == C.TIME_UNSET) 0L else c.duration
+
+    private fun stateName(c: MediaController): String = when {
+        c.playerError != null -> "error"
+        c.mediaItemCount == 0 -> "idle"
+        c.playbackState == Player.STATE_ENDED -> "ended"
+        c.playbackState == Player.STATE_BUFFERING -> if (c.playWhenReady) "buffering" else "paused"
+        c.playbackState == Player.STATE_READY -> if (c.playWhenReady) "playing" else "paused"
+        else -> "paused"
+    }
+
+    private fun stateJson(c: MediaController): JSObject = JSObject()
+        .put("state", stateName(c))
+        .put("entryId", c.currentMediaItem?.mediaId)
+        .put("trackId", c.currentMediaItem?.let { QueueItems.trackIdOf(it) })
+        .put("positionMs", c.currentPosition.coerceAtLeast(0))
+        .put("durationMs", durationOf(c))
+        .put("shuffle", c.shuffleModeEnabled)
+        .put("repeat", repeatName(c.repeatMode))
+        .put("error", c.playerError?.errorCodeName)
+
+    private fun queueJson(c: MediaController): JSObject {
+        val entries = JSArray()
+        for (i in 0 until c.mediaItemCount) {
+            val item = c.getMediaItemAt(i)
+            entries.put(JSObject().put("entryId", item.mediaId).put("trackId", QueueItems.trackIdOf(item)))
+        }
+        return JSObject().put("entries", entries).put("currentEntryId", c.currentMediaItem?.mediaId)
+    }
+
+    private fun emitState(c: MediaController) = notifyListeners("playerState", stateJson(c))
+
+    private fun emitQueue(c: MediaController) = notifyListeners("playerQueue", queueJson(c))
+
+    private fun repeatName(mode: Int): String = when (mode) {
+        Player.REPEAT_MODE_ALL -> "all"
+        Player.REPEAT_MODE_ONE -> "one"
+        else -> "off"
+    }
+
+    private fun repeatMode(name: String?): Int = when (name) {
+        "all" -> Player.REPEAT_MODE_ALL
+        "one" -> Player.REPEAT_MODE_ONE
+        else -> Player.REPEAT_MODE_OFF
+    }
+
+    private fun slotsFrom(array: JSONArray?): List<MediaItem> {
+        array ?: return emptyList()
+        return (0 until array.length()).map {
+            val o = array.getJSONObject(it)
+            QueueItems.placeholder(o.getString("entryId"), o.getString("trackId"))
+        }
+    }
+
+    /**
+     * Replaces the queue. With [keepCurrent] the item that is playing now stays
+     * untouched (no audio glitch) and only its neighbours are swapped, which is
+     * how queue edits made in the UI are pushed down.
+     */
+    @PluginMethod
+    fun setQueue(call: PluginCall) {
+        val entries = slotsFrom(call.getArray("entries"))
+        val currentEntryId = call.getString("currentEntryId")
+        val startPositionMs = call.getLong("startPositionMs") ?: 0L
+        val play = call.getBoolean("play") ?: false
+        val keepCurrent = call.getBoolean("keepCurrent") ?: false
+        call.getLong("cacheBudgetBytes")?.let {
+            context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+                .edit().putLong("cache_budget_bytes", it).apply()
+        }
+        withController(call) { c ->
+            val currentIdx = entries.indexOfFirst { it.mediaId == currentEntryId }
+            val playingId = c.currentMediaItem?.mediaId
+            if (keepCurrent && playingId != null && playingId == currentEntryId && currentIdx >= 0) {
+                val at = c.currentMediaItemIndex
+                if (at + 1 < c.mediaItemCount) c.removeMediaItems(at + 1, c.mediaItemCount)
+                if (at > 0) c.removeMediaItems(0, at)
+                val before = entries.subList(0, currentIdx)
+                val after = entries.subList(currentIdx + 1, entries.size)
+                if (after.isNotEmpty()) c.addMediaItems(1, after)
+                if (before.isNotEmpty()) c.addMediaItems(0, before)
+            } else if (entries.isEmpty()) {
+                c.clearMediaItems()
+            } else {
+                c.setMediaItems(entries, currentIdx.coerceAtLeast(0), startPositionMs)
+                c.prepare()
+                if (play) c.play()
+            }
+            call.resolve()
+        }
     }
 
     @PluginMethod
-    fun enqueue(call: PluginCall) {
-        val trackId = call.getString("trackId") ?: ""
-        if (trackId.isEmpty()) { call.reject("trackId required"); return }
-        val intent = Intent(context, PlaybackService::class.java).apply {
-            action = "ENQUEUE"
-            putExtra("trackId", trackId)
+    fun play(call: PluginCall) {
+        withController(call) { c ->
+            if (c.playbackState == Player.STATE_IDLE) c.prepare()
+            if (c.playbackState == Player.STATE_ENDED) c.seekTo(0)
+            c.play()
+            call.resolve()
         }
-        context.startForegroundService(intent)
-        call.resolve()
     }
 
     @PluginMethod
     fun pause(call: PluginCall) {
-        val intent = Intent(context, PlaybackService::class.java).apply { action = "PAUSE" }
-        context.startService(intent)
-        call.resolve()
+        withController(call) { it.pause(); call.resolve() }
     }
 
     @PluginMethod
     fun stop(call: PluginCall) {
-        val intent = Intent(context, PlaybackService::class.java).apply { action = "STOP" }
-        context.startService(intent)
-        call.resolve()
+        withController(call) { it.stop(); it.clearMediaItems(); call.resolve() }
+    }
+
+    @PluginMethod
+    fun skipNext(call: PluginCall) {
+        withController(call) { it.seekToNextMediaItem(); it.play(); call.resolve() }
+    }
+
+    @PluginMethod
+    fun skipPrevious(call: PluginCall) {
+        withController(call) { c ->
+            // Within the first seconds, step back a track; otherwise restart this one.
+            if (c.currentPosition > 3000) c.seekTo(0) else c.seekToPreviousMediaItem()
+            c.play()
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun playEntry(call: PluginCall) {
+        val entryId = call.getString("entryId") ?: run { call.reject("entryId required"); return }
+        withController(call) { c ->
+            val idx = (0 until c.mediaItemCount).firstOrNull { c.getMediaItemAt(it).mediaId == entryId }
+            if (idx == null) {
+                call.reject("entry not found")
+            } else {
+                c.seekTo(idx, 0)
+                if (c.playbackState == Player.STATE_IDLE) c.prepare()
+                c.play()
+                call.resolve()
+            }
+        }
+    }
+
+    @PluginMethod
+    fun seekTo(call: PluginCall) {
+        val positionMs = call.getLong("positionMs") ?: 0L
+        withController(call) { it.seekTo(positionMs.coerceAtLeast(0)); call.resolve() }
+    }
+
+    @PluginMethod
+    fun setShuffle(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        withController(call) { it.shuffleModeEnabled = enabled; call.resolve() }
+    }
+
+    @PluginMethod
+    fun setRepeat(call: PluginCall) {
+        val mode = repeatMode(call.getString("mode"))
+        withController(call) { it.repeatMode = mode; call.resolve() }
+    }
+
+    @PluginMethod
+    fun setVolume(call: PluginCall) {
+        val volume = (call.getFloat("volume") ?: 1f).coerceIn(0f, 1f)
+        val muted = call.getBoolean("muted") ?: false
+        withController(call) { it.volume = if (muted) 0f else volume; call.resolve() }
+    }
+
+    /** Current native player state + queue, used by the WebView on startup. */
+    @PluginMethod
+    fun getPlaybackState(call: PluginCall) {
+        withController(call) { c ->
+            call.resolve(JSObject().put("state", stateJson(c)).put("queue", queueJson(c)))
+        }
     }
 
     @PluginMethod

@@ -249,14 +249,12 @@ export class PlaylistsViewComponent {
   protected playPlaylist(id: string): void {
     const tracks = this.playlistsStore.tracksFor(id);
     if (tracks.length === 0) return;
-    void this.playback.enqueue(tracks.map((t) => t.id));
-    void this.playback.playTrack(tracks[0].id);
+    void this.playback.playTrack(tracks[0].id, tracks.map((t) => t.id));
   }
 
   protected playList(tracks: Track[]): void {
     if (tracks.length === 0) return;
-    void this.playback.enqueue(tracks.map((t) => t.id));
-    void this.playback.playTrack(tracks[0].id);
+    void this.playback.playTrack(tracks[0].id, tracks.map((t) => t.id));
   }
 
   protected playAllShuffled(): void {
@@ -265,8 +263,9 @@ export class PlaylistsViewComponent {
       const j = Math.floor(Math.random() * (i + 1));
       [tracks[i], tracks[j]] = [tracks[j], tracks[i]];
     }
-    void this.playback.enqueue(tracks.map((t) => t.id));
-    if (tracks[0]) void this.playback.playTrack(tracks[0].id);
-    void this.playback.toggleShuffle();
+    if (!tracks[0]) return;
+    void this.playback
+      .playTrack(tracks[0].id, tracks.map((t) => t.id))
+      .then(() => this.playback.command({ type: 'setShuffle', enabled: true }));
   }
 }
