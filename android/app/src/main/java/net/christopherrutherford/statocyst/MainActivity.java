@@ -1,11 +1,16 @@
 package net.christopherrutherford.statocyst;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.lifecycle.Lifecycle;
 import androidx.lifecycle.LifecycleEventObserver;
 import androidx.lifecycle.LifecycleOwner;
@@ -24,6 +29,14 @@ public class MainActivity extends BridgeActivity {
         // Start before the WebView loads so the first playback can resolve a URL.
         LocalMediaServer.start(getApplicationContext());
         super.onCreate(savedInstanceState);
+
+        // Android 13+: without this the media notification and lock-screen
+        // controls are silently suppressed.
+        if (Build.VERSION.SDK_INT >= 33
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.POST_NOTIFICATIONS}, 1001);
+        }
 
         // Keep the CPU awake so background buffering and playback are not
         // suspended by Doze while the app is off-screen.

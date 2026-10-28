@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -26,7 +25,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
@@ -56,6 +56,7 @@ class PlaybackService : MediaLibraryService() {
                 true,
             )
             setHandleAudioBecomingNoisy(true)
+            setWakeMode(C.WAKE_MODE_NETWORK)
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     persistQueue()
@@ -65,7 +66,7 @@ class PlaybackService : MediaLibraryService() {
                 override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = persistQueue()
                 override fun onRepeatModeChanged(repeatMode: Int) = persistQueue()
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (!isPlaying) persistQueue()
+                    if (isPlaying) consecutiveErrors = 0 else persistQueue()
                 }
                 override fun onPositionDiscontinuity(
                     oldPosition: Player.PositionInfo,
@@ -80,10 +81,18 @@ class PlaybackService : MediaLibraryService() {
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     android.util.Log.w(TAG, "player error: ${error.errorCodeName}", error)
+                    // Skip an unplayable item (offline, expired token, deleted file) instead
+                    // of stalling, but stop once every remaining item has failed in a row.
+                    if (++consecutiveErrors <= mediaItemCount && hasNextMediaItem()) {
+                        seekToNextMediaItem()
+                        prepare()
+                    }
                 }
             })
         }
     }
+
+    private var consecutiveErrors = 0
 
     private lateinit var librarySession: MediaLibraryService.MediaLibrarySession
 
@@ -95,9 +104,9 @@ class PlaybackService : MediaLibraryService() {
         // Create notification channel
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
-                "statocyst_media",
+                CHANNEL_ID,
                 getString(R.string.app_name),
-                android.app.NotificationManager.IMPORTANCE_LOW
+                android.app.NotificationManager.IMPORTANCE_LOW,
             )
             val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
             nm.createNotificationChannel(channel)
@@ -117,33 +126,16 @@ class PlaybackService : MediaLibraryService() {
         )
             .setSessionActivity(sessionActivity)
             .build()
-        // Show media controls/notification so Android Auto and lock screen can
-        // control playback even when the app is not in the foreground.
+        // Media3 owns the (single) media notification and the foreground state:
+        // it promotes the service when playback starts and demotes it on pause.
         try {
             val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId("statocyst_media")
+                .setChannelId(CHANNEL_ID)
                 .setChannelName(R.string.app_name)
                 .build()
             setMediaNotificationProvider(notificationProvider)
         } catch (e: Exception) {
             android.util.Log.w(TAG, "notification provider setup failed", e)
-        }
-        // Ensure foreground service is started for media playback
-        try {
-            val notification = NotificationCompat.Builder(this, "statocyst_media")
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(getString(R.string.app_name))
-                .setContentText("Media playback")
-                .setOngoing(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .build()
-            if (Build.VERSION.SDK_INT >= 29) {
-                startForeground(1, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-            } else {
-                startForeground(1, notification)
-            }
-        } catch (e: Exception) {
-            android.util.Log.w(TAG, "startForeground failed", e)
         }
         restoreQueue()
     }
@@ -169,11 +161,26 @@ class PlaybackService : MediaLibraryService() {
         cachedTracks = null
     }
 
-    private fun tracks(): List<MediaItemEntity> {
+    private suspend fun tracks(): List<MediaItemEntity> {
         cachedTracks?.let { return it }
-        return synchronized(this) {
-            cachedTracks ?: runBlocking { dao.getAll() }.also { cachedTracks = it }
+        return withContext(Dispatchers.IO) { dao.getAll() }.also { cachedTracks = it }
+    }
+
+    /** Runs [block] off the session thread and exposes it as a Media3-friendly future. */
+    private fun <T> future(label: String, block: suspend () -> T): ListenableFuture<T> {
+        val future = SettableFuture.create<T>()
+        scope.launch {
+            try {
+                future.set(block())
+            } catch (e: CancellationException) {
+                future.cancel(false)
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "$label failed", e)
+                future.setException(e)
+            }
         }
+        return future
     }
 
     private fun prefetchCurrent(item: MediaItem?) {
@@ -291,11 +298,11 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
-            val node = BrowseTree.node(mediaId, tracks())
-            return Futures.immediateFuture(
+            return future("onGetItem($mediaId)") {
+                val node = BrowseTree.node(mediaId, tracks())
                 if (node != null) LibraryResult.ofItem(toMediaItem(node), null)
-                else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE),
-            )
+                else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+            }
         }
 
         override fun onGetChildren(
@@ -306,8 +313,10 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
-            val children = BrowseTree.children(parentId, tracks()).map(::toMediaItem)
-            return Futures.immediateFuture(LibraryResult.ofItemList(children, params))
+            return future("onGetChildren($parentId)") {
+                val children = BrowseTree.children(parentId, tracks()).map(::toMediaItem)
+                LibraryResult.ofItemList(children, params)
+            }
         }
 
         /**
@@ -320,24 +329,18 @@ class PlaybackService : MediaLibraryService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
         ): ListenableFuture<MutableList<MediaItem>> {
-            val future = SettableFuture.create<MutableList<MediaItem>>()
-            scope.launch {
-                try {
-                    val resolved = mediaItems.mapNotNull { item ->
-                        resolveItem(item).also {
-                            if (it == null) android.util.Log.w(TAG, "dropping unresolvable ${item.mediaId}")
-                        }
-                    }.toMutableList()
-                    future.set(resolved)
-                } catch (e: Exception) {
-                    future.setException(e)
-                }
+            return future("onAddMediaItems") {
+                mediaItems.mapNotNull { item ->
+                    resolveItem(item).also {
+                        if (it == null) android.util.Log.w(TAG, "dropping unresolvable ${item.mediaId}")
+                    }
+                }.toMutableList()
             }
-            return future
         }
     }
 
     companion object {
         private const val TAG = "PlaybackService"
+        private const val CHANNEL_ID = "statocyst_media"
     }
 }
