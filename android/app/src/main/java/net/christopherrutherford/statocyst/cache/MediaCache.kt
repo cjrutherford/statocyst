@@ -8,6 +8,7 @@ import net.christopherrutherford.statocyst.db.StatocystDatabase
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.runBlocking
@@ -78,9 +79,7 @@ class MediaCache(private val context: Context) {
         if (budget <= 0) return null
 
         try {
-            val encoded = URLEncoder.encode(token, "UTF-8")
-            val connection = URL("${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=$encoded")
-                .openConnection() as HttpURLConnection
+            val connection = JellyfinAuth.open(JellyfinAuth.streamUrl(serverUrl, itemId), token)
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
             connection.instanceFollowRedirects = false

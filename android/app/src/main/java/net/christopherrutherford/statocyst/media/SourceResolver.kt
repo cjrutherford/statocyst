@@ -9,6 +9,7 @@ import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 
 data class StreamResolution(
     val uri: String,
@@ -57,9 +58,10 @@ class SourceResolver(private val context: Context) {
 
     private fun remoteStreamUrl(track: MediaItemEntity): String? {
         val serverUrl = prefs.getString("jellyfin_url", null)?.takeIf { it.isNotEmpty() } ?: return null
-        val token = prefs.getString("jellyfin_token", null)?.takeIf { it.isNotEmpty() } ?: return null
+        prefs.getString("jellyfin_token", null)?.takeIf { it.isNotEmpty() } ?: return null
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        return "${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=${Uri.encode(token)}"
+        // The session token is added by the player's data source, not put in the URL.
+        return JellyfinAuth.streamUrl(serverUrl, itemId)
     }
 
     /**
@@ -71,7 +73,6 @@ class SourceResolver(private val context: Context) {
         val url = prefs.getString("jellyfin_url", null) ?: return null
         val token = prefs.getString("jellyfin_token", null) ?: return null
         if (url.isEmpty() || token.isEmpty()) return null
-        val tag = if (!imageTag.isNullOrEmpty()) "&tag=$imageTag" else ""
-        return "${url.trimEnd('/')}/Items/$albumId/Images/Primary?api_key=$token$tag"
+        return JellyfinAuth.imageUrl(url, albumId, imageTag)
     }
 }

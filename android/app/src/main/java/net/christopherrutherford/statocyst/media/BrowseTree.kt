@@ -16,6 +16,8 @@ object BrowseIds {
     const val ARTISTS = "artists"
     const val TRACKS = "tracks"
     const val QUEUE = "queue"
+    /** A non-playable status row ("You're offline"); opens to an empty list. */
+    const val NOTICE = "info::notice"
 
     /** Folders that sit directly under the root, in display order. */
     val ROOT_FOLDERS = listOf(RECENTS, FAVORITES, PLAYLISTS, ALBUMS, ARTISTS, TRACKS, QUEUE)
@@ -66,8 +68,16 @@ data class PlaylistInfo(val id: String, val name: String, val trackIds: List<Str
 data class QueueEntry(val entryId: String, val trackId: String)
 
 /** Everything the tree is derived from. Favorites and recents are newest first. */
+/** A status the car should show instead of an unexplained empty or failing list. */
+enum class BrowseNotice(val title: String, val subtitle: String) {
+    EMPTY_LIBRARY("Your library is empty", "Open Statocyst on your phone to import music or sign in to Jellyfin"),
+    OFFLINE("You're offline", "Only downloaded and cached songs will play"),
+    SIGNED_OUT("Jellyfin is signed out", "Open Statocyst on your phone to sign in again"),
+}
+
 data class BrowseData(
     val tracks: List<MediaItemEntity>,
+    val notice: BrowseNotice? = null,
     val favorites: List<String> = emptyList(),
     val playlists: List<PlaylistInfo> = emptyList(),
     val recents: List<String> = emptyList(),
@@ -94,7 +104,8 @@ object BrowseTree {
     ): List<BrowseNode> = paged(allChildren(parentId, data), page, pageSize)
 
     private fun allChildren(parentId: String, data: BrowseData): List<BrowseNode> = when {
-        parentId == BrowseIds.ROOT -> BrowseIds.ROOT_FOLDERS.mapNotNull { folder(it, data) }
+        parentId == BrowseIds.ROOT ->
+            listOfNotNull(data.notice?.let(::noticeNode)) + BrowseIds.ROOT_FOLDERS.mapNotNull { folder(it, data) }
         parentId == BrowseIds.RECENTS -> trackNodes(data.recents, data, parentId)
         parentId == BrowseIds.FAVORITES -> trackNodes(data.favorites, data, parentId)
         parentId == BrowseIds.PLAYLISTS -> data.playlists.map(::playlistNode)
@@ -110,9 +121,13 @@ object BrowseTree {
         else -> emptyList()
     }
 
+    private fun noticeNode(notice: BrowseNotice) =
+        BrowseNode(BrowseIds.NOTICE, notice.title, notice.subtitle, childStyle = ChildStyle.LIST)
+
     /** Resolves a single media ID back to its node (used by onGetItem). */
     fun node(mediaId: String, data: BrowseData): BrowseNode? = when {
         mediaId == BrowseIds.ROOT -> root()
+        mediaId == BrowseIds.NOTICE -> data.notice?.let(::noticeNode)
         mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
         mediaId.startsWith("playlist::") ->
             data.playlists.firstOrNull { BrowseIds.playlist(it.id) == mediaId }?.let(::playlistNode)

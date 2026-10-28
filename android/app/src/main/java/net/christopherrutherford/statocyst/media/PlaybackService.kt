@@ -11,7 +11,13 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -19,6 +25,7 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList as GuavaList
 import com.google.common.collect.ImmutableList
@@ -54,7 +61,9 @@ class PlaybackService : MediaLibraryService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private val player: ExoPlayer by lazy {
-        ExoPlayer.Builder(this).build().apply {
+        ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(JellyfinAuth.dataSourceFactory(this)))
+            .build().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -99,6 +108,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     android.util.Log.w(TAG, "player error: ${error.errorCodeName}", error)
+                    reportFailure(error)
                     // Skip an unplayable item (offline, expired token, deleted file) instead
                     // of stalling, but stop once every remaining item has failed in a row.
                     if (++consecutiveErrors <= mediaItemCount && hasNextMediaItem()) {
@@ -111,6 +121,15 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var consecutiveErrors = 0
+
+    /** Tells the car and notification why a song failed instead of just skipping it. */
+    private fun reportFailure(error: PlaybackException) {
+        val http = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+        val failure = PlaybackFailures.describe(error.errorCode, http)
+        if (::librarySession.isInitialized) {
+            librarySession.sendError(SessionError(failure.sessionCode, failure.message))
+        }
+    }
 
     private lateinit var librarySession: MediaLibraryService.MediaLibrarySession
 
@@ -144,6 +163,12 @@ class PlaybackService : MediaLibraryService() {
             LibrarySessionCallback(),
         )
             .setSessionActivity(sessionActivity)
+            .setBitmapLoader(
+                DataSourceBitmapLoader(
+                    DataSourceBitmapLoader.DEFAULT_EXECUTOR_SERVICE.get(),
+                    JellyfinAuth.dataSourceFactory(this),
+                ),
+            )
             .build()
         // Media3 owns the (single) media notification and the foreground state:
         // it promotes the service when playback starts and demotes it on pause.
@@ -262,6 +287,12 @@ class PlaybackService : MediaLibraryService() {
         return withContext(Dispatchers.IO) { dao.getAll() }.also { cachedTracks = it }
     }
 
+    private fun isOnline(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return true
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     /** Catalog + favorites/playlists/recents + the live queue. Must run on the main thread. */
     private suspend fun browseData(): BrowseData {
         val catalog = tracks()
@@ -269,9 +300,18 @@ class PlaybackService : MediaLibraryService() {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
         val (favorites, recents, playlistRows) = user
+        val hasRemote = catalog.any { it.sourceKind.startsWith("jellyfin") }
+        val signedIn = !getSharedPreferences("statocyst", MODE_PRIVATE).getString("jellyfin_token", null).isNullOrEmpty()
+        val notice = when {
+            catalog.isEmpty() -> BrowseNotice.EMPTY_LIBRARY
+            hasRemote && !signedIn -> BrowseNotice.SIGNED_OUT
+            hasRemote && !isOnline() -> BrowseNotice.OFFLINE
+            else -> null
+        }
         val tracksByPlaylist = playlistRows.second.groupBy { it.playlistId }
         return BrowseData(
             tracks = catalog,
+            notice = notice,
             // Web order is oldest-first; Auto shows the most recent favorite on top.
             favorites = favorites.sortedByDescending { it.position }.map { it.trackId },
             playlists = playlistRows.first.map { pl ->
@@ -438,6 +478,15 @@ class PlaybackService : MediaLibraryService() {
         return builder.build()
     }
 
+    private fun mayBrowse(browser: MediaSession.ControllerInfo): Boolean {
+        val allowed = ControllerPolicy.mayBrowse(browser.packageName, packageName, browser.isTrusted)
+        if (!allowed) android.util.Log.w(TAG, "browse denied for ${browser.packageName}")
+        return allowed
+    }
+
+    private fun <T : Any> deniedBrowse(): ListenableFuture<LibraryResult<T>> =
+        Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED))
+
     private inner class LibrarySessionCallback :
         MediaLibraryService.MediaLibrarySession.Callback {
 
@@ -446,7 +495,7 @@ class PlaybackService : MediaLibraryService() {
             browser: MediaSession.ControllerInfo,
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(
+            if (!mayBrowse(browser)) deniedBrowse() else Futures.immediateFuture(
                 LibraryResult.ofItem(
                     toMediaItem(BrowseTree.root()),
                     // Defaults for every folder; folders override them with their own hints.
@@ -516,6 +565,7 @@ class PlaybackService : MediaLibraryService() {
             query: String,
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<Void>> = future("onSearch($query)") {
+            if (!mayBrowse(browser)) return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED)
             val count = BrowseTree.search(query, browseData()).size
             session.notifySearchResultChanged(browser, query, count, params)
             LibraryResult.ofVoid()
@@ -529,6 +579,7 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = future("onGetSearchResult($query)") {
+            if (!mayBrowse(browser)) return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED)
             LibraryResult.ofItemList(
                 BrowseTree.searchResult(query, browseData(), page, pageSize).map(::toMediaItem),
                 params,
@@ -541,6 +592,7 @@ class PlaybackService : MediaLibraryService() {
             mediaId: String,
         ): ListenableFuture<LibraryResult<MediaItem>> {
             return future("onGetItem($mediaId)") {
+                if (!mayBrowse(browser)) return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED)
                 val node = BrowseTree.node(mediaId, browseData())
                 if (node != null) LibraryResult.ofItem(toMediaItem(node), null)
                 else LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
@@ -556,6 +608,7 @@ class PlaybackService : MediaLibraryService() {
             params: MediaLibraryService.LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
             return future("onGetChildren($parentId)") {
+                if (!mayBrowse(browser)) return@future LibraryResult.ofError(LibraryResult.RESULT_ERROR_PERMISSION_DENIED)
                 val children = BrowseTree.children(parentId, browseData(), page, pageSize).map(::toMediaItem)
                 LibraryResult.ofItemList(children, params)
             }

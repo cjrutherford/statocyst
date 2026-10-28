@@ -22,20 +22,7 @@ data class JellyfinAuthResult(
 )
 
 object JellyfinClient {
-    private const val CLIENT = "Statocyst"
-    private const val DEVICE = "Statocyst Android"
-    private const val VERSION = "0.1.0"
-
-    private fun authHeader(token: String? = null): String {
-        val parts = mutableListOf(
-            "Client=\"$CLIENT\"",
-            "Device=\"$DEVICE\"",
-            "DeviceId=\"statocyst-android\"",
-            "Version=\"$VERSION\"",
-        )
-        if (token != null) parts.add("Token=\"$token\"")
-        return "MediaBrowser ${parts.joinToString(", ")}"
-    }
+    private fun authHeader(token: String? = null): String = JellyfinAuth.header(token)
 
     private fun request(
         method: String,
@@ -112,8 +99,7 @@ object JellyfinClient {
      */
     fun probeStream(baseUrl: String, itemId: String, token: String): Boolean {
         val url = baseUrl.trimEnd('/')
-        val encoded = URLEncoder.encode(token, "UTF-8")
-        val conn = URL("$url/Audio/$itemId/stream?static=true&api_key=$encoded").openConnection() as HttpURLConnection
+        val conn = JellyfinAuth.open(JellyfinAuth.streamUrl(url, itemId), token)
         conn.requestMethod = "HEAD"
         conn.instanceFollowRedirects = false
         conn.connectTimeout = 8_000

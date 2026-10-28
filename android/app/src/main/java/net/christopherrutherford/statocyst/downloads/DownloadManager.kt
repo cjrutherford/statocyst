@@ -9,6 +9,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
@@ -141,9 +142,7 @@ class DownloadManager(private val context: Context) {
         val token = prefs.getString("jellyfin_token", null)
             ?: throw IllegalStateException("The server is not signed in")
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        val encoded = URLEncoder.encode(token, "UTF-8")
-        val connection = URL("${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=$encoded")
-            .openConnection() as HttpURLConnection
+        val connection = JellyfinAuth.open(JellyfinAuth.streamUrl(serverUrl, itemId), token)
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
         connection.instanceFollowRedirects = false

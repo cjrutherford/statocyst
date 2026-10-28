@@ -255,4 +255,14 @@ class BrowseTreeTest {
         assertEquals(BrowseTree.search("perfect circle", data), BrowseTree.contextTrackIds(BrowseIds.search("perfect circle"), data))
         assertEquals(1, BrowseTree.searchResult("perfect circle", data, 1, 2).size)
     }
+
+    @Test
+    fun noticeLeadsTheRootAndOpensEmpty() {
+        val empty = BrowseData(tracks = emptyList(), notice = BrowseNotice.EMPTY_LIBRARY)
+        val root = BrowseTree.children(BrowseIds.ROOT, empty)
+        assertEquals(BrowseIds.NOTICE, root.first().id)
+        assertTrue(!root.first().playable)
+        assertEquals(emptyList<String>(), BrowseTree.children(BrowseIds.NOTICE, empty).map { it.id })
+        assertNull(BrowseTree.node(BrowseIds.NOTICE, BrowseData(tracks = emptyList())))
+    }
 }

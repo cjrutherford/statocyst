@@ -56,7 +56,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun listTracks(call: PluginCall) {
-        io {
+        io(call) {
             val tracks = dao.getAll().map(::trackJson)
             call.resolve(JSObject().put("tracks", JSArray(tracks)))
         }
@@ -66,7 +66,7 @@ class StatocystPlugin : Plugin() {
     fun removeTrack(call: PluginCall) {
         val trackId = call.getString("trackId") ?: ""
         if (trackId.isEmpty()) { call.reject("trackId required"); return }
-        io {
+        io(call) {
             cache.lookup(trackId)?.delete()
             downloads.remove(trackId)
             val removed = importer.removeTrack(trackId)
@@ -77,7 +77,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun libraryStats(call: PluginCall) {
-        io {
+        io(call) {
             val tracks = dao.getAll()
             val duration = tracks.sumOf { it.durationMs }
             call.resolve(
@@ -102,7 +102,7 @@ class StatocystPlugin : Plugin() {
         val trackId = call.getString("trackId") ?: ""
         if (trackId.isEmpty()) { call.reject("trackId required"); return }
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
-        io {
+        io(call) {
             val track = dao.getById(trackId)
             val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
             if (local != null) {
@@ -414,7 +414,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun dbCount(call: PluginCall) {
-        io { call.resolve(JSObject().put("count", dao.count())) }
+        io(call) { call.resolve(JSObject().put("count", dao.count())) }
     }
 
     // ------------------------------------------------------------- downloads
@@ -423,7 +423,7 @@ class StatocystPlugin : Plugin() {
     fun downloadTrack(call: PluginCall) {
         val trackId = call.getString("trackId") ?: ""
         if (trackId.isEmpty()) { call.reject("trackId required"); return }
-        io {
+        io(call) {
             try {
                 val outcome = downloads.download(trackId) { received, total, done, error ->
                     emit("downloadProgress", JSObject()
@@ -451,7 +451,7 @@ class StatocystPlugin : Plugin() {
     fun removeDownload(call: PluginCall) {
         val trackId = call.getString("trackId") ?: ""
         if (trackId.isEmpty()) { call.reject("trackId required"); return }
-        io {
+        io(call) {
             val removed = downloads.remove(trackId)
             call.resolve(JSObject().put("removed", removed))
         }
@@ -459,7 +459,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun listDownloads(call: PluginCall) {
-        io {
+        io(call) {
             val array = JSArray(downloads.list().map(::downloadJson))
             call.resolve(JSObject().put("downloads", array))
         }
@@ -467,7 +467,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun downloadStats(call: PluginCall) {
-        io {
+        io(call) {
             val (count, bytes) = downloads.stats()
             call.resolve(JSObject().put("count", count).put("totalBytes", bytes))
         }
@@ -478,7 +478,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun cacheStats(call: PluginCall) {
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
-        io {
+        io(call) {
             val stats = cache.stats(budget)
             call.resolve(
                 JSObject()
@@ -492,12 +492,12 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun cacheClear(call: PluginCall) {
-        io { call.resolve(JSObject().put("removed", cache.clear())) }
+        io(call) { call.resolve(JSObject().put("removed", cache.clear())) }
     }
 
     @PluginMethod
     fun cacheReconcile(call: PluginCall) {
-        io {
+        io(call) {
             val (removedEntries, removedOrphans) = cache.reconcile()
             call.resolve(
                 JSObject().put("removedEntries", removedEntries).put("removedOrphans", removedOrphans),
@@ -665,7 +665,7 @@ class StatocystPlugin : Plugin() {
     fun discoverServer(call: PluginCall) {
         val url = call.getString("url") ?: ""
         if (url.isEmpty()) { call.reject("url required"); return }
-        io {
+        io(call) {
             val info = JellyfinClient.discover(url)
             call.resolve(
                 JSObject()
@@ -686,7 +686,7 @@ class StatocystPlugin : Plugin() {
             call.reject("url, username, and password required")
             return
         }
-        io {
+        io(call) {
             val auth = JellyfinClient.authenticate(url, username, password)
             call.resolve(authJson(auth))
         }
@@ -701,7 +701,7 @@ class StatocystPlugin : Plugin() {
             call.reject("url, userId, and token required")
             return
         }
-        io {
+        io(call) {
             var imported = 0
             var startIndex = 0
             val pageSize = 200
@@ -726,7 +726,7 @@ class StatocystPlugin : Plugin() {
      */
     @PluginMethod
     fun getUserState(call: PluginCall) {
-        io {
+        io(call) {
             try {
                 val seeded = context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
                     .getBoolean("user_state_seeded", false)
@@ -746,7 +746,7 @@ class StatocystPlugin : Plugin() {
     fun syncUserState(call: PluginCall) {
         val favorites = call.getArray("favorites")?.toList<String>().orEmpty()
         val playlistsJson = call.getArray("playlists")
-        io {
+        io(call) {
             try {
                 val favoriteRows = favorites.mapIndexed { i, id -> FavoriteEntity(id, i) }
                 val playlistRows = mutableListOf<PlaylistEntity>()
@@ -780,7 +780,7 @@ class StatocystPlugin : Plugin() {
             call.reject("url and token required")
             return
         }
-        io {
+        io(call) {
             val itemId = call.getString("itemId")
                 ?: dao.getAll().firstOrNull { it.id.startsWith("jf-") }?.id?.removePrefix("jf-")
             if (itemId == null) {
@@ -820,7 +820,7 @@ class StatocystPlugin : Plugin() {
     fun initiateQuickConnect(call: PluginCall) {
         val url = call.getString("url") ?: ""
         if (url.isEmpty()) { call.reject("url required"); return }
-        io {
+        io(call) {
             val init = JellyfinClient.initiateQuickConnect(url)
             call.resolve(JSObject().put("secret", init.secret).put("code", init.code))
         }
@@ -831,7 +831,7 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         val secret = call.getString("secret") ?: ""
         if (url.isEmpty() || secret.isEmpty()) { call.reject("url and secret required"); return }
-        io {
+        io(call) {
             call.resolve(JSObject().put("authenticated", JellyfinClient.quickConnectStatus(url, secret)))
         }
     }
@@ -841,7 +841,7 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         val secret = call.getString("secret") ?: ""
         if (url.isEmpty() || secret.isEmpty()) { call.reject("url and secret required"); return }
-        io {
+        io(call) {
             val auth = JellyfinClient.authenticateWithQuickConnect(url, secret)
             call.resolve(authJson(auth))
         }
@@ -851,7 +851,7 @@ class StatocystPlugin : Plugin() {
 
     @PluginMethod
     fun appInfo(call: PluginCall) {
-        io {
+        io(call) {
             val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
             call.resolve(
                 JSObject()
@@ -869,7 +869,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun diagnostics(call: PluginCall) {
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
-        io {
+        io(call) {
             val snapshot = Diagnostics.snapshot(context, db, cache, budget, queueEntries = 0)
             call.resolve(
                 JSObject()
@@ -888,7 +888,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun healthChecks(call: PluginCall) {
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
-        io {
+        io(call) {
             val checks = Diagnostics.health(context, db, cache, downloads, budget)
             val array = JSArray(
                 checks.map { check ->
@@ -906,7 +906,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun exportSupportBundle(call: PluginCall) {
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
-        io {
+        io(call) {
             try {
                 val file = SupportBundle(context, db, downloads, cache).write(budget)
                 shareSupportBundle(file)
@@ -945,13 +945,15 @@ class StatocystPlugin : Plugin() {
     /** Upper bound for the optional session probe; boot must never wait on it. */
     private val PROBE_TIMEOUT_MS = 4_000L
 
-    private fun io(block: suspend () -> Unit) {
+    private fun io(call: PluginCall? = null, block: suspend () -> Unit) {
         Thread {
             try {
                 runBlocking { block() }
             } catch (error: Exception) {
-                // A failing call must never crash the WebView thread.
+                // A failing call must never crash the WebView thread, but it must
+                // also not leave the JS promise pending forever.
                 android.util.Log.w("StatocystPlugin", "call failed", error)
+                call?.reject(error.message ?: "Native call failed")
             }
         }.start()
     }
@@ -967,9 +969,9 @@ class StatocystPlugin : Plugin() {
     private fun remoteStreamUrl(track: MediaItemEntity): String? {
         val prefs = context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
         val serverUrl = prefs.getString("jellyfin_url", null) ?: return null
-        val token = prefs.getString("jellyfin_token", null) ?: return null
+        if (prefs.getString("jellyfin_token", null).isNullOrEmpty()) return null
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        return "${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true&api_key=${Uri.encode(token)}"
+        return net.christopherrutherford.statocyst.jellyfin.JellyfinAuth.streamUrl(serverUrl, itemId)
     }
 
     private fun trackJson(t: MediaItemEntity): JSObject = JSObject()
