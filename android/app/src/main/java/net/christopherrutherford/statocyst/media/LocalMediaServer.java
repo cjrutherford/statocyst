@@ -5,6 +5,7 @@ import android.net.Uri;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
+import net.christopherrutherford.statocyst.artwork.ExternalArt;
 import net.christopherrutherford.statocyst.jellyfin.JellyfinArtwork;
 
 import java.io.BufferedReader;
@@ -105,6 +106,39 @@ public final class LocalMediaServer {
             + (safeTag.isEmpty() ? "" : "&tag=" + safeTag);
     }
 
+    /** Loopback URL for an opt-in MusicBrainz cover (artist + album) or artist photo (album null); null when off. */
+    public static String extArtUri(Context context, String artist, String album) {
+        String path = album == null
+            ? ExternalArt.INSTANCE.artistUri(context, artist)
+            : ExternalArt.INSTANCE.coverUri(context, artist, album);
+        if (path == null) return null;
+        start(context);
+        if (port <= 0) return null;
+        Uri.Builder b = new Uri.Builder().scheme("http").encodedAuthority(HOST + ":" + port)
+            .appendEncodedPath(PREFIX.substring(1) + "ext");
+        if (album == null) b.appendQueryParameter("name", artist);
+        else b.appendQueryParameter("artist", artist).appendQueryParameter("album", album);
+        return b.build().toString();
+    }
+
+    private static void serveExternalArt(Socket socket, Uri url, boolean head) throws IOException {
+        String name = url.getQueryParameter("name");
+        String artist = url.getQueryParameter("artist");
+        String album = url.getQueryParameter("album");
+        File image;
+        if (name != null) image = ExternalArt.INSTANCE.artist(appContext, name);
+        else if (artist != null && album != null) image = ExternalArt.INSTANCE.cover(appContext, artist, album);
+        else {
+            writeText(socket, 400, "Bad Request", "Bad artwork request");
+            return;
+        }
+        if (image == null) {
+            writeText(socket, 404, "Not Found", "No artwork");
+            return;
+        }
+        sendImage(socket, image, head);
+    }
+
     private static void serveArtwork(Socket socket, Uri url, boolean head) throws IOException {
         String id = url.getQueryParameter("id");
         String tag = url.getQueryParameter("tag");
@@ -118,6 +152,10 @@ public final class LocalMediaServer {
             writeText(socket, 404, "Not Found", "No artwork");
             return;
         }
+        sendImage(socket, image, head);
+    }
+
+    private static void sendImage(Socket socket, File image, boolean head) throws IOException {
         byte[] head16 = new byte[16];
         try (java.io.FileInputStream in = new java.io.FileInputStream(image)) {
             in.read(head16);
@@ -173,6 +211,10 @@ public final class LocalMediaServer {
 
             Uri url = Uri.parse(target);
             String path = url.getPath();
+            if (path != null && path.equals(PREFIX + "ext")) {
+                serveExternalArt(socket, url, "HEAD".equals(method));
+                return;
+            }
             if (path != null && path.equals(PREFIX + "art")) {
                 serveArtwork(socket, url, "HEAD".equals(method));
                 return;

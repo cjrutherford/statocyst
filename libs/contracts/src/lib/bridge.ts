@@ -316,6 +316,9 @@ export interface StatocystBridge {
   /** Android Auto browse access: controllers the user allowed and ones that were denied. Absent on desktop. */
   getBrowseAccess?(): Promise<BrowseAccess>;
   setBrowseAllowed?(request: { packageName: string; allowed: boolean }): Promise<BrowseAccess>;
+  /** Opt-in MusicBrainz / Cover Art Archive artwork for tracks without art (Android). Absent on desktop. */
+  getExternalArtwork?(): Promise<{ enabled: boolean }>;
+  setExternalArtwork?(request: { enabled: boolean }): Promise<{ enabled: boolean }>;
 }
 
 export interface BrowseAccess {

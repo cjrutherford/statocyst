@@ -15,6 +15,7 @@ import java.io.File
 import kotlinx.coroutines.runBlocking
 import net.christopherrutherford.statocyst.diagnostics.Diagnostics
 import net.christopherrutherford.statocyst.diagnostics.SupportBundle
+import net.christopherrutherford.statocyst.artwork.ExternalArt
 import net.christopherrutherford.statocyst.db.DownloadEntity
 import net.christopherrutherford.statocyst.db.MediaItemDao
 import net.christopherrutherford.statocyst.db.MediaItemEntity
@@ -1030,14 +1031,36 @@ class StatocystPlugin : Plugin() {
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)
         .put("artworkUrl", artworkFor(t))
+        .put("artistArtworkUrl", artistArtworkFor(t))
         .put("missing", t.missing)
 
     /** Loopback artwork URL for a Jellyfin track (the server adds the session header); null for other sources. */
     private fun artworkFor(t: MediaItemEntity): String? {
-        if (!t.sourceKind.startsWith("jellyfin")) return null
+        if (!t.sourceKind.startsWith("jellyfin")) {
+            return LocalMediaServer.extArtUri(context, t.albumArtist ?: t.artist, t.album)
+        }
         val itemId = t.albumId?.takeIf { it.isNotEmpty() } ?: t.id.removePrefix("jf-")
         val tag = if (t.albumId.isNullOrEmpty()) "" else t.jellyfinImageTag.orEmpty()
         return LocalMediaServer.artUri(context, itemId, tag)
+    }
+
+    /** Opt-in MusicBrainz artist photo for tracks with no Jellyfin artwork of their own; null otherwise. */
+    private fun artistArtworkFor(t: MediaItemEntity): String? =
+        if (t.sourceKind.startsWith("jellyfin")) null
+        else LocalMediaServer.extArtUri(context, t.albumArtist ?: t.artist, null)
+
+    @PluginMethod
+    fun getExternalArtwork(call: PluginCall) {
+        call.resolve(JSObject().put("enabled", ExternalArt.enabled(context)))
+    }
+
+    /** Turns opt-in MusicBrainz artwork on or off and refreshes the Android Auto browse tree. */
+    @PluginMethod
+    fun setExternalArtwork(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: false
+        ExternalArt.setEnabled(context, enabled)
+        PlaybackService.onCatalogChanged()
+        call.resolve(JSObject().put("enabled", enabled))
     }
 
     private fun downloadJson(d: DownloadEntity): JSObject = JSObject()

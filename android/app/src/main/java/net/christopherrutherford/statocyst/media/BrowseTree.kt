@@ -54,6 +54,9 @@ object BrowseIds {
 enum class ChildStyle { LIST, GRID }
 
 /** A single browse-tree node, independent of any Android framework type. */
+/** What an external art lookup needs: an artist, plus an album for covers (null for an artist photo). */
+data class ArtKey(val artist: String, val album: String? = null)
+
 data class BrowseNode(
     val id: String,
     val title: String,
@@ -63,6 +66,8 @@ data class BrowseNode(
     val trackId: String? = null,
     val albumId: String? = null,
     val imageTag: String? = null,
+    /** Fallback artwork identity for items with no Jellyfin image. */
+    val art: ArtKey? = null,
     /** Layout hint for this node's children (browsable nodes only). */
     val childStyle: ChildStyle? = null,
 )
@@ -140,6 +145,7 @@ object BrowseTree {
         BrowseNode(
             BrowseIds.radio(t.id), "${t.title} Radio", t.artist,
             playable = true, trackId = t.id, albumId = t.albumId, imageTag = t.jellyfinImageTag,
+            art = ArtKey(t.albumArtist ?: t.artist, t.album),
         )
     }
 
@@ -151,7 +157,10 @@ object BrowseTree {
         mediaId == BrowseIds.ROOT -> root()
         mediaId.startsWith("radio::") ->
             data.tracks.firstOrNull { it.id == BrowseIds.radioSeed(mediaId) }?.let { t ->
-                BrowseNode(mediaId, "${t.title} Radio", t.artist, playable = true, trackId = t.id, albumId = t.albumId, imageTag = t.jellyfinImageTag)
+                BrowseNode(
+                    mediaId, "${t.title} Radio", t.artist, playable = true, trackId = t.id,
+                    albumId = t.albumId, imageTag = t.jellyfinImageTag, art = ArtKey(t.albumArtist ?: t.artist, t.album),
+                )
             }
         mediaId == BrowseIds.NOTICE -> data.notice?.let(::noticeNode)
         mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
@@ -165,14 +174,18 @@ object BrowseTree {
                 BrowseNode(
                     mediaId, it.album, it.albumArtist ?: it.artist,
                     albumId = it.albumId, imageTag = it.jellyfinImageTag, childStyle = ChildStyle.LIST,
+                    art = ArtKey(it.albumArtist ?: it.artist, it.album),
                 )
             }
         }
         mediaId.startsWith("artist::") -> {
             val artist = mediaId.removePrefix("artist::")
             data.tracks.firstOrNull { (it.albumArtist ?: it.artist) == artist }?.let {
-                BrowseNode(mediaId, artist, albumId = it.albumId, imageTag = it.jellyfinImageTag, childStyle = ChildStyle.LIST)
-            } ?: BrowseNode(mediaId, artist, childStyle = ChildStyle.LIST)
+                BrowseNode(
+                    mediaId, artist, albumId = it.albumId, imageTag = it.jellyfinImageTag,
+                    art = ArtKey(artist), childStyle = ChildStyle.LIST,
+                )
+            } ?: BrowseNode(mediaId, artist, art = ArtKey(artist), childStyle = ChildStyle.LIST)
         }
         mediaId.startsWith("track::") -> {
             val id = BrowseIds.trackEntityId(mediaId)
@@ -311,6 +324,7 @@ object BrowseTree {
                 map[id] = BrowseNode(
                     id, t.album, artist,
                     albumId = t.albumId, imageTag = t.jellyfinImageTag, childStyle = ChildStyle.LIST,
+                    art = ArtKey(artist, t.album),
                 )
             }
         }
@@ -323,7 +337,10 @@ object BrowseTree {
             val artist = t.albumArtist ?: t.artist
             val id = BrowseIds.artist(artist)
             if (!map.containsKey(id)) {
-                map[id] = BrowseNode(id, artist, albumId = t.albumId, imageTag = t.jellyfinImageTag, childStyle = ChildStyle.LIST)
+                map[id] = BrowseNode(
+                    id, artist, albumId = t.albumId, imageTag = t.jellyfinImageTag,
+                    art = ArtKey(artist), childStyle = ChildStyle.LIST,
+                )
             }
         }
         return map.values.sortedBy { it.title.lowercase() }
@@ -354,5 +371,6 @@ object BrowseTree {
         trackId = t.id,
         albumId = t.albumId,
         imageTag = t.jellyfinImageTag,
+        art = ArtKey(t.albumArtist ?: t.artist, t.album),
     )
 }

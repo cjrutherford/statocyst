@@ -393,7 +393,10 @@ class PlaybackService : MediaLibraryService() {
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setExtras(android.os.Bundle().apply { putString(QueueItems.EXTRA_TRACK_ID, trackId) })
-        resolver.artworkUrl(prepared.entity.albumId, prepared.entity.jellyfinImageTag)
+        resolver.artwork(
+            prepared.entity.albumId, prepared.entity.jellyfinImageTag,
+            ArtKey(prepared.entity.albumArtist ?: prepared.entity.artist, prepared.entity.album),
+        )
             ?.let { entityMeta.setArtworkUri(Uri.parse(it)) }
         val entryId = if (QueueItems.isSlot(item)) item.mediaId else QueueItems.newEntryId()
         return MediaItem.Builder()
@@ -560,7 +563,7 @@ class PlaybackService : MediaLibraryService() {
                 },
             )
         }
-        val artUrl = resolver.artworkUrl(node.albumId, node.imageTag)
+        val artUrl = resolver.artwork(node.albumId, node.imageTag, node.art)
         if (artUrl != null) {
             metadataBuilder.setArtworkUri(Uri.parse(artUrl))
         }

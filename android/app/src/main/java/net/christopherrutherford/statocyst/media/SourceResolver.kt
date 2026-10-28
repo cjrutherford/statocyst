@@ -9,6 +9,7 @@ import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.artwork.ExternalArt
 import net.christopherrutherford.statocyst.jellyfin.ArtworkProvider
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 
@@ -76,4 +77,11 @@ class SourceResolver(private val context: Context) {
         if (prefs.getString("jellyfin_token", null).isNullOrEmpty()) return null
         return ArtworkProvider.uri(context, albumId, imageTag)
     }
+
+    /** Jellyfin artwork when the item has some, else opt-in MusicBrainz artwork, else null. */
+    fun artwork(albumId: String?, imageTag: String?, art: ArtKey?): String? =
+        artworkUrl(albumId, imageTag) ?: art?.let {
+            if (it.album != null) ExternalArt.coverUri(context, it.artist, it.album)
+            else ExternalArt.artistUri(context, it.artist)
+        }
 }

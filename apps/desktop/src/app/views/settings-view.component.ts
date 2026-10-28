@@ -287,6 +287,25 @@ import { formatBytes } from '../core/format';
             </span>
           </label>
 
+          @if (externalArtwork() !== null) {
+            <label class="toggle-row">
+              <input
+                type="checkbox"
+                [checked]="externalArtwork()"
+                (change)="setExternalArtwork($event)"
+              />
+              <span class="toggle-row__text">
+                <strong>Fetch missing artwork online</strong>
+                <span>
+                  Looks up cover art and artist photos on MusicBrainz, the Cover Art Archive and
+                  Wikimedia Commons for songs that have none. This sends the artist and album names
+                  (not your files or account) to those services. Off by default; found images are
+                  cached on this device.
+                </span>
+              </span>
+            </label>
+          }
+
           <p class="card__hint">
             Turning this off stops new history from being written. Existing counts remain in the
             local database until you delete it.
@@ -881,11 +900,31 @@ export class SettingsViewComponent {
 
   protected readonly isPackaged = computed(() => this.info()?.packaged ?? false);
 
+  protected readonly externalArtwork = signal<boolean | null>(null);
   protected readonly browseAccess = signal<{ allowed: string[]; denied: string[] } | null>(null);
 
   constructor() {
     void this.refresh();
     void this.refreshBrowseAccess();
+    void this.refreshExternalArtwork();
+  }
+
+  protected async refreshExternalArtwork(): Promise<void> {
+    if (!isNativePlatform()) return;
+    try {
+      const api = bridge();
+      if (api.getExternalArtwork) this.externalArtwork.set((await api.getExternalArtwork()).enabled);
+    } catch {
+      this.externalArtwork.set(null);
+    }
+  }
+
+  protected async setExternalArtwork(event: Event): Promise<void> {
+    const api = bridge();
+    if (!api.setExternalArtwork) return;
+    const enabled = (event.target as HTMLInputElement | null)?.checked ?? false;
+    this.externalArtwork.set((await api.setExternalArtwork({ enabled })).enabled);
+    await this.library.refresh();
   }
 
   protected async refreshBrowseAccess(): Promise<void> {

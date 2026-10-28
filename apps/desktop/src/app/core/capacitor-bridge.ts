@@ -702,6 +702,9 @@ export class CapacitorBridge {
     const nativeArtwork = raw['artworkUrl'];
     const artworkUrl = typeof nativeArtwork === 'string' && nativeArtwork ? nativeArtwork : null;
 
+    const nativeArtist = raw['artistArtworkUrl'];
+    const artistArtworkUrl = typeof nativeArtist === 'string' && nativeArtist ? nativeArtist : null;
+
     return {
       id,
       title: String(raw['title'] ?? 'Untitled'),
@@ -710,6 +713,7 @@ export class CapacitorBridge {
       albumArtist: String(raw['albumArtist'] ?? raw['artist'] ?? 'Unknown artist'),
       durationMs: Number(raw['durationMs'] ?? 0),
       artworkUrl,
+      artistArtworkUrl,
       sourceId: String(raw['sourceId'] ?? sourceKind),
       sourceLabel,
       trackNo: (raw['trackNo'] as number | null) ?? null,
@@ -985,6 +989,16 @@ export class CapacitorBridge {
     allowed: boolean;
   }): Promise<{ allowed: string[]; denied: string[] }> {
     return this.toBrowseAccess(await this.plugin().setBrowseAllowed(request));
+  }
+
+  async getExternalArtwork(): Promise<{ enabled: boolean }> {
+    const result = await this.plugin().getExternalArtwork();
+    return { enabled: result?.enabled === true };
+  }
+
+  async setExternalArtwork(request: { enabled: boolean }): Promise<{ enabled: boolean }> {
+    const result = await this.plugin().setExternalArtwork({ enabled: request.enabled === true });
+    return { enabled: result?.enabled === true };
   }
 
   async radio(request: { trackId: string; limit?: number }): Promise<{ trackIds: string[]; source: string }> {

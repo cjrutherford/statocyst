@@ -53,6 +53,8 @@ export interface Track {
   albumArtist?: string;
   durationMs: number;
   artworkUrl: string | null;
+  /** Artist photo (Android, only when online artwork is enabled). */
+  artistArtworkUrl?: string | null;
   sourceId: string;
   sourceLabel: string;
   trackNo?: number | null;

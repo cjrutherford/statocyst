@@ -8,6 +8,7 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import net.christopherrutherford.statocyst.artwork.ExternalArt
 import java.io.File
 import java.io.FileNotFoundException
 
@@ -19,6 +20,9 @@ import java.io.FileNotFoundException
  * downloads through [JellyfinArtwork] (session header, disk cache) and hands the
  * caller a file descriptor, so no token ever appears in a URI. Exported because
  * the head unit host is another app; it only serves album art for valid item ids.
+ *
+ * `/cover?artist=&album=` and `/artist?name=` serve opt-in MusicBrainz artwork
+ * (see [ExternalArt]); they return nothing while that setting is off.
  */
 class ArtworkProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
@@ -44,7 +48,7 @@ class ArtworkProvider : ContentProvider() {
         val cols = (projection ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE))
         val row = cols.map {
             when (it) {
-                OpenableColumns.DISPLAY_NAME -> "${request(uri)?.first}.img"
+                OpenableColumns.DISPLAY_NAME -> "${request(uri)?.first ?: uri.pathSegments.firstOrNull()}.img"
                 OpenableColumns.SIZE -> file.length()
                 else -> null
             }
@@ -60,8 +64,18 @@ class ArtworkProvider : ContentProvider() {
 
     private fun resolve(uri: Uri): File? {
         val ctx = context ?: return null
-        val (id, tag) = request(uri) ?: return null
-        return JellyfinArtwork.fetch(ctx, id, tag)
+        return when (uri.pathSegments.firstOrNull()) {
+            "cover" -> {
+                val artist = uri.getQueryParameter("artist") ?: return null
+                val album = uri.getQueryParameter("album") ?: return null
+                ExternalArt.cover(ctx, artist, album)
+            }
+            "artist" -> ExternalArt.artist(ctx, uri.getQueryParameter("name") ?: return null)
+            else -> {
+                val (id, tag) = request(uri) ?: return null
+                JellyfinArtwork.fetch(ctx, id, tag)
+            }
+        }
     }
 
     companion object {

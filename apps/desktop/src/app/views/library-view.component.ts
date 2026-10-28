@@ -1389,13 +1389,14 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly artists = computed(() => {
-    const map = new Map<string, { albums: Set<string>; tracks: number; artwork: string | null }>();
+    const map = new Map<string, { albums: Set<string>; tracks: number; artwork: string | null; photo: string | null }>();
     for (const track of this.library.tracks()) {
       const key = track.albumArtist ?? track.artist;
-      const entry = map.get(key) ?? { albums: new Set<string>(), tracks: 0, artwork: null };
+      const entry = map.get(key) ?? { albums: new Set<string>(), tracks: 0, artwork: null, photo: null };
       entry.albums.add(track.album);
       entry.tracks += 1;
       entry.artwork ??= track.artworkUrl;
+      entry.photo ??= track.artistArtworkUrl ?? null;
       map.set(key, entry);
     }
     return [...map.entries()]
@@ -1403,7 +1404,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
         artist,
         albums: entry.albums.size,
         tracks: entry.tracks,
-        artwork: entry.artwork,
+        artwork: entry.photo ?? entry.artwork,
       }))
       .sort((a, b) => a.artist.localeCompare(b.artist));
   });
