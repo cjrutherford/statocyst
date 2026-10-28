@@ -14,7 +14,6 @@ import { formatDuration } from '../core/format';
       <button
         type="button"
         class="player__track"
-        [disabled]="!playback.track()"
         (click)="openNow.emit()"
         [attr.aria-label]="
           playback.track()
@@ -35,6 +34,7 @@ import { formatDuration } from '../core/format';
         @if (playback.snapshot().state === 'error') {
           <span class="player__state player__state--error">Audio error</span>
         }
+        <sc-icon name="up" class="player__expand" />
       </button>
 
       <div class="player__transport">
@@ -62,6 +62,7 @@ import { formatDuration } from '../core/format';
           <button
             type="button"
             class="player__play"
+            [class.is-live]="playback.isPlaying()"
             [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
             title="Play or pause (Space)"
             (click)="playback.toggle()"
@@ -209,6 +210,12 @@ import { formatDuration } from '../core/format';
       .player__state--error {
         color: var(--danger);
       }
+      .player__expand {
+        margin-left: auto;
+        color: var(--muted);
+        opacity: 0.7;
+        font-size: 0.9em;
+      }
       .player__transport {
         display: grid;
         gap: 6px;
@@ -239,10 +246,22 @@ import { formatDuration } from '../core/format';
       }
       .player__play:hover {
         transform: translateY(-1px) scale(1.03);
-        box-shadow: 0 0 30px rgba(56, 225, 255, 0.46);
+        box-shadow: 0 0 34px rgba(56, 225, 255, 0.52);
       }
       .player__play:active {
-        transform: scale(0.97);
+        transform: scale(0.96);
+      }
+      .player__play.is-live {
+        animation: play-pulse 2.8s ease-in-out infinite;
+      }
+      @keyframes play-pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 22px rgba(56, 225, 255, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+        50% {
+          box-shadow: 0 0 38px rgba(56, 225, 255, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
       }
       .player__seek {
         display: flex;

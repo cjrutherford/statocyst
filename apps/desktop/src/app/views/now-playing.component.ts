@@ -158,8 +158,8 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
             </p>
           } @else {
             <ul>
-              @for (entry of playback.upNext(); track entry.entryId) {
-                <li>
+              @for (entry of playback.upNext(); track entry.entryId; let index = $index) {
+                <li [style.--i]="index">
                   <button type="button" class="upnext__item" (click)="playback.playEntry(entry.entryId)">
                     <sc-artwork [track]="entry.track" size="sm" />
                     <span class="upnext__text">
@@ -232,6 +232,9 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         box-shadow:
           0 40px 120px rgba(0, 8, 26, 0.75),
           0 0 0 1px rgba(56, 225, 255, 0.12);
+      }
+      .is-live .stage__art sc-artwork {
+        animation: float 6.5s ease-in-out infinite;
       }
       .stage__pearl {
         position: absolute;
@@ -431,6 +434,10 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         display: grid;
         gap: 4px;
       }
+      .upnext li {
+        animation: upnext-in 360ms ease both;
+        animation-delay: min(calc(var(--i, 0) * 30ms), 420ms);
+      }
       .upnext__item {
         width: 100%;
         display: flex;
@@ -518,10 +525,29 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
           opacity: 0;
         }
       }
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-9px);
+        }
+      }
+      @keyframes upnext-in {
+        from {
+          opacity: 0;
+          transform: translateX(-8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
       @keyframes rise {
         from {
           opacity: 0;
-          transform: translateY(8px);
+          transform: translateY(10px) scale(0.995);
         }
         to {
           opacity: 1;

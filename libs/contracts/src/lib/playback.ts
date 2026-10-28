@@ -31,6 +31,8 @@ export const ERROR_CODES = [
   'ENGINE_UNAVAILABLE',
   'DATABASE_ERROR',
   'IMPORT_FAILED',
+  'UNAUTHORIZED',
+  'INSUFFICIENT_SPACE',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -32,6 +32,8 @@ export interface PlaybackServiceOptions {
   settings: SettingsService;
   logger: Logger;
   getWindow: () => BrowserWindow | null;
+  /** Invoked after the authoritative track changes (used for cache lookahead). */
+  onTrackChanged?: (currentTrackId: string, nextTrackId: string | null) => void;
 }
 
 function toTrack(stored: StoredTrack): Track {
@@ -65,6 +67,7 @@ export class PlaybackService {
   private state: PlaybackState = 'idle';
   private positionMs = 0;
   private durationMs = 0;
+  private bufferSeconds = 0;
   private volume = 0.85;
   private muted = false;
   private token = 0;
@@ -220,6 +223,12 @@ export class PlaybackService {
         }
         this.emitPosition();
         this.schedulePersist();
+        break;
+      }
+      case 'health': {
+        if (Number.isFinite(typed.bufferSeconds)) {
+          this.bufferSeconds = Math.max(0, typed.bufferSeconds);
+        }
         break;
       }
       case 'ended': {
@@ -419,13 +428,20 @@ export class PlaybackService {
       positionMs: this.positionMs,
     });
     this.emit({ type: 'trackChanged', entry: { entryId, trackId: track.id, track: toTrack(track) } });
+    const nextIndex = this.queue.entries.findIndex((candidate) => candidate.entryId === entryId) + 1;
+    const nextTrackId = nextIndex < this.queue.entries.length ? this.queue.entries[nextIndex].trackId : null;
+    this.options.onTrackChanged?.(track.id, nextTrackId);
     this.emitState();
     this.emitPosition();
     this.schedulePersist();
     if (autoplay) {
-      void this.database.markPlayed(track.id).catch((error) => {
-        this.options.logger.warn('playback.mark-played.failed', { error, trackId: track.id });
-      });
+      // Local listening history is opt-in (ADR-015). When disabled, playback is
+      // unchanged but no play count or last-played timestamp is written.
+      if (this.options.settings.get().listeningHistory) {
+        void this.database.markPlayed(track.id).catch((error) => {
+          this.options.logger.warn('playback.mark-played.failed', { error, trackId: track.id });
+        });
+      }
     }
   }
 
@@ -517,6 +533,11 @@ export class PlaybackService {
   }
 
   // Exposed for diagnostics and integration tests.
+  /** Most recently reported buffered-ahead seconds from the renderer engine. */
+  bufferHealth(): number {
+    return this.bufferSeconds;
+  }
+
   async currentTrack(): Promise<Track | null> {
     const entry = currentEntry(this.queue);
     if (!entry) return null;

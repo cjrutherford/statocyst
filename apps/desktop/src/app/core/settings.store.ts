@@ -8,6 +8,9 @@ export const DEFAULT_SETTINGS: Settings = {
   density: 'comfortable',
   volume: 0.85,
   muted: false,
+  cacheBudgetBytes: 2 * 1024 * 1024 * 1024,
+  quality: 'lossless',
+  listeningHistory: false,
 };
 
 @Injectable({ providedIn: 'root' })

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rename, rm, stat as fileStat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createClient, type Client, type InStatement, type Row } from '@libsql/client';
 import type { RepeatMode, Track } from '@statocyst/contracts';
@@ -74,6 +74,23 @@ export interface StoredQueueEntry {
   trackId: string;
 }
 
+export interface StoredDownload {
+  trackId: string;
+  localPath: string;
+  sizeBytes: number;
+  sha256: string;
+  container: string | null;
+  verified: boolean;
+  createdAt: string;
+}
+
+export interface StoredCacheEntry {
+  trackId: string;
+  localPath: string;
+  sizeBytes: number;
+  lastAccessAt: string;
+}
+
 export interface StoredPlaybackState {
   currentEntryId: string | null;
   positionMs: number;
@@ -112,6 +129,8 @@ export interface OpenDatabaseOptions {
   path: string;
   migrations?: readonly Migration[];
   idFactory?: () => string;
+  /** Take a `VACUUM INTO` backup before applying pending migrations (default true). */
+  backupBeforeMigrate?: boolean;
 }
 
 export interface MigrationResult {
@@ -137,6 +156,24 @@ export class MigrationIntegrityError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'MigrationIntegrityError';
+  }
+}
+
+/**
+ * Raised when a migration run fails after a pre-migration backup was taken.
+ * The database file has already been restored to the backup and the next
+ * launch can proceed on the previous schema.
+ */
+export class MigrationRecoveryError extends Error {
+  constructor(
+    readonly originalError: unknown,
+    readonly backupPath: string,
+  ) {
+    super(
+      `Migration failed and the database was restored from ${backupPath}. ` +
+        `Original error: ${originalError instanceof Error ? originalError.message : String(originalError)}`,
+    );
+    this.name = 'MigrationRecoveryError';
   }
 }
 
@@ -285,6 +322,55 @@ export async function runMigrations(
   };
 }
 
+async function backupBeforeMigrations(
+  client: Client,
+  path: string,
+  migrations: readonly Migration[],
+): Promise<string | null> {
+  try {
+    const info = await fileStat(path);
+    if (!info.size) return null;
+  } catch {
+    return null; // First run: nothing to protect.
+  }
+
+  let current = 0;
+  try {
+    const result = await client.execute('SELECT MAX(version) AS version FROM schema_migrations');
+    current = result.rows[0] ? integer(result.rows[0], 'version') : 0;
+  } catch {
+    current = 0;
+  }
+  // A file that has no applied migrations is a first run (or a crash before the
+  // first migration committed); there is no user schema to protect yet.
+  if (current === 0) return null;
+  if (!migrations.some((migration) => migration.version > current)) return null;
+
+  const backupPath = `${path}.backup-v${current}`;
+  await rm(backupPath, { force: true });
+  // VACUUM INTO uses the live connection, so uncommitted WAL pages are included.
+  await client.execute(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+  return backupPath;
+}
+
+async function restoreFromBackup(path: string, backupPath: string): Promise<void> {
+  // Stale WAL/SHM files from the failed run must not be replayed over the copy.
+  await rm(`${path}-wal`, { force: true });
+  await rm(`${path}-shm`, { force: true });
+  // libsql can keep the failed connection's file handles open after close().
+  // Copy into a sibling file and replace the directory entry atomically, so the
+  // fresh database gets a new inode instead of being written through an inode
+  // that SQLite may still hold locked (observed as SQLITE_BUSY on reopen).
+  const staging = `${path}.restore`;
+  await copyFile(backupPath, staging);
+  try {
+    await rename(staging, path);
+  } catch (error) {
+    await rm(staging, { force: true });
+    throw error;
+  }
+}
+
 export class StatocystDatabase {
   private constructor(
     private readonly client: Client,
@@ -293,13 +379,32 @@ export class StatocystDatabase {
 
   static async open(options: OpenDatabaseOptions): Promise<StatocystDatabase> {
     await mkdir(dirname(options.path), { recursive: true });
+    const migrations = options.migrations ?? MIGRATIONS;
     const client = createClient({ url: `file:${options.path}` });
     await client.execute('PRAGMA foreign_keys = ON');
     await client.execute('PRAGMA busy_timeout = 5000');
     await client.execute('PRAGMA journal_mode = WAL');
     await client.execute('PRAGMA synchronous = NORMAL');
     const database = new StatocystDatabase(client, options.idFactory ?? randomUUID);
-    await runMigrations(client, options.migrations ?? MIGRATIONS);
+    const backupPath =
+      options.backupBeforeMigrate === false
+        ? null
+        : await backupBeforeMigrations(client, options.path, migrations);
+    try {
+      await runMigrations(client, migrations);
+    } catch (error) {
+      client.close();
+      if (backupPath) {
+        try {
+          await restoreFromBackup(options.path, backupPath);
+        } catch {
+          // Keep the original failure visible; the backup path lets the user
+          // recover the file manually.
+        }
+        throw new MigrationRecoveryError(error, backupPath);
+      }
+      throw error;
+    }
     return database;
   }
 
@@ -619,6 +724,110 @@ export class StatocystDatabase {
   async tableColumns(table: string): Promise<string[]> {
     const result = await this.client.execute(`PRAGMA table_info(${table})`);
     return result.rows.map((row) => text(row, 'name'));
+  }
+
+  async saveDownload(input: {
+    trackId: string;
+    localPath: string;
+    sizeBytes: number;
+    sha256: string;
+    container: string | null;
+    verified: boolean;
+  }): Promise<void> {
+    await this.client.execute({
+      sql: `INSERT INTO download (track_id, local_path, size_bytes, sha256, container, verified, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(track_id) DO UPDATE SET
+              local_path = excluded.local_path,
+              size_bytes = excluded.size_bytes,
+              sha256 = excluded.sha256,
+              container = excluded.container,
+              verified = excluded.verified`,
+      args: [
+        input.trackId,
+        input.localPath,
+        input.sizeBytes,
+        input.sha256,
+        input.container,
+        input.verified ? 1 : 0,
+        new Date().toISOString(),
+      ],
+    });
+  }
+
+  async getDownload(trackId: string): Promise<StoredDownload | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM download WHERE track_id = ?', args: [trackId] })
+    ).rows[0];
+    return row ? this.toDownload(row) : null;
+  }
+
+  async listDownloads(): Promise<StoredDownload[]> {
+    const result = await this.client.execute('SELECT * FROM download ORDER BY created_at ASC');
+    return result.rows.map((row) => this.toDownload(row));
+  }
+
+  async removeDownload(trackId: string): Promise<boolean> {
+    const result = await this.client.execute({
+      sql: 'DELETE FROM download WHERE track_id = ?',
+      args: [trackId],
+    });
+    return (result.rowsAffected ?? 0) > 0;
+  }
+
+  private toDownload(row: Row): StoredDownload {
+    return {
+      trackId: text(row, 'track_id'),
+      localPath: text(row, 'local_path'),
+      sizeBytes: integer(row, 'size_bytes'),
+      sha256: text(row, 'sha256'),
+      container: nullableText(row, 'container'),
+      verified: bool(row, 'verified'),
+      createdAt: text(row, 'created_at'),
+    };
+  }
+
+  async saveCacheEntry(input: {
+    trackId: string;
+    localPath: string;
+    sizeBytes: number;
+  }): Promise<void> {
+    await this.client.execute({
+      sql: `INSERT INTO cache_entry (track_id, local_path, size_bytes, last_access_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(track_id) DO UPDATE SET
+              local_path = excluded.local_path,
+              size_bytes = excluded.size_bytes,
+              last_access_at = excluded.last_access_at`,
+      args: [input.trackId, input.localPath, input.sizeBytes, new Date().toISOString()],
+    });
+  }
+
+  async touchCacheEntry(trackId: string): Promise<void> {
+    await this.client.execute({
+      sql: 'UPDATE cache_entry SET last_access_at = ? WHERE track_id = ?',
+      args: [new Date().toISOString(), trackId],
+    });
+  }
+
+  async listCacheEntries(): Promise<StoredCacheEntry[]> {
+    const result = await this.client.execute(
+      'SELECT * FROM cache_entry ORDER BY last_access_at ASC',
+    );
+    return result.rows.map((row) => ({
+      trackId: text(row, 'track_id'),
+      localPath: text(row, 'local_path'),
+      sizeBytes: integer(row, 'size_bytes'),
+      lastAccessAt: text(row, 'last_access_at'),
+    }));
+  }
+
+  async removeCacheEntry(trackId: string): Promise<boolean> {
+    const result = await this.client.execute({
+      sql: 'DELETE FROM cache_entry WHERE track_id = ?',
+      args: [trackId],
+    });
+    return (result.rowsAffected ?? 0) > 0;
   }
 
   async upsertJellyfinServer(input: {

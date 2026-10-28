@@ -118,13 +118,17 @@ export type ArtworkSize = 'sm' | 'md' | 'lg' | 'hero';
 })
 export class ArtworkComponent {
   readonly track = input<Track | null>(null);
+  readonly src = input<string | null>(null);
+  readonly altText = input<string | null>(null);
   readonly size = input<ArtworkSize>('md');
 
   protected readonly failed = signal(false);
-  protected readonly url = computed(() => this.track()?.artworkUrl ?? null);
+  protected readonly url = computed(() => this.src() ?? this.track()?.artworkUrl ?? null);
   protected readonly alt = computed(() => {
+    const custom = this.altText();
+    if (custom) return custom;
     const track = this.track();
-    return track ? `${track.title} by ${track.artist}` : 'No artwork';
+    return track ? `${track.title} by ${track.artist}` : 'Artwork';
   });
 
   constructor() {

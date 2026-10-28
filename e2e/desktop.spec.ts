@@ -22,7 +22,7 @@ interface TrackRow {
 
 async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
-    args: ['.', '--no-sandbox', '--disable-gpu'],
+    args: ['.', '--no-sandbox', '--disable-gpu', '--ozone-platform=headless', '--headless=new'],
     cwd: root,
     env: {
       ...process.env,
@@ -99,7 +99,7 @@ test('local import, real playback, queue edits and restart recovery', async () =
     // --- Demo import ------------------------------------------------------
     await page.getByRole('button', { name: /load demo/i }).first().click();
     await expect.poll(() => page!.locator('tr.track-row').count(), { timeout: 30_000 }).toBe(4);
-    await expect(page.locator('.stat').first()).toContainText('4');
+    await expect(page.getByRole('tab', { name: /Tracks/ })).toContainText('4');
     await expect.poll(() => queueLength(page!), { timeout: 15_000 }).toBe(4);
     await shot(page, '02-library-tracks.png');
 
@@ -179,7 +179,7 @@ test('local import, real playback, queue edits and restart recovery', async () =
     await waitForState(page, 'playing');
 
     // --- Now playing ------------------------------------------------------
-    await page.locator('.nav__item').filter({ hasText: 'Now playing' }).click();
+    await page.locator('sc-player-bar').getByRole('button', { name: /Open now playing/i }).click();
     await expect(page.getByRole('heading', { name: 'The deep channel' })).toBeVisible();
     await shot(page, '04-now-playing.png');
 
@@ -188,9 +188,15 @@ test('local import, real playback, queue edits and restart recovery', async () =
     await expect(page.getByRole('heading', { name: 'Queue', exact: true })).toBeVisible();
     await expect(page.locator('.queue__item')).toHaveCount(4);
 
+    const firstTitle = await page.locator('.queue__item').nth(0).locator('.queue__title').innerText();
     const secondTitle = await page.locator('.queue__item').nth(1).locator('.queue__title').innerText();
     await page.locator('.queue__item').first().getByTitle('Move down').click();
-    await expect.poll(async () => page!.locator('.queue__item').nth(1).locator('.queue__title').innerText()).toBe(secondTitle);
+    await expect
+      .poll(async () => page!.locator('.queue__item').nth(0).locator('.queue__title').innerText())
+      .toBe(secondTitle);
+    await expect
+      .poll(async () => page!.locator('.queue__item').nth(1).locator('.queue__title').innerText())
+      .toBe(firstTitle);
 
     await page.locator('.queue__item').last().getByTitle('Remove from queue').click();
     await expect(page.locator('.queue__item')).toHaveCount(3);

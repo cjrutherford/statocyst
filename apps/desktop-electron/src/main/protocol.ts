@@ -4,7 +4,8 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { Readable } from 'node:stream';
 import { contentRange, parseRangeHeader } from './range';
-import type { ClientIdentity } from '@statocyst/jellyfin-client';
+import { buildAudioStreamUrl, type ClientIdentity } from '@statocyst/jellyfin-client';
+import { RollingThroughput } from '@statocyst/playback-core';
 
 import { ART_SCHEME, MEDIA_SCHEME } from './schemes';
 
@@ -33,6 +34,10 @@ export interface RemoteTrack {
   serverUrl: string;
   itemId: string;
   token: string;
+  /** Direct play by default; transcode when the quality policy requests it. */
+  mode?: 'direct' | 'transcode';
+  /** Bitrate ceiling in kbit/s, required for transcode. */
+  maxBitrateKbps?: number;
 }
 
 export interface ProtocolTrack {
@@ -85,14 +90,24 @@ function remoteAuthorization(identity: ClientIdentity | undefined, token: string
   return `MediaBrowser Client="${client}", Device="${device}", DeviceId="${deviceId}", Version="${version}", Token="${token}"`;
 }
 
-async function proxyRemoteStream(remote: RemoteTrack, request: Request, identity?: ClientIdentity): Promise<Response> {
+async function proxyRemoteStream(
+  remote: RemoteTrack,
+  request: Request,
+  identity: ClientIdentity | undefined,
+  meter: RollingThroughput,
+): Promise<Response> {
   const headers: Record<string, string> = { Authorization: remoteAuthorization(identity, remote.token) };
   const range = request.headers.get('range');
   if (range) headers['Range'] = range;
   let upstream: Response;
   try {
     upstream = await fetch(
-      `${remote.serverUrl}/Audio/${encodeURIComponent(remote.itemId)}/stream?static=true`,
+      buildAudioStreamUrl({
+        baseUrl: remote.serverUrl,
+        itemId: remote.itemId,
+        mode: remote.mode ?? 'direct',
+        maxBitrateKbps: remote.maxBitrateKbps,
+      }),
       { method: request.method, headers, redirect: 'manual' },
     );
   } catch {
@@ -110,9 +125,34 @@ async function proxyRemoteStream(remote: RemoteTrack, request: Request, identity
     const value = upstream.headers.get(name);
     if (value) responseHeaders[name] = value;
   }
-  return new Response(request.method === 'HEAD' ? null : upstream.body, {
+  return new Response(request.method === 'HEAD' ? null : tapThroughput(upstream.body, meter), {
     status: upstream.status,
     headers: responseHeaders,
+  });
+}
+
+/** Counts bytes as they are proxied so the quality policy has a real sample. */
+function tapThroughput(
+  body: ReadableStream<Uint8Array> | null,
+  meter: RollingThroughput,
+): ReadableStream<Uint8Array> | null {
+  if (!body) return null;
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        controller.close();
+        return;
+      }
+      if (value) {
+        meter.record(value.byteLength);
+        controller.enqueue(value);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
   });
 }
 
@@ -140,7 +180,13 @@ async function proxyRemoteArt(remote: RemoteTrack, identity?: ClientIdentity): P
   });
 }
 
-export function registerProtocols(options: ProtocolOptions): void {
+export interface ProtocolMeter {
+  /** Measured proxy throughput in bits per second, or null before two samples. */
+  throughputBitsPerSecond(): number | null;
+}
+
+export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
+  const meter = new RollingThroughput(8000);
   protocol.handle(MEDIA_SCHEME, async (request) => {
     const trackId = trackIdFromUrl(request.url, MEDIA_SCHEME);
     if (!trackId) return new Response('Malformed media URL', { status: 400 });
@@ -149,7 +195,7 @@ export function registerProtocols(options: ProtocolOptions): void {
     if (!track) return new Response('Track not found', { status: 404 });
 
     if (track.remote) {
-      return proxyRemoteStream(track.remote, request, options.remoteIdentity);
+      return proxyRemoteStream(track.remote, request, options.remoteIdentity, meter);
     }
 
     let info;
@@ -243,4 +289,8 @@ export function registerProtocols(options: ProtocolOptions): void {
       return new Response('Artwork unavailable', { status: 404 });
     }
   });
+
+  return {
+    throughputBitsPerSecond: () => meter.bitsPerSecond(),
+  };
 }

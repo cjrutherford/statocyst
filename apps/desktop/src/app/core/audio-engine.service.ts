@@ -16,6 +16,7 @@ export class AudioEngineService {
   private autoplayWanted = false;
   private pendingSeekMs: number | null = null;
   private lastTimeReport = 0;
+  private lastHealthReport = 0;
   private endedReported = false;
   private lastErrorCode: number | null = null;
 
@@ -145,6 +146,28 @@ export class AudioEngineService {
     const now = Date.now();
     if (now - this.lastTimeReport < 220) return;
     this.reportTime(false);
+    this.reportHealth(now);
+  }
+
+  /**
+   * Reports how many seconds of audio are buffered ahead of the play head.
+   * The main process uses this with the measured throughput to decide whether
+   * the next track should stream direct or be transcoded (ADR-013).
+   */
+  private reportHealth(now: number): void {
+    if (now - this.lastHealthReport < 2000) return;
+    const buffered = this.audio.buffered;
+    if (!buffered || buffered.length === 0) return;
+    const position = Number.isFinite(this.audio.currentTime) ? this.audio.currentTime : 0;
+    let ahead = 0;
+    for (let index = 0; index < buffered.length; index += 1) {
+      if (buffered.start(index) <= position && buffered.end(index) >= position) {
+        ahead = Math.max(0, buffered.end(index) - position);
+        break;
+      }
+    }
+    this.lastHealthReport = now;
+    this.report({ type: 'health', token: this.token, bufferSeconds: ahead });
   }
 
   private onEnded(): void {

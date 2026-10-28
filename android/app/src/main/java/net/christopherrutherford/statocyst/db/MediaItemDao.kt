@@ -13,6 +13,9 @@ interface MediaItemDao {
     @Query("SELECT * FROM media_item WHERE id = :id")
     suspend fun getById(id: String): MediaItemEntity?
 
+    @Query("SELECT * FROM media_item WHERE pathKey = :pathKey")
+    suspend fun getByPathKey(pathKey: String): MediaItemEntity?
+
     @Query("SELECT COUNT(*) FROM media_item")
     suspend fun count(): Int
 

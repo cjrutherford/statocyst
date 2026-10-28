@@ -18,6 +18,8 @@
         "ENGINE_UNAVAILABLE",
         "DATABASE_ERROR",
         "IMPORT_FAILED",
+        "UNAUTHORIZED",
+        "INSUFFICIENT_SPACE",
         "INTERNAL_ERROR"
       ]
     },

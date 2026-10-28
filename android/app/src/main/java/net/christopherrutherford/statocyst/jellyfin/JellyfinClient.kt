@@ -5,6 +5,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 
 data class JellyfinServerInfo(
     val baseUrl: String,
@@ -44,12 +45,18 @@ object JellyfinClient {
     ): Pair<Int, String> {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = method
+        conn.instanceFollowRedirects = false
         conn.setRequestProperty("Accept", "application/json")
         conn.setRequestProperty("Authorization", authHeader(token))
         if (body != null) {
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
             conn.outputStream.use { it.write(body.toByteArray()) }
+        } else if (method == "POST") {
+            // Some endpoints expect a POST with an empty body.
+            conn.doOutput = true
+            conn.setFixedLengthStreamingMode(0)
+            conn.outputStream.use { }
         }
         val code = conn.responseCode
         val stream = if (code in 200..299) conn.inputStream else conn.errorStream
@@ -94,6 +101,31 @@ object JellyfinClient {
         )
     }
 
+    /**
+     * Checks whether a stored token can still play audio.
+     *
+     * Probes the media endpoint the player uses (HEAD on a real track) instead of
+     * the user/library API. Reverse proxies in front of Jellyfin (Authentik,
+     * Authelia) can reject the user and item endpoints while letting media
+     * through, so only the media path answers the question the UI asks: "will
+     * this session play?".
+     */
+    fun probeStream(baseUrl: String, itemId: String, token: String): Boolean {
+        val url = baseUrl.trimEnd('/')
+        val encoded = URLEncoder.encode(token, "UTF-8")
+        val conn = URL("$url/Audio/$itemId/stream?static=true&api_key=$encoded").openConnection() as HttpURLConnection
+        conn.requestMethod = "HEAD"
+        conn.instanceFollowRedirects = false
+        conn.connectTimeout = 8_000
+        conn.readTimeout = 8_000
+        conn.setRequestProperty("Accept", "*/*")
+        return try {
+            conn.responseCode in 200..299
+        } finally {
+            conn.disconnect()
+        }
+    }
+
     fun listAudioItems(
         baseUrl: String,
         userId: String,
@@ -115,5 +147,42 @@ object JellyfinClient {
             result.add(items.getJSONObject(i))
         }
         return result to json.getInt("TotalRecordCount")
+    }
+
+    data class QuickConnectInit(val secret: String, val code: String)
+
+    fun initiateQuickConnect(baseUrl: String): QuickConnectInit {
+        val url = baseUrl.trimEnd('/')
+        val (code, body) = request("POST", "$url/QuickConnect/Initiate")
+        if (code != 200) throw Exception("Quick Connect unavailable (HTTP $code)")
+        val json = JSONObject(body)
+        return QuickConnectInit(
+            secret = json.getString("Secret"),
+            code = json.getString("Code"),
+        )
+    }
+
+    fun quickConnectStatus(baseUrl: String, secret: String): Boolean {
+        val url = baseUrl.trimEnd('/')
+        val (code, body) = request("GET", "$url/QuickConnect/Connect?secret=$secret")
+        if (code != 200) return false
+        val json = JSONObject(body)
+        return json.optBoolean("Authenticated", false)
+    }
+
+    fun authenticateWithQuickConnect(baseUrl: String, secret: String): JellyfinAuthResult {
+        val url = baseUrl.trimEnd('/')
+        val (code, body) = request("POST", "$url/Users/AuthenticateWithQuickConnect", body = """{"Secret":"$secret"}""")
+        if (code != 200) throw Exception("Quick Connect authentication failed (HTTP $code)")
+        val json = JSONObject(body)
+        val user = json.getJSONObject("User")
+        val accessToken = json.getString("AccessToken")
+        val serverId = json.getString("ServerId")
+        return JellyfinAuthResult(
+            serverId = serverId,
+            accessToken = accessToken,
+            userId = user.getString("Id"),
+            userName = user.getString("Name"),
+        )
     }
 }

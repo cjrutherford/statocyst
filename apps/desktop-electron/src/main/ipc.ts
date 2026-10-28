@@ -1,17 +1,23 @@
 import { app, dialog, ipcMain, shell, type BrowserWindow, type IpcMainInvokeEvent } from 'electron';
-import { stat } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type {
   AppInfo,
   DiagnosticsInfo,
+  HealthCheck,
   ImportProgress,
   ImportSummary,
   Result,
   Settings,
+  SupportBundleResult,
 } from '@statocyst/contracts';
 import { CHANNELS, fail, ok } from '@statocyst/contracts';
 import { SUPPORTED_AUDIO_EXTENSIONS } from '@statocyst/media-library';
 import type { StatocystDatabase } from '@statocyst/persistence';
+import { buildSupportBundle, collectHealth } from './support';
 import type { LibraryService } from './library-service';
+import type { DownloadService } from './download-service';
+import type { CacheManager } from './cache-manager';
 import type { Logger } from './logger';
 import type { PlaybackService } from './playback-service';
 import type { SettingsService } from './settings-service';
@@ -28,6 +34,8 @@ export interface IpcContext {
   playback: PlaybackService;
   settings: SettingsService;
   jellyfin: JellyfinService;
+  downloads: DownloadService;
+  cache: CacheManager;
   logger: Logger;
   version: string;
   packaged: boolean;
@@ -67,7 +75,7 @@ export function appInfo(context: IpcContext): AppInfo {
 }
 
 async function diagnostics(context: IpcContext): Promise<DiagnosticsInfo> {
-  const [dbStat, integrity, schemaVersion, queueEntries, stats] = await Promise.all([
+  const [dbStat, integrity, schemaVersion, queueEntries, stats, cacheStats] = await Promise.all([
     stat(context.databasePath).catch(() => null),
     context.database.integrityCheck().catch(() => 'unknown' as const),
     context.database.schemaVersion().catch(() => 0),
@@ -79,11 +87,13 @@ async function diagnostics(context: IpcContext): Promise<DiagnosticsInfo> {
       durationMs: 0,
       missing: 0,
     })),
+    context.cache.stats().catch(() => ({ bytes: 0, budgetBytes: 0, entries: 0, pressure: false })),
   ]);
   return {
     databasePath: context.databasePath,
     logPath: context.logPath,
     databaseBytes: dbStat?.size ?? 0,
+    cacheBytes: cacheStats.bytes,
     schemaVersion,
     integrity,
     queueEntries,
@@ -144,6 +154,59 @@ export function registerIpc(context: IpcContext): void {
   handle(CHANNELS.appInfo, () => appInfo(context));
 
   handle(CHANNELS.appDiagnostics, () => diagnostics(context));
+
+  handle(CHANNELS.appHealth, (): Promise<HealthCheck[]> =>
+    collectHealth({
+      database: context.database,
+      dataDirectory: context.dataDirectory,
+      logPath: context.logPath,
+      cacheBudgetBytes: context.settings.get().cacheBudgetBytes,
+    }),
+  );
+
+  handle(CHANNELS.appExportSupportBundle, async (): Promise<Result<SupportBundleResult>> => {
+    const window = context.getWindow();
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const options = {
+      title: 'Export support bundle',
+      defaultPath: join(context.dataDirectory, `statocyst-support-${stamp}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    };
+    const result = window
+      ? await dialog.showSaveDialog(window, options)
+      : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return ok({ path: null, bytes: 0 });
+
+    // Flush queued writes so the bundle reflects the events that just occurred.
+    await context.logger.flush();
+    const [health, logText, info, diag] = await Promise.all([
+      collectHealth({
+        database: context.database,
+        dataDirectory: context.dataDirectory,
+        logPath: context.logPath,
+        cacheBudgetBytes: context.settings.get().cacheBudgetBytes,
+      }),
+      readFile(context.logPath, 'utf8').catch(() => ''),
+      Promise.resolve(appInfo(context)),
+      diagnostics(context),
+    ]);
+    const bundle = buildSupportBundle({
+      app: info,
+      diagnostics: diag,
+      settings: context.settings.get(),
+      health,
+      logText,
+    });
+    try {
+      await writeFile(result.filePath, bundle, 'utf8');
+    } catch (error) {
+      context.logger.warn('support.bundle.write.failed', { error });
+      return fail('INTERNAL_ERROR', 'Could not write the support bundle');
+    }
+    const bytes = Buffer.byteLength(bundle);
+    context.logger.info('support.bundle.exported', { path: result.filePath, bytes });
+    return ok({ path: result.filePath, bytes });
+  });
 
   handle(CHANNELS.appOpenDataFolder, async () => {
     const error = await shell.openPath(context.dataDirectory);
@@ -270,6 +333,50 @@ export function registerIpc(context: IpcContext): void {
   });
 
   handle(CHANNELS.jellyfinEncryptionAvailable, () => context.jellyfin.encryptionAvailable());
+
+  handle(CHANNELS.downloadAdd, async (trackId: unknown) => {
+    if (typeof trackId !== 'string' || trackId.length === 0) {
+      return fail('INVALID_ARGUMENT', 'trackId must be a non-empty string');
+    }
+    const window = context.getWindow();
+    return context.downloads.download(trackId, (progress) => {
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(CHANNELS.downloadProgress, progress);
+      }
+    });
+  });
+
+  handle(
+    CHANNELS.downloadRemove,
+    async (trackId: unknown): Promise<Result<{ removed: boolean }>> => {
+      if (typeof trackId !== 'string' || trackId.length === 0) {
+        return fail('INVALID_ARGUMENT', 'trackId must be a non-empty string');
+      }
+      return context.downloads.remove(trackId);
+    },
+  );
+
+  handle(CHANNELS.downloadList, () => context.downloads.list());
+
+  handle(CHANNELS.downloadStats, () => context.downloads.stats());
+
+  handle(CHANNELS.cacheStats, () => context.cache.stats());
+
+  handle(
+    CHANNELS.cacheClear,
+    async (): Promise<Result<{ removed: number }>> => {
+      const removed = await context.cache.clear();
+      return ok({ removed });
+    },
+  );
+
+  handle(
+    CHANNELS.cacheReconcile,
+    async (): Promise<Result<{ removedEntries: number; removedOrphans: number }>> => {
+      const result = await context.cache.reconcile();
+      return ok(result);
+    },
+  );
 
   ipcMain.on(CHANNELS.engineEvent, (event, payload: unknown) => {
     const window = context.getWindow();

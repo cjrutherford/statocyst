@@ -34,4 +34,5 @@ data class MediaItemEntity(
     val addedAt: String,
     val updatedAt: String,
     val missing: Boolean = false,
+    val albumId: String? = null,
 )

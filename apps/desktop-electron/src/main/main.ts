@@ -4,10 +4,13 @@ import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { StatocystDatabase } from '@statocyst/persistence';
+import { decideQuality } from '@statocyst/playback-core';
 import { registerIpc, type IpcContext } from './ipc';
 import { JellyfinService } from './jellyfin-service';
 import { SafeStorageTokenCodec } from './credential-store';
 import { LibraryService } from './library-service';
+import { DownloadService } from './download-service';
+import { CacheManager } from './cache-manager';
 import { Logger } from './logger';
 import { PlaybackService } from './playback-service';
 import { registerProtocols } from './protocol';
@@ -30,6 +33,8 @@ if (process.env['STATOCYST_DATA_DIR']) {
 
 const databasePath = join(dataDirectory, 'statocyst.db');
 const artworkDirectory = join(dataDirectory, 'artwork');
+const downloadsDirectory = join(dataDirectory, 'downloads');
+const cacheDirectory = join(dataDirectory, 'cache');
 const logPath = join(dataDirectory, 'logs', 'statocyst.log');
 const demoDirectory = process.env['STATOCYST_DEMO_DIR'] ?? join(app.getAppPath(), 'resources/demo');
 const rendererUrl = process.env['STATOCYST_RENDERER_URL'];
@@ -37,6 +42,8 @@ const rendererUrl = process.env['STATOCYST_RENDERER_URL'];
 let mainWindow: BrowserWindow | null = null;
 let database: StatocystDatabase | null = null;
 let playback: PlaybackService | null = null;
+let downloads: DownloadService | null = null;
+let cache: CacheManager | null = null;
 let shuttingDown = false;
 let servicesReady = false;
 
@@ -154,11 +161,33 @@ async function startServices(): Promise<IpcContext> {
     settings,
     logger,
     getWindow,
+    onTrackChanged: (_current, next) => {
+      if (next) void cache!.prefetch(next);
+    },
   });
   await playback.init();
 
-  // Artwork is created on demand during import.
+  downloads = new DownloadService({
+    database: db,
+    downloadsDirectory,
+    logger,
+    identity: jellyfinIdentity,
+    resolveRemoteTrack: (sourceId) => jellyfin.resolveRemoteTrack(sourceId),
+  });
+
+  cache = new CacheManager({
+    database: db,
+    cacheDirectory,
+    logger,
+    identity: jellyfinIdentity,
+    getBudgetBytes: () => settings.get().cacheBudgetBytes,
+    resolveRemoteTrack: (sourceId) => jellyfin.resolveRemoteTrack(sourceId),
+  });
+
+  // Artwork, downloads and cache are created on demand.
   await mkdir(artworkDirectory, { recursive: true });
+  await mkdir(downloadsDirectory, { recursive: true });
+  await mkdir(cacheDirectory, { recursive: true });
 
   const context: IpcContext = {
     getWindow,
@@ -171,20 +200,62 @@ async function startServices(): Promise<IpcContext> {
     playback,
     settings,
     jellyfin,
+    downloads: downloads!,
+    cache: cache!,
     logger,
     version: app.getVersion(),
     packaged: app.isPackaged,
   };
 
-  registerProtocols({
+  const protocolMeter = registerProtocols({
     lookupTrack: async (trackId) => {
       const track = await db.getTrack(trackId).catch(() => null);
       if (!track) return null;
       const base = { id: track.id, path: track.path, artworkPath: track.artworkPath };
+      // Prefer a verified local download for any source kind, so offline and
+      // pinned content play without touching the network.
+      const verified = await downloads!.getVerifiedDownload(trackId);
+      if (verified) {
+        return { id: track.id, path: verified.localPath, artworkPath: track.artworkPath };
+      }
+      // Then a cache hit (evictable, still local) before hitting the network.
+      const cached = await cache!.getCached(trackId);
+      if (cached) {
+        return { id: track.id, path: cached, artworkPath: track.artworkPath };
+      }
       if (track.sourceKind !== 'jellyfin') return base;
       const remote = await jellyfin.resolveRemoteTrack(track.sourceId);
       if (!remote) return base;
-      return { ...base, remote: { serverUrl: remote.serverUrl, itemId: track.path, token: remote.token } };
+      // Quality policy (ADR-013): direct play unless the measured throughput,
+      // buffer health and the user preference justify a transcode.
+      const sourceBitsPerSecond = track.bitrate ? track.bitrate * 1000 : null;
+      const decision = decideQuality({
+        preference: settings.get().quality,
+        directPlaySupported: true,
+        transcodeAvailable: true,
+        sourceBitsPerSecond,
+        measuredBitsPerSecond: protocolMeter.throughputBitsPerSecond(),
+        bufferSeconds: playback!.bufferHealth(),
+        metered: false,
+      });
+      const transcoding = decision.mode === 'transcode';
+      if (transcoding) {
+        logger.info('playback.quality.transcode', {
+          trackId,
+          reason: decision.reason,
+          bitrate: sourceBitsPerSecond,
+        });
+      }
+      return {
+        ...base,
+        remote: {
+          serverUrl: remote.serverUrl,
+          itemId: track.path,
+          token: remote.token,
+          mode: transcoding ? ('transcode' as const) : ('direct' as const),
+          maxBitrateKbps: transcoding ? 192 : undefined,
+        },
+      };
     },
     onMediaUnavailable: (trackId) => {
       logger.warn('media.unavailable', { trackId });

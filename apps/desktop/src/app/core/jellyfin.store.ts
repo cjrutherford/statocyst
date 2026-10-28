@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import type { JellyfinQuickConnectInit, JellyfinResult, JellyfinServerView, JellyfinSyncSummary } from '@statocyst/contracts';
 import { bridge } from './bridge';
+import { LibraryStore } from './library.store';
 import { ToastStore } from './toast.store';
 
 @Injectable({ providedIn: 'root' })
@@ -10,7 +11,7 @@ export class JellyfinStore {
   readonly encryptionAvailable = signal(true);
   readonly loaded = signal(false);
 
-  constructor(private readonly toasts: ToastStore) {}
+  constructor(private readonly toasts: ToastStore, private readonly library: LibraryStore) {}
 
   async init(): Promise<void> {
     try {
@@ -67,12 +68,14 @@ export class JellyfinStore {
     return this.run(async () => {
       const result = await bridge().jellyfin.sync(serverId);
       if (result.ok) {
+        await this.library.refresh();
         this.toasts.success(
           'Library synced',
           `${result.value.imported} new · ${result.value.updated} updated`,
         );
       } else {
         this.toasts.error('Sync failed', result.error.message);
+        if (result.error.code === 'UNAUTHORIZED') await this.refresh();
       }
       return result;
     });

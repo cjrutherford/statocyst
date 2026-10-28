@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@libsql/client';
@@ -7,6 +7,8 @@ import {
   FORBIDDEN_CREDENTIAL_COLUMNS,
   MIGRATIONS,
   MigrationChecksumError,
+  MigrationIntegrityError,
+  MigrationRecoveryError,
   StatocystDatabase,
   runMigrations,
   type Migration,
@@ -332,5 +334,116 @@ describe('jellyfin server profiles and accounts', () => {
     await db.removeJellyfinServer(server.id);
     expect(await db.getJellyfinAccount(server.id)).toBeNull();
     await db.close();
+  });
+});
+
+describe('migration backup and recovery', () => {
+  async function exists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function seed(path: string): Promise<string> {
+    const db = await StatocystDatabase.open({ path });
+    const source = await db.upsertSource({ kind: 'local', label: 'Music', rootPath: '/music' });
+    const inserted = await db.upsertTrack(track({ sourceId: source.id }));
+    await db.close();
+    return inserted.track.id;
+  }
+
+  it('restores the pre-migration snapshot when a later migration is inconsistent', async () => {
+    const directory = await tempDir();
+    const path = join(directory, 'recovery.db');
+    const trackId = await seed(path);
+
+    const inconsistent: Migration[] = [
+      ...MIGRATIONS,
+      {
+        version: MIGRATIONS.length + 1,
+        name: 'add_probe_table',
+        statements: ['CREATE TABLE migration_probe (id TEXT)'],
+      },
+      {
+        version: MIGRATIONS.length + 3,
+        name: 'skipped_version',
+        statements: ['CREATE TABLE should_not_run (id TEXT)'],
+      },
+    ];
+
+    const attempt = StatocystDatabase.open({ path, migrations: inconsistent });
+    await expect(attempt).rejects.toBeInstanceOf(MigrationRecoveryError);
+    const error = (await attempt.catch((reason: unknown) => reason)) as MigrationRecoveryError;
+    expect(error.originalError).toBeInstanceOf(MigrationIntegrityError);
+
+    const backupPath = `${path}.backup-v${MIGRATIONS.length}`;
+    expect(error.backupPath).toBe(backupPath);
+    expect(await exists(backupPath)).toBe(true);
+
+    // The live file is back on the pre-migration schema with the user's data.
+    const reopened = await StatocystDatabase.open({ path });
+    expect(await reopened.schemaVersion()).toBe(MIGRATIONS.length);
+    expect(await reopened.integrityCheck()).toBe('ok');
+    expect((await reopened.listTracks()).map((stored) => stored.id)).toEqual([trackId]);
+    // The partially applied migration was rolled back with the restore.
+    expect(await reopened.tableColumns('migration_probe')).toEqual([]);
+    await reopened.close();
+  });
+
+  it('does not create a backup on a first run (nothing to protect)', async () => {
+    const directory = await tempDir();
+    const path = join(directory, 'fresh.db');
+    const db = await StatocystDatabase.open({ path });
+    await db.close();
+    expect(await exists(`${path}.backup-v0`)).toBe(false);
+  });
+
+  it('honours backupBeforeMigrate: false and propagates the raw failure', async () => {
+    const directory = await tempDir();
+    const path = join(directory, 'opt-out.db');
+    await seed(path);
+
+    const upgrade: Migration[] = [
+      ...MIGRATIONS,
+      {
+        version: MIGRATIONS.length + 1,
+        name: 'add_probe_table',
+        statements: ['CREATE TABLE migration_probe (id TEXT)'],
+      },
+      {
+        version: MIGRATIONS.length + 3,
+        name: 'skipped_version',
+        statements: ['CREATE TABLE should_not_run (id TEXT)'],
+      },
+    ];
+
+    await expect(
+      StatocystDatabase.open({ path, migrations: upgrade, backupBeforeMigrate: false }),
+    ).rejects.toBeInstanceOf(MigrationIntegrityError);
+    expect(await exists(`${path}.backup-v${MIGRATIONS.length}`)).toBe(false);
+  });
+
+  it('keeps the snapshot after a successful upgrade', async () => {
+    const directory = await tempDir();
+    const path = join(directory, 'upgrade.db');
+    await seed(path);
+
+    const upgrade: Migration[] = [
+      ...MIGRATIONS,
+      {
+        version: MIGRATIONS.length + 1,
+        name: 'add_probe_table',
+        statements: ['CREATE TABLE migration_probe (id TEXT)'],
+      },
+    ];
+
+    const db = await StatocystDatabase.open({ path, migrations: upgrade });
+    expect(await db.schemaVersion()).toBe(MIGRATIONS.length + 1);
+    expect(await db.tableColumns('migration_probe')).toEqual(['id']);
+    await db.close();
+    expect(await exists(`${path}.backup-v${MIGRATIONS.length}`)).toBe(true);
   });
 });

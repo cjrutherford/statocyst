@@ -37,6 +37,19 @@ export const CHANNELS = {
   jellyfinQuickConnectPoll: 'jellyfin:quick-connect-poll',
   jellyfinQuickConnectLogin: 'jellyfin:quick-connect-login',
   jellyfinEncryptionAvailable: 'jellyfin:encryption-available',
+
+  downloadAdd: 'download:add',
+  downloadRemove: 'download:remove',
+  downloadList: 'download:list',
+  downloadStats: 'download:stats',
+  downloadProgress: 'download:progress',
+
+  cacheStats: 'cache:stats',
+  cacheClear: 'cache:clear',
+  cacheReconcile: 'cache:reconcile',
+
+  appHealth: 'app:health',
+  appExportSupportBundle: 'app:export-support-bundle',
 } as const;
 
 export const IPC_COMMAND_LIMIT = 64;

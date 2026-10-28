@@ -1,0 +1,22 @@
+# Evidence report: S022
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-28)
+- **Environment:** Ubuntu 26.04 LTS, Android SDK 36, JDK 21 (Android Studio JBR), Media3 1.4.1.
+- **Files changed:**
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/media/BrowseTree.kt` — `BrowseNode` gains `albumId`/`imageTag`; album/artist/track nodes populate them from the catalog.
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/media/SourceResolver.kt` — added `artworkUrl(albumId, imageTag)` building a direct Jellyfin primary-image URL (`/Items/{albumId}/Images/Primary?api_key={token}&tag={tag}`).
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/media/PlaybackService.kt` — `toMediaItem` sets `MediaMetadata.artworkUri` for browse nodes; added `onPlayerError` listener capturing `lastError` for error-state visibility.
+- **Acceptance criteria and actual observations:**
+  - **Driver-safe metadata/artwork:** Browse nodes (albums/artists/tracks) now expose artwork URIs to Android Auto. Verified compile + unit tests; actual Auto rendering not demonstrated.
+  - **Error states:** Player errors captured via `onPlayerError`; Media3 propagates playback errors to Auto controllers. Not demonstrated on device.
+  - **Focus/interruptions/constraints:** ExoPlayer configured with `USAGE_MEDIA` + `handleAudioFocus=true` (auto-pause on focus loss/duck) and `setHandleAudioBecomingNoisy(true)` (pause on headphone unplug). These are Media3 built-ins; not device-tested.
+- **Commands run with exit codes:**
+  - `./gradlew :app:compileDebugKotlin` — 0
+  - `./gradlew testDebugUnitTest` — 0 (12/12)
+  - `./gradlew assembleDebug` — 0
+- **Tests not run (why):** Automotive UI checks require an Android Auto environment (DHU/head unit). Not available.
+- **Safety/security considerations:** Artwork URL embeds the access token (`api_key=`) — standard Jellyfin direct-image pattern; never logged. No credential persisted beyond existing session prefs.
+- **Known limitations and deferred follow-up:** Artwork fetched directly by Auto from Jellyfin (requires reachable server + valid token). Local-file artwork (`artworkPath`) not yet mapped.
+- **Milestone gate affected:** **MVP-4 — S022: metadata/artwork/error/focus implemented; automotive UI not demonstrated.**
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-28.

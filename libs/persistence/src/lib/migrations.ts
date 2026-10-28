@@ -108,6 +108,33 @@ export const MIGRATIONS: readonly Migration[] = [
       `ALTER TABLE media_item ADD COLUMN jellyfin_image_tag TEXT`,
     ],
   },
+  {
+    version: 4,
+    name: 'protected_downloads',
+    statements: [
+      `CREATE TABLE download (
+        track_id TEXT PRIMARY KEY REFERENCES media_item(id) ON DELETE CASCADE,
+        local_path TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        container TEXT,
+        verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
+        created_at TEXT NOT NULL
+      )`,
+    ],
+  },
+  {
+    version: 5,
+    name: 'adaptive_cache',
+    statements: [
+      `CREATE TABLE cache_entry (
+        track_id TEXT PRIMARY KEY REFERENCES media_item(id) ON DELETE CASCADE,
+        local_path TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        last_access_at TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 /** Fields that must never be persisted in the catalog. Used by the security test. */
