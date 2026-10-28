@@ -214,6 +214,23 @@ describe('queue semantics', () => {
     expect(after.queue.currentEntryId).not.toBeNull();
   });
 
+  // Slice 1 repro (Android Auto overhaul). These document known defects and are
+  // expected to fail until slice 2 fixes them; slice 2 flips `it.fails` to `it`.
+  it.fails('repeat all + shuffle with a single entry replays it instead of stopping', () => {
+    let queue = apply(createQueue(), { type: 'enqueue', trackIds: ['a'] }).queue;
+    queue = apply(queue, { type: 'setShuffle', enabled: true }).queue;
+    queue = apply(queue, { type: 'setRepeat', mode: 'all' }).queue;
+    const outcome = apply(queue, { type: 'skipNext' });
+    expect(outcome.selection?.reason).not.toBe('none');
+  });
+
+  it.fails('repeat all with a single entry reports a restart so the engine seeks to 0', () => {
+    let queue = apply(createQueue(), { type: 'enqueue', trackIds: ['a'] }).queue;
+    queue = apply(queue, { type: 'setRepeat', mode: 'all' }).queue;
+    const outcome = apply(queue, { type: 'skipNext' });
+    expect(outcome.selection?.reason).toBe('restart');
+  });
+
   it('does not mutate the input queue', () => {
     const queue = apply(createQueue(), { type: 'enqueue', trackIds: ['a', 'b'] }).queue;
     const snapshot = JSON.stringify(queue);
