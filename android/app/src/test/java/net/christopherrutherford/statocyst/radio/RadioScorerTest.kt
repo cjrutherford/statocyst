@@ -79,4 +79,20 @@ class RadioScorerTest {
         assertNull(RadioScorer.seedQueryOf("Cochise"))
         assertNull(RadioScorer.seedQueryOf("play radio"))
     }
+
+    @Test
+    fun hugeLibraryByOneArtistStaysFastAndRespectsTheLimit() {
+        val seed = t("seed", "Solo", genre = "Rock")
+        val lib = listOf(seed) + (1..20_000).map { t("s$it", "Solo", genre = "Rock") } +
+            (1..30).map { t("o$it", "Other$it", genre = "Rock") }
+        val started = System.nanoTime()
+        val ids = RadioScorer.build(seed, lib, limit = 50)
+        val ms = (System.nanoTime() - started) / 1_000_000
+        assertEquals(50, ids.size)
+        assertEquals(50, ids.toSet().size)
+        assertTrue("took ${ms}ms", ms < 5_000)
+        // Never more than two of the same artist back to back while others remain.
+        val byId = lib.associateBy { it.id }
+        ids.take(30).windowed(3).forEach { w -> assertTrue(w.map { byId[it]!!.artist }.toSet().size > 1) }
+    }
 }

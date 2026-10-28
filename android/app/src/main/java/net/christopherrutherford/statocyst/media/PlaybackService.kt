@@ -61,6 +61,8 @@ class PlaybackService : MediaLibraryService() {
     private val userDao by lazy { database.userDao() }
     private val queueStore by lazy { QueueStore(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var contextTail: ContextTail? = null
+    private var positionTicker: kotlinx.coroutines.Job? = null
 
     private val player: ExoPlayer by lazy {
         ExoPlayer.Builder(this)
@@ -78,6 +80,7 @@ class PlaybackService : MediaLibraryService() {
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     persistQueue()
+                    extendContext()
                     prefetchCurrent(mediaItem)
                     recordRecent(mediaItem)
                     refreshButtons()
@@ -95,7 +98,13 @@ class PlaybackService : MediaLibraryService() {
                     refreshButtons()
                 }
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (isPlaying) consecutiveErrors = 0 else persistQueue()
+                    if (isPlaying) {
+                        consecutiveErrors = 0
+                        startPositionTicker()
+                    } else {
+                        positionTicker?.cancel()
+                        persistQueue()
+                    }
                 }
                 override fun onPositionDiscontinuity(
                     oldPosition: Player.PositionInfo,
@@ -422,6 +431,52 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** While playing, records the position every few seconds so a killed process resumes close to where it was. */
+    private fun startPositionTicker() {
+        positionTicker?.cancel()
+        positionTicker = scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(POSITION_SAVE_MS)
+                if (player.mediaItemCount > 0) {
+                    queueStore.savePosition(
+                        player.currentMediaItemIndex.coerceAtLeast(0),
+                        player.currentPosition.coerceAtLeast(0),
+                    )
+                }
+            }
+        }
+    }
+
+    /** Appends the next chunk of a windowed browse context when playback nears the end of the queue. */
+    private fun extendContext() {
+        val tail = contextTail ?: return
+        val count = player.mediaItemCount
+        if (count == 0) return
+        val lastEntry = player.getMediaItemAt(count - 1).mediaId
+        if (!tail.continues(lastEntry)) {
+            contextTail = null
+            return
+        }
+        if (!tail.due(count - 1 - player.currentMediaItemIndex, player.shuffleModeEnabled)) return
+        scope.launch {
+            try {
+                // Re-check after the suspend point: the queue may have changed meanwhile.
+                if (contextTail !== tail || !tail.continues(player.getMediaItemAt(player.mediaItemCount - 1).mediaId)) return@launch
+                val items = tail.next().mapNotNull { resolveItem(QueueItems.placeholder(QueueItems.newEntryId(), it)) }
+                if (items.isEmpty()) {
+                    contextTail = null
+                    return@launch
+                }
+                tail.reanchor(items.last().mediaId)
+                player.addMediaItems(items)
+                android.util.Log.i(TAG, "context extended by ${items.size}; ${tail.remaining} left")
+                if (tail.remaining == 0) contextTail = null
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "extendContext failed", e)
+            }
+        }
+    }
+
     private fun persistQueue() {
         try {
             if (player.mediaItemCount == 0) return
@@ -671,6 +726,8 @@ class PlaybackService : MediaLibraryService() {
                 }
                 // Dropped (unresolvable) items before the target shift its index.
                 val target = items.indexOfFirst { QueueItems.trackIdOf(it) == trackId }.coerceAtLeast(0)
+                contextTail = if (items.isEmpty()) null
+                else ContextTail.after(ids, (at - windowAt) + windowIds.size, items.last().mediaId)
                 MediaSession.MediaItemsWithStartPosition(items, if (items.isEmpty()) C.INDEX_UNSET else target.coerceAtMost(items.size - 1), 0L).also {
                     android.util.Log.i(TAG, "play $trackId from $context: ${items.size} queued (window at $windowAt)")
                 }
@@ -741,6 +798,7 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "PlaybackService"
+        private const val POSITION_SAVE_MS = 5_000L
         private const val CHANNEL_ID = "statocyst_media"
         private const val RECENT_LIMIT = 100
         private const val CMD_SHUFFLE = "statocyst.shuffle"

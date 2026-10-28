@@ -36,6 +36,12 @@ class QueueStore(private val context: Context) {
             .apply()
     }
 
+    /** Cheap periodic update of where playback is, without rewriting the whole queue. */
+    fun savePosition(index: Int, positionMs: Long) {
+        if (!prefs.contains("slots")) return
+        prefs.edit().putInt("index", index).putLong("positionMs", positionMs).apply()
+    }
+
     fun load(): SavedQueue? {
         val json = prefs.getString("slots", null) ?: return null
         return try {

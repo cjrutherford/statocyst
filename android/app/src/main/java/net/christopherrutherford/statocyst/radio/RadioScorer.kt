@@ -30,8 +30,10 @@ object RadioScorer {
     fun seedQueryOf(query: String): String? =
         PHRASE.find(query.trim())?.let { m -> m.groupValues[1].ifBlank { m.groupValues[2] } }?.trim()?.takeIf { it.isNotEmpty() && !it.equals("play", true) && !it.equals("start", true) }
 
+    private val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
+
     private fun norm(text: String?): String =
-        (text ?: "").lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        (text ?: "").lowercase().replace(NON_WORD, " ").trim()
 
     private fun genres(text: String?): Set<String> =
         (text ?: "").split(',', ';', '/', '|').map(::norm).filter { it.isNotEmpty() }.toSet()
@@ -75,20 +77,38 @@ object RadioScorer {
             .map { it to (score(seed, it, it.id in favorites) * 10 + jitter(seed.id, it.id)) }
             .sortedWith(compareByDescending<Pair<MediaItemEntity, Int>> { it.second }.thenBy { it.first.id })
             .map { it.first }
-        return diversify(ranked).take(limit).map { it.id }
+        return diversify(ranked, limit).map { it.id }
     }
 
-    /** Keeps one artist from filling several slots in a row when others are available. */
-    private fun diversify(ranked: List<MediaItemEntity>): List<MediaItemEntity> {
-        val rest = ranked.toMutableList()
-        val out = ArrayList<MediaItemEntity>(rest.size)
-        while (rest.isNotEmpty()) {
-            val lastArtist = out.lastOrNull()?.let { norm(it.artist) }
-            val run = out.takeLastWhile { norm(it.artist) == lastArtist }.size
-            val pick = if (lastArtist != null && run >= MAX_RUN_BY_ARTIST) {
-                rest.indexOfFirst { norm(it.artist) != lastArtist }.takeIf { it >= 0 } ?: 0
-            } else 0
-            out.add(rest.removeAt(pick))
+    /**
+     * Keeps one artist from filling several slots in a row when others are available.
+     * Stops after [limit] picks and normalizes each artist once, so a 10,000-track library
+     * (or one artist with thousands of tracks) stays fast.
+     */
+    private fun diversify(ranked: List<MediaItemEntity>, limit: Int): List<MediaItemEntity> {
+        val rest = ArrayList(ranked)
+        val artists = HashMap<String, String>(rest.size)
+        fun artistOf(item: MediaItemEntity) = artists.getOrPut(item.id) { norm(item.artist) }
+        val out = ArrayList<MediaItemEntity>(minOf(limit, rest.size))
+        var lastArtist: String? = null
+        var run = 0
+        var head = 0
+        val taken = BooleanArray(rest.size)
+        while (out.size < limit && head < rest.size) {
+            while (head < rest.size && taken[head]) head++
+            if (head >= rest.size) break
+            var pick = head
+            if (lastArtist != null && run >= MAX_RUN_BY_ARTIST) {
+                var i = head
+                while (i < rest.size && (taken[i] || artistOf(rest[i]) == lastArtist)) i++
+                if (i < rest.size) pick = i
+            }
+            taken[pick] = true
+            val item = rest[pick]
+            val artist = artistOf(item)
+            run = if (artist == lastArtist) run + 1 else 1
+            lastArtist = artist
+            out.add(item)
         }
         return out
     }

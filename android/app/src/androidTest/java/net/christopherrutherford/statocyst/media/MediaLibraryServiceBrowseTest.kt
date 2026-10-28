@@ -59,7 +59,7 @@ class MediaLibraryServiceBrowseTest {
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
-        fixtureIds = (1..250).map { "zz-fix-%03d".format(it) }
+        fixtureIds = (1..700).map { "zz-fix-%03d".format(it) }
         runBlocking {
             fixtureIds.forEachIndexed { i, id ->
                 db.mediaItemDao().upsert(fixture(id, "ZZ Fixture %03d".format(i + 1), i))
@@ -286,6 +286,34 @@ class MediaLibraryServiceBrowseTest {
             app { browser.mediaItemCount } > 10 &&
                 app { browser.getMediaItemAt(0).mediaMetadata.extras?.getString("trackId") } == "zz-fix-009"
         }
+    }
+
+    @Test
+    fun largePlaylistQueuesAWindowThenExtendsAsPlaybackAdvances() {
+        runBlocking {
+            db.userDao().replaceUserState(
+                favorites = emptyList(),
+                playlists = listOf(PlaylistEntity("zz-big", "ZZ Big Mix", 1L, 0)),
+                playlistTracks = fixtureIds.mapIndexed { i, id -> PlaylistTrackEntity("zz-big", i, id) },
+            )
+        }
+        PlaybackService.onUserStateChanged()
+
+        val first = children("playlist::zz-big")[0]
+        app { browser.setMediaItem(first) }
+        waitFor { app { browser.mediaItemCount } == 1 + BrowseTree.CONTEXT_AFTER }
+        assertEquals(0, app { browser.currentMediaItemIndex })
+
+        // Jump near the end of what is queued: the service appends the next chunk.
+        val queued = app { browser.mediaItemCount }
+        app { browser.seekTo(queued - 10, 0L) }
+        waitFor { app { browser.mediaItemCount } > 1 + BrowseTree.CONTEXT_AFTER }
+        waitFor { app { browser.mediaItemCount } == 1 + 2 * BrowseTree.CONTEXT_AFTER }
+        val lastTrack = app {
+            browser.getMediaItemAt(browser.mediaItemCount - 1).mediaMetadata.extras!!.getString("trackId")
+        }
+        assertEquals(fixtureIds[2 * BrowseTree.CONTEXT_AFTER], lastTrack)
+        app { browser.pause() }
     }
 
     private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) {
