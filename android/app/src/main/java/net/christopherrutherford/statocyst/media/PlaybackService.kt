@@ -18,6 +18,8 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
+import net.christopherrutherford.statocyst.radio.RadioBuilder
+import net.christopherrutherford.statocyst.radio.RadioScorer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -312,6 +314,7 @@ class PlaybackService : MediaLibraryService() {
         return BrowseData(
             tracks = catalog,
             notice = notice,
+            currentTrackId = player.currentMediaItem?.let(QueueItems::trackIdOf),
             // Web order is oldest-first; Auto shows the most recent favorite on top.
             favorites = favorites.sortedByDescending { it.position }.map { it.trackId },
             playlists = playlistRows.first.map { pl ->
@@ -631,6 +634,10 @@ class PlaybackService : MediaLibraryService() {
             if (voiceQuery != null) {
                 return future("voice($voiceQuery)") { playFromVoice(voiceQuery) }
             }
+            val radioSeed = only?.mediaId?.let(BrowseIds::radioSeed)
+            if (radioSeed != null) {
+                return future("radio($radioSeed)") { playRadio(radioSeed) }
+            }
             val queueEntry = only?.mediaId?.let(BrowseIds::queueEntryId)
             val context = only?.mediaId?.let(BrowseIds::contextOf)
             val trackId = only?.mediaId?.let(BrowseIds::trackEntityId)
@@ -662,6 +669,15 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        /** Queues a song radio: the seed first, then similar songs. Nothing is queued when the seed is gone. */
+        private suspend fun playRadio(seedId: String): MediaSession.MediaItemsWithStartPosition {
+            val radio = RadioBuilder(this@PlaybackService).build(seedId)
+            val items = radio?.trackIds.orEmpty().mapNotNull { resolveItem(QueueItems.placeholder(QueueItems.newEntryId(), it)) }
+            android.util.Log.i(TAG, "radio $seedId: ${items.size} tracks via ${radio?.source}")
+            player.shuffleModeEnabled = false
+            return MediaSession.MediaItemsWithStartPosition(items, if (items.isEmpty()) C.INDEX_UNSET else 0, 0L)
+        }
+
         /** "Play X" from Assistant / the car mic: queue the best matches (or something sensible for "play music"). */
         private suspend fun playFromVoice(query: String): MediaSession.MediaItemsWithStartPosition {
             val data = browseData()
@@ -669,6 +685,9 @@ class PlaybackService : MediaLibraryService() {
                 val pool = (data.favorites + data.recents).distinct().filter { id -> data.tracks.any { it.id == id } }
                 (pool.ifEmpty { data.tracks.map { it.id } }).shuffled().take(100).also { player.shuffleModeEnabled = true }
             } else {
+                val seedQuery = RadioScorer.seedQueryOf(query)
+                val seed = seedQuery?.takeIf { it.isNotEmpty() }?.let { BrowseTree.search(it, data, 1).firstOrNull() }
+                if (seed != null) return playRadio(seed)
                 BrowseTree.search(query, data)
             }
             val items = ids.mapNotNull { resolveItem(QueueItems.placeholder(QueueItems.newEntryId(), it)) }

@@ -1,4 +1,15 @@
-import { ChangeDetectionStrategy, Component, computed, HostListener, inject, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnDestroy,
+  computed,
+  HostListener,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import type { Track } from '@statocyst/contracts';
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
@@ -8,6 +19,7 @@ import { DownloadsStore } from '../core/downloads.store';
 import { FavoritesStore } from '../core/favorites.store';
 import { PlaylistsStore } from '../core/playlists.store';
 import { PlaybackStore } from '../core/playback.store';
+import { RadioStore } from '../core/radio.store';
 import { ToastStore } from '../core/toast.store';
 import { isNativePlatform } from '../core/bridge';
 import {
@@ -436,12 +448,15 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         </div>
       }
 
+      <div class="context-layer" #contextLayer>
       @if (contextMenu(); as menu) {
         <div class="context-backdrop" (click)="closeContextMenu()" (contextmenu)="$event.preventDefault()"></div>
         <div class="context-menu" [style.left.px]="menu.x" [style.top.px]="menu.y" role="menu">
           <button type="button" role="menuitem" (click)="play(menu.track); closeContextMenu()">Play</button>
           <button type="button" role="menuitem" (click)="playNext(menu.track); closeContextMenu()">Play next</button>
           <button type="button" role="menuitem" (click)="enqueue(menu.track); closeContextMenu()">Add to queue</button>
+          <button type="button" role="menuitem" (click)="startRadio(menu.track); closeContextMenu()">Start radio</button>
+          <button type="button" role="menuitem" (click)="saveRadio(menu.track); closeContextMenu()">Save radio as playlist</button>
           <button type="button" role="menuitem" (click)="favorites.toggle(menu.track.id); closeContextMenu()">
             {{ favorites.isFavorite()(menu.track.id) ? 'Unfavorite' : 'Favorite' }}
           </button>
@@ -455,6 +470,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           }
         </div>
       }
+      </div>
     </section>
   `,
   styles: [
@@ -1140,20 +1156,34 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       .context-backdrop {
         position: fixed;
         inset: 0;
-        z-index: 40;
+        z-index: 300;
       }
       .context-menu {
         position: fixed;
-        z-index: 41;
+        z-index: 301;
         min-width: 180px;
+        max-width: calc(100vw - 16px);
+        max-height: calc(100vh - 16px);
+        overflow-y: auto;
         padding: 6px;
         border-radius: 12px;
         border: 1px solid var(--line);
-        background: var(--panel, #0b1224);
+        background: var(--panel-strong, #0b1224);
+        backdrop-filter: blur(18px);
         box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
         display: grid;
         gap: 2px;
       }
+      @media (max-width: 640px) {
+        .context-menu {
+          left: 8px !important;
+          right: 8px;
+          top: auto !important;
+          bottom: 8px;
+          max-height: 70vh;
+        }
+      }
+
       .context-menu button {
         text-align: left;
         padding: 8px 12px;
@@ -1228,7 +1258,19 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
     `,
   ],
 })
-export class LibraryViewComponent {
+export class LibraryViewComponent implements AfterViewInit, OnDestroy {
+  private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
+
+  // The menu is position:fixed, but an animated ancestor makes it relative to (and clipped by)
+  // the scroll area, hiding it behind the mini-player. Hosting it on <body> avoids that.
+  ngAfterViewInit(): void {
+    document.body.appendChild(this.contextLayer().nativeElement);
+  }
+
+  ngOnDestroy(): void {
+    this.contextLayer().nativeElement.remove();
+  }
+
   @HostListener('document:click', ['$event'])
   onDocumentClick(event: MouseEvent): void {
     const menu = this.contextMenu();
@@ -1242,6 +1284,7 @@ export class LibraryViewComponent {
   protected readonly favorites = inject(FavoritesStore);
   protected readonly playlists = inject(PlaylistsStore);
   protected readonly playback = inject(PlaybackStore);
+  protected readonly radio = inject(RadioStore);
   protected readonly toasts = inject(ToastStore);
   protected readonly isNative = isNativePlatform;
   protected readonly formatDuration = formatDuration;
@@ -1384,6 +1427,14 @@ export class LibraryViewComponent {
     void this.playback.playNext(track.id);
   }
 
+  protected startRadio(track: Track): void {
+    void this.radio.start(track);
+  }
+
+  protected saveRadio(track: Track): void {
+    void this.radio.saveAsPlaylist(track);
+  }
+
   protected enqueue(track: Track): void {
     void this.playback.enqueue([track.id]);
   }
@@ -1456,7 +1507,13 @@ export class LibraryViewComponent {
 
   protected openContextMenu(track: Track, event: MouseEvent): void {
     event.preventDefault();
-    this.contextMenu.set({ x: event.clientX, y: event.clientY, track });
+    // Keep the menu on-screen: phones are narrower/shorter than the menu.
+    const margin = 8;
+    const width = 260;
+    const height = 420;
+    const x = Math.max(margin, Math.min(event.clientX, window.innerWidth - width - margin));
+    const y = Math.max(margin, Math.min(event.clientY, window.innerHeight - height - margin));
+    this.contextMenu.set({ x, y, track });
   }
 
   protected closeContextMenu(): void {

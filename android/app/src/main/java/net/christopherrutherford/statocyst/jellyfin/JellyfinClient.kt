@@ -70,7 +70,7 @@ object JellyfinClient {
 
     fun authenticate(baseUrl: String, username: String, password: String): JellyfinAuthResult {
         val url = baseUrl.trimEnd('/')
-        val body = """{"Username":"$username","Pw":"$password"}"""
+        val body = JSONObject().put("Username", username).put("Pw", password).toString()
         val (code, text) = request("POST", "$url/Users/AuthenticateByName", body = body)
         if (code != 200) throw Exception("Authentication failed (HTTP $code)")
         val json = JSONObject(text)
@@ -110,6 +110,19 @@ object JellyfinClient {
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** Jellyfin's "instant mix" for a song: item ids of similar songs, best first. */
+    fun instantMix(baseUrl: String, userId: String, token: String, itemId: String, limit: Int): List<String> {
+        val url = baseUrl.trimEnd('/')
+        val (code, body) = request(
+            "GET",
+            "$url/Items/$itemId/InstantMix?userId=$userId&limit=$limit",
+            token = token,
+        )
+        if (code != 200) throw Exception("Instant mix failed (HTTP $code)")
+        val items = JSONObject(body).optJSONArray("Items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { items.getJSONObject(it).optString("Id").takeIf { id -> id.isNotEmpty() } }
     }
 
     fun listAudioItems(

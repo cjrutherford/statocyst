@@ -740,6 +740,7 @@ export class CapacitorBridge {
       sourceLabel,
       trackNo: (raw['trackNo'] as number | null) ?? null,
       year: (raw['year'] as number | null) ?? null,
+      genre: (raw['genre'] as string | null) ?? null,
       format: (raw['format'] as string | null) ?? null,
       missing: Boolean(raw['missing']),
     };
@@ -993,6 +994,15 @@ export class CapacitorBridge {
     },
     report: (event: EngineEvent) => this.handleEngineReport(event),
   };
+
+  /** Song radio from the native plugin (Jellyfin instant mix topped up by the local scorer). */
+  async radio(request: { trackId: string; limit?: number }): Promise<{ trackIds: string[]; source: string }> {
+    const result = await this.plugin().radio({ trackId: request.trackId, limit: request.limit ?? 50 });
+    return {
+      trackIds: Array.isArray(result?.trackIds) ? result.trackIds.map(String) : [],
+      source: String(result?.source ?? 'local'),
+    };
+  }
 
   jellyfin = {
     listServers: async () => this.loadServersValidated(),

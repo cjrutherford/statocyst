@@ -57,6 +57,7 @@ export interface Track {
   sourceLabel: string;
   trackNo?: number | null;
   year?: number | null;
+  genre?: string | null;
   format?: string | null;
   missing: boolean;
 }

@@ -16,11 +16,12 @@ object BrowseIds {
     const val ARTISTS = "artists"
     const val TRACKS = "tracks"
     const val QUEUE = "queue"
+    const val RADIO = "radio"
     /** A non-playable status row ("You're offline"); opens to an empty list. */
     const val NOTICE = "info::notice"
 
     /** Folders that sit directly under the root, in display order. */
-    val ROOT_FOLDERS = listOf(RECENTS, FAVORITES, PLAYLISTS, ALBUMS, ARTISTS, TRACKS, QUEUE)
+    val ROOT_FOLDERS = listOf(RECENTS, FAVORITES, PLAYLISTS, RADIO, ALBUMS, ARTISTS, TRACKS, QUEUE)
 
     fun album(albumArtist: String, album: String): String = "album::$albumArtist::$album"
     fun artist(artist: String): String = "artist::$artist"
@@ -35,6 +36,9 @@ object BrowseIds {
     private const val CONTEXT_SEP = "@@"
     fun queueItem(entryId: String): String = "queue::$entryId"
     fun search(query: String): String = "search::$query"
+    fun radio(trackId: String): String = "radio::$trackId"
+    fun radioSeed(mediaId: String): String? =
+        if (mediaId.startsWith("radio::")) mediaId.removePrefix("radio::") else null
 
     fun trackEntityId(mediaId: String): String? =
         if (mediaId.startsWith("track::")) mediaId.removePrefix("track::").substringBefore(CONTEXT_SEP) else null
@@ -78,6 +82,8 @@ enum class BrowseNotice(val title: String, val subtitle: String) {
 data class BrowseData(
     val tracks: List<MediaItemEntity>,
     val notice: BrowseNotice? = null,
+    /** The track playing right now, offered first as a radio seed. */
+    val currentTrackId: String? = null,
     val favorites: List<String> = emptyList(),
     val playlists: List<PlaylistInfo> = emptyList(),
     val recents: List<String> = emptyList(),
@@ -93,6 +99,7 @@ object BrowseTree {
     /** Most tracks that "play from here" will queue around the chosen one. */
     const val CONTEXT_BEFORE = 50
     const val CONTEXT_AFTER = 250
+    private const val RADIO_SEEDS = 5
 
     fun root(): BrowseNode = BrowseNode(BrowseIds.ROOT, "Statocyst", childStyle = ChildStyle.GRID)
 
@@ -109,6 +116,7 @@ object BrowseTree {
         parentId == BrowseIds.RECENTS -> trackNodes(data.recents, data, parentId)
         parentId == BrowseIds.FAVORITES -> trackNodes(data.favorites, data, parentId)
         parentId == BrowseIds.PLAYLISTS -> data.playlists.map(::playlistNode)
+        parentId == BrowseIds.RADIO -> radioNodes(data)
         parentId.startsWith("playlist::") ->
             data.playlists.firstOrNull { BrowseIds.playlist(it.id) == parentId }
                 ?.let { trackNodes(it.trackIds, data, parentId) }.orEmpty()
@@ -121,12 +129,30 @@ object BrowseTree {
         else -> emptyList()
     }
 
+    /** Songs worth starting a radio from: what is playing, then favorites, then recents. */
+    private fun radioSeeds(data: BrowseData): List<MediaItemEntity> {
+        val byId = data.tracks.associateBy { it.id }
+        val ids = listOfNotNull(data.currentTrackId) + data.favorites.take(RADIO_SEEDS) + data.recents.take(RADIO_SEEDS)
+        return ids.distinct().mapNotNull { byId[it] }.take(RADIO_SEEDS * 2)
+    }
+
+    private fun radioNodes(data: BrowseData): List<BrowseNode> = radioSeeds(data).map { t ->
+        BrowseNode(
+            BrowseIds.radio(t.id), "${t.title} Radio", t.artist,
+            playable = true, trackId = t.id, albumId = t.albumId, imageTag = t.jellyfinImageTag,
+        )
+    }
+
     private fun noticeNode(notice: BrowseNotice) =
         BrowseNode(BrowseIds.NOTICE, notice.title, notice.subtitle, childStyle = ChildStyle.LIST)
 
     /** Resolves a single media ID back to its node (used by onGetItem). */
     fun node(mediaId: String, data: BrowseData): BrowseNode? = when {
         mediaId == BrowseIds.ROOT -> root()
+        mediaId.startsWith("radio::") ->
+            data.tracks.firstOrNull { it.id == BrowseIds.radioSeed(mediaId) }?.let { t ->
+                BrowseNode(mediaId, "${t.title} Radio", t.artist, playable = true, trackId = t.id, albumId = t.albumId, imageTag = t.jellyfinImageTag)
+            }
         mediaId == BrowseIds.NOTICE -> data.notice?.let(::noticeNode)
         mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
         mediaId.startsWith("playlist::") ->
@@ -243,6 +269,8 @@ object BrowseTree {
                 ?.let { BrowseNode(id, "Favorites", count(it, "track"), childStyle = ChildStyle.LIST) }
             BrowseIds.PLAYLISTS -> data.playlists.size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Playlists", count(it, "playlist"), childStyle = ChildStyle.LIST) }
+            BrowseIds.RADIO -> radioSeeds(data).size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Song radio", "Start from a song you like", childStyle = ChildStyle.LIST) }
             BrowseIds.ALBUMS -> BrowseNode(id, "Albums", childStyle = ChildStyle.GRID)
             BrowseIds.ARTISTS -> BrowseNode(id, "Artists", childStyle = ChildStyle.LIST)
             BrowseIds.TRACKS -> BrowseNode(id, "All tracks", count(data.tracks.size, "track"), childStyle = ChildStyle.LIST)

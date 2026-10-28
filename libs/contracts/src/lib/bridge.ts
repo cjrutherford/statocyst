@@ -311,6 +311,8 @@ export interface StatocystBridge {
   jellyfin: JellyfinBridge;
   downloads: DownloadsBridge;
   cache: CacheBridge;
+  /** Song radio (Android): the seed first, then similar songs. Absent on desktop. */
+  radio?(request: { trackId: string; limit?: number }): Promise<{ trackIds: string[]; source: string }>;
 }
 
 export function toBridgeError(error: unknown): ElectronBridgeError {

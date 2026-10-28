@@ -126,6 +126,24 @@ class StatocystPlugin : Plugin() {
         }
     }
 
+    /** Song radio: the seed first, then similar songs (Jellyfin instant mix, topped up locally). */
+    @PluginMethod
+    fun radio(call: PluginCall) {
+        val trackId = call.getString("trackId") ?: ""
+        if (trackId.isEmpty()) { call.reject("trackId required"); return }
+        val limit = (call.getInt("limit") ?: 50).coerceIn(1, 200)
+        io(call) {
+            val result = net.christopherrutherford.statocyst.radio.RadioBuilder(context).build(trackId, limit)
+            if (result == null) {
+                call.reject("Track not found")
+                return@io
+            }
+            val ids = JSArray()
+            result.trackIds.forEach { ids.put(it) }
+            call.resolve(JSObject().put("trackIds", ids).put("source", result.source))
+        }
+    }
+
     // ------------------------------------------------- native playback (S2)
     //
     // The ExoPlayer in PlaybackService owns audio, the queue, shuffle and repeat.
@@ -986,6 +1004,7 @@ class StatocystPlugin : Plugin() {
         .put("sourceId", t.sourceId)
         .put("trackNo", t.trackNo)
         .put("year", t.year)
+        .put("genre", t.genre)
         .put("format", t.format)
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)

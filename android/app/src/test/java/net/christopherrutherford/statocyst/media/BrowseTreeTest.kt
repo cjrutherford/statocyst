@@ -265,4 +265,22 @@ class BrowseTreeTest {
         assertEquals(emptyList<String>(), BrowseTree.children(BrowseIds.NOTICE, empty).map { it.id })
         assertNull(BrowseTree.node(BrowseIds.NOTICE, BrowseData(tracks = emptyList())))
     }
+
+    @Test
+    fun radioFolderOffersCurrentThenFavoritesAndRecentsAsPlayableSeeds() {
+        val d = data.copy(currentTrackId = "t3", favorites = listOf("t4", "t3"), recents = listOf("t1"))
+        val root = BrowseTree.children(BrowseIds.ROOT, d).map { it.id }
+        assertTrue(BrowseIds.RADIO in root)
+        val seeds = BrowseTree.children(BrowseIds.RADIO, d)
+        assertEquals(listOf("radio::t3", "radio::t4", "radio::t1"), seeds.map { it.id })
+        assertTrue(seeds.all { it.playable })
+        assertEquals("The Hollow Radio", seeds.first().title)
+        assertEquals("t3", BrowseIds.radioSeed(seeds.first().id))
+        assertNull(BrowseIds.radioSeed("track::t3"))
+    }
+
+    @Test
+    fun radioFolderIsHiddenWithoutSeeds() {
+        assertTrue(BrowseIds.RADIO !in BrowseTree.children(BrowseIds.ROOT, data).map { it.id })
+    }
 }

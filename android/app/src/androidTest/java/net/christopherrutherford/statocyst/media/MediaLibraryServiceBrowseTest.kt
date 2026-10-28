@@ -24,6 +24,7 @@ import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -264,6 +265,27 @@ class MediaLibraryServiceBrowseTest {
             .build()
         app { browser.setMediaItem(artistVoice) }
         waitFor { app { browser.mediaItemCount } == 100 }
+    }
+
+    @Test
+    fun radioFolderAndVoiceBuildASimilarQueue() {
+        seedUserState(listOf("zz-fix-005", "zz-fix-006"))
+        val seeds = children(BrowseIds.RADIO)
+        val seed = seeds.firstOrNull { it.mediaId == BrowseIds.radio("zz-fix-005") }
+        assertNotNull("radio folder should offer the favorite as a seed", seed)
+        assertTrue(seed!!.mediaMetadata.isPlayable == true)
+        app { browser.setMediaItem(seed) }
+        waitFor { app { browser.mediaItemCount } > 10 }
+        assertEquals("zz-fix-005", app { browser.getMediaItemAt(0).mediaMetadata.extras?.getString("trackId") })
+
+        val voice = MediaItem.Builder()
+            .setRequestMetadata(MediaItem.RequestMetadata.Builder().setSearchQuery("songs like ZZ Fixture 009").build())
+            .build()
+        app { browser.setMediaItem(voice) }
+        waitFor {
+            app { browser.mediaItemCount } > 10 &&
+                app { browser.getMediaItemAt(0).mediaMetadata.extras?.getString("trackId") } == "zz-fix-009"
+        }
     }
 
     private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) {
