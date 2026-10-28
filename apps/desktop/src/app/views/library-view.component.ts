@@ -75,6 +75,15 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
               Load demo
             </button>
           }
+          <button
+            type="button"
+            class="btn"
+            [disabled]="filtered().length === 0"
+            (click)="shuffleAll()"
+          >
+            <sc-icon name="shuffle" />
+            Shuffle all
+          </button>
         </div>
       </header>
 
@@ -494,6 +503,12 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         font-size: clamp(2rem, 3.4vw, 3rem);
         letter-spacing: -0.03em;
         margin: 4px 0 6px;
+      }
+      @media (max-width: 720px) {
+        .eyebrow,
+        .lede {
+          display: none;
+        }
       }
       .lede {
         color: var(--muted);
@@ -1421,6 +1436,14 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected play(track: Track): void {
     void this.playback.playTrack(track.id, this.filtered().map((t) => t.id));
+  }
+
+  protected async shuffleAll(): Promise<void> {
+    const ids = this.filtered().map((t) => t.id);
+    if (ids.length === 0) return;
+    if (!this.playback.snapshot().shuffle) await this.playback.toggleShuffle();
+    const start = ids[Math.floor(Math.random() * ids.length)];
+    await this.playback.playTrack(start, ids);
   }
 
   protected playNext(track: Track): void {

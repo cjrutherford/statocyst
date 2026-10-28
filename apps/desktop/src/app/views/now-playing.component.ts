@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, output, signal } 
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
 import { PlaybackStore } from '../core/playback.store';
+import { RadioStore } from '../core/radio.store';
 import { LibraryStore } from '../core/library.store';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
 
@@ -143,6 +144,13 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
                 (input)="onVolume($event)"
               />
               <span class="state">{{ stateLabel() }}</span>
+            </div>
+
+            <div class="more">
+              <button type="button" class="btn" (click)="radio.start(track)">Start radio</button>
+              <button type="button" class="btn btn--quiet" (click)="radio.saveAsPlaylist(track)">
+                Save radio as playlist
+              </button>
             </div>
           </div>
         </div>
@@ -559,14 +567,21 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
           grid-template-columns: 1fr;
         }
         .stage__art {
-          max-width: 380px;
+          max-width: min(380px, 28vh);
         }
+      }
+      .more {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
       }
     `,
   ],
 })
 export class NowPlayingViewComponent {
   protected readonly playback = inject(PlaybackStore);
+  protected readonly radio = inject(RadioStore);
   protected readonly library = inject(LibraryStore);
   protected readonly formatDuration = formatDuration;
   protected readonly formatLabel = formatLabel;
