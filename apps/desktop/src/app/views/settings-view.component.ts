@@ -110,6 +110,27 @@ import { formatBytes } from '../core/format';
           </div>
         </section>
 
+        @if (isNative()) {
+        <section class="card" aria-labelledby="car-heading">
+          <h2 id="car-heading">Car and Android Auto</h2>
+          <p class="card__hint">
+            Statocyst appears in Android Auto as a media app: browse Recents, Favorites, Playlists,
+            Radio, Albums, Artists and Tracks from the head unit, or ask Assistant to play something.
+          </p>
+          <ol class="car-steps">
+            <li>Open your phone's Android Auto settings and tap the version number ten times to enable developer settings.</li>
+            <li>In the developer settings, turn on <strong>Unknown sources</strong> (this build is installed outside Google Play).</li>
+            <li>Back in Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
+            <li>Reconnect to the car. Statocyst appears in the media app list.</li>
+          </ol>
+          <p class="card__hint">
+            Tips: say "play radio like <em>song</em>" to start a song radio, or use the Shuffle and
+            Repeat buttons on the head unit. Browse is limited to the Android Auto system and
+            Google Assistant; other apps are blocked.
+          </p>
+        </section>
+        }
+
         @if (!isNative()) {
         <section class="card" aria-labelledby="shortcuts-heading">
           <h2 id="shortcuts-heading">Keyboard</h2>
@@ -543,6 +564,13 @@ import { formatBytes } from '../core/format';
         background: linear-gradient(140deg, rgba(56, 225, 255, 0.24), rgba(167, 139, 250, 0.24));
         color: var(--text);
         box-shadow: inset 0 0 0 1px rgba(56, 225, 255, 0.3);
+      }
+      .car-steps {
+        margin: 12px 0;
+        padding-left: 1.25rem;
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
       }
       .shortcuts {
         display: grid;

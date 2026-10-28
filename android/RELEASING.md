@@ -110,3 +110,30 @@ place.
   suitable as a long-term trust anchor.
 - The app itself makes no analytics or update-check requests; users update by
   downloading the APK again.
+
+## 8. Per-build checks and the Android Auto gate
+
+Before publishing, run from the repo root:
+
+```bash
+node node_modules/.bin/nx run-many -t test --skip-nx-cache
+cd android && ./gradlew :app:testDebugUnitTest :app:connectedDebugAndroidTest
+```
+
+`connectedDebugAndroidTest` needs a running emulator/device, uninstalls the app
+afterwards and so clears its data. The instrumented tests seed their own
+`zz-fix-*` fixtures and do not touch a pre-existing library, but expect to
+re-import music after running them on a device you care about.
+
+Publish with `tools/android-publish.sh` (bumps are manual, see section 2). It
+builds, copies the APK and `SHA256SUMS` into `release/`, and verifies the public
+bytes through the Funnel URL match the local file.
+
+### Android Auto gate (S019)
+
+Automated tests do not replace head-unit verification. Mark S019 `VERIFIED` only
+after running the Desktop Head Unit (or a real car) and recording, in
+`statocyst-architecture-pack/evidence/S019-report.md`: launcher icon present,
+browse tree reachable, playback started from the tree, custom buttons, voice
+search. For a sideloaded build the phone needs Android Auto developer settings
+-> **Unknown sources**, and Statocyst ticked under **Customize launcher**.
