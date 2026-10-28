@@ -543,7 +543,10 @@ interface NavItem {
           grid-column: 1;
           grid-row: 2;
         }
-        /* Now Playing already carries full transport; don't stack a mini-player over it. */
+      }
+      /* Now Playing already carries full transport; don't stack a mini-player over it. On a short
+         screen its controls fall below the fold, so keep the mini-player there instead. */
+      @media (max-width: 720px) and (min-height: 761px) {
         .player-slot--hidden-phone {
           display: none;
         }

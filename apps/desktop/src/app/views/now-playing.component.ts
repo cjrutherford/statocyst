@@ -563,11 +563,36 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         }
       }
       @media (max-width: 900px) {
+        .view {
+          gap: 16px;
+        }
         .stage {
           grid-template-columns: 1fr;
         }
         .stage__art {
-          max-width: min(380px, 28vh);
+          max-width: min(380px, 24vh);
+        }
+        /* Long titles must not push the transport controls off a phone screen. */
+        .title {
+          font-size: clamp(1.45rem, 6.2vw, 2.1rem);
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        .artist {
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+      }
+      @media (max-width: 900px) and (max-height: 760px) {
+        .stage__art {
+          max-width: min(260px, 24vh);
+        }
+        .title {
+          -webkit-line-clamp: 2;
         }
       }
       .more {
