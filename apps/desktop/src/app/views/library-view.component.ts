@@ -276,26 +276,6 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
               </div>
             }
 
-            @if (activeFilter()) {
-              <div class="filter-bar">
-                <span class="filter-bar__label">Showing: {{ activeFilter() }}</span>
-                @if (downloads.supported) {
-                  <button
-                    type="button"
-                    class="btn btn--quiet"
-                    [disabled]="downloads.isBatchRunning()"
-                    (click)="downloadCurrentFilter()"
-                  >
-                    <sc-icon name="download" />
-                    Download all {{ filtered().length }} tracks
-                  </button>
-                }
-                <button type="button" class="btn btn--quiet" (click)="clearFilters()">
-                  <sc-icon name="close" /> Clear
-                </button>
-              </div>
-            }
-
             @if (downloads.isBatchRunning() && !downloads.queue()) {
               <div class="dl-progress" role="status" aria-live="polite">
                 <span>Downloading… {{ downloads.batchPercent() ?? 0 }}%</span>
@@ -424,10 +404,111 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
               </table>
             </div>
           }
+          } @else if (detail(); as d) {
+            <div class="detail">
+              <button type="button" class="btn btn--quiet detail__back" (click)="closeDetail()">← {{ backLabel() }}</button>
+              @if (d.kind === 'artist') {
+                <header class="detail__head">
+                  <span class="detail__avatar">
+                    @if (detailArtwork()) {
+                      <sc-artwork [src]="detailArtwork()" [altText]="d.artist" size="hero" />
+                    } @else {
+                      <span class="artist-card__initial">{{ d.artist.charAt(0).toUpperCase() }}</span>
+                    }
+                  </span>
+                  <div class="detail__text">
+                    <span class="eyebrow">Artist</span>
+                    <h2>{{ d.artist }}</h2>
+                    <p class="detail__meta">{{ detailMeta() }}</p>
+                  </div>
+                  <div class="detail__actions">
+                    <button type="button" class="btn" (click)="playDetail(false)"><sc-icon name="play" /> Play</button>
+                    <button type="button" class="btn" (click)="playDetail(true)"><sc-icon name="shuffle" /> Shuffle</button>
+                    @if (downloads.supported) {
+                      <button type="button" class="btn btn--quiet" [disabled]="downloads.isBatchRunning()" (click)="downloadDetail()">
+                        <sc-icon name="download" /> Download all
+                      </button>
+                    }
+                  </div>
+                </header>
+                <div class="album-grid">
+                  @for (album of detailAlbums(); track album.album; let index = $index) {
+                    <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, true)">
+                      <span class="album-card__art">
+                        <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
+                      </span>
+                      <span class="album-card__name">{{ album.album }}</span>
+                      <span class="album-card__count">{{ album.tracks }} track{{ album.tracks === 1 ? '' : 's' }}</span>
+                    </button>
+                  }
+                </div>
+              } @else {
+                <header class="detail__head">
+                  <span class="detail__cover">
+                    <sc-artwork [src]="detailArtwork()" [altText]="d.album" size="hero" />
+                  </span>
+                  <div class="detail__text">
+                    <span class="eyebrow">Album</span>
+                    <h2>{{ d.album }}</h2>
+                    <p class="detail__meta">
+                      <button type="button" class="link" (click)="openArtist(d.artist)">{{ d.artist }}</button>
+                      · {{ detailMeta() }}
+                    </p>
+                  </div>
+                  <div class="detail__actions">
+                    <button type="button" class="btn" (click)="playDetail(false)"><sc-icon name="play" /> Play</button>
+                    <button type="button" class="btn" (click)="playDetail(true)"><sc-icon name="shuffle" /> Shuffle</button>
+                    @if (downloads.supported) {
+                      <button type="button" class="btn btn--quiet" [disabled]="downloads.isBatchRunning()" (click)="downloadDetail()">
+                        <sc-icon name="download" /> Download
+                      </button>
+                    }
+                  </div>
+                </header>
+                <ol class="detail-tracks">
+                  @for (track of detailTracks(); track track.id; let index = $index) {
+                    <li
+                      class="detail-track"
+                      [class.is-current]="playback.track()?.id === track.id"
+                      [class.is-missing]="track.missing"
+                      (click)="play(track, detailTracks())"
+                      (contextmenu)="openContextMenu(track, $event, detailTracks())"
+                    >
+                      <span class="detail-track__no">
+                        @if (playback.track()?.id === track.id && playback.isPlaying()) {
+                          <span class="equalizer" aria-label="Now playing"><i></i><i></i><i></i></span>
+                        } @else {
+                          {{ track.trackNo ?? index + 1 }}
+                        }
+                      </span>
+                      <span class="detail-track__title">
+                        {{ track.title }}
+                        @if (downloads.isDownloaded()(track.id)) {
+                          <span class="dl-badge" title="Available offline"><sc-icon name="download" /></span>
+                        }
+                        @if (track.artist !== d.artist) {
+                          <span class="detail-track__artist">{{ track.artist }}</span>
+                        }
+                      </span>
+                      <span class="detail-track__time">{{ formatDuration(track.durationMs) }}</span>
+                      <button
+                        type="button"
+                        class="icon-btn"
+                        [attr.aria-label]="'More actions for ' + track.title"
+                        title="More"
+                        (click)="openContextMenu(track, $event, detailTracks()); $event.stopPropagation()"
+                      >
+                        <sc-icon name="down" />
+                      </button>
+                    </li>
+                  }
+                </ol>
+              }
+            </div>
           } @else if (mode() === 'albums') {
             <div class="album-grid">
               @for (album of library.albums(); track album.album + album.artist; let index = $index) {
-                <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album)">
+                <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, false)">
                   <span class="album-card__art">
                     <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
                   </span>
@@ -461,7 +542,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       @if (contextMenu(); as menu) {
         <div class="context-backdrop" (click)="closeContextMenu()" (contextmenu)="$event.preventDefault()"></div>
         <div class="context-menu" [style.left.px]="menu.x" [style.top.px]="menu.y" role="menu">
-          <button type="button" role="menuitem" (click)="play(menu.track); closeContextMenu()">Play</button>
+          <button type="button" role="menuitem" (click)="play(menu.track, menu.queue); closeContextMenu()">Play</button>
           <button type="button" role="menuitem" (click)="playNext(menu.track); closeContextMenu()">Play next</button>
           <button type="button" role="menuitem" (click)="enqueue(menu.track); closeContextMenu()">Add to queue</button>
           <button type="button" role="menuitem" (click)="startRadio(menu.track); closeContextMenu()">Start radio</button>
@@ -736,6 +817,109 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
            the deeper light-theme accent. */
         color: #04202e;
         background: rgba(255, 255, 255, 0.92);
+      }
+      .detail {
+        display: grid;
+        gap: 20px;
+      }
+      .detail__back {
+        justify-self: start;
+      }
+      .detail__head {
+        display: flex;
+        align-items: flex-end;
+        gap: clamp(14px, 2.4vw, 28px);
+        flex-wrap: wrap;
+      }
+      .detail__cover,
+      .detail__avatar {
+        display: block;
+        flex: none;
+        width: clamp(96px, 16vw, 160px);
+        border-radius: 16px;
+        overflow: hidden;
+        box-shadow: 0 18px 44px rgba(0, 6, 20, 0.45);
+      }
+      .detail__avatar {
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: linear-gradient(140deg, rgba(56, 225, 255, 0.24), rgba(167, 139, 250, 0.24));
+      }
+      .detail__text {
+        flex: 1;
+        min-width: 180px;
+      }
+      .detail__text h2 {
+        font-size: clamp(1.5rem, 3vw, 2.4rem);
+        letter-spacing: -0.02em;
+        margin: 2px 0 6px;
+      }
+      .detail__meta {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.86rem;
+      }
+      .detail__meta .link {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: inherit;
+        font: inherit;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        cursor: pointer;
+      }
+      .detail__actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .detail-tracks {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+      }
+      .detail-track {
+        display: grid;
+        grid-template-columns: 36px 1fr auto auto;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .detail-track:hover {
+        background: var(--surface-2);
+      }
+      .detail-track.is-current .detail-track__title {
+        color: var(--accent, #38e1ff);
+      }
+      .detail-track.is-missing {
+        opacity: 0.5;
+      }
+      .detail-track__no,
+      .detail-track__time {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+        font-size: 0.82rem;
+        text-align: right;
+      }
+      .detail-track__title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+      }
+      .detail-track__artist {
+        margin-left: 8px;
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 0.78rem;
       }
       .filter-bar {
         display: flex;
@@ -1275,6 +1459,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
 })
 export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // The menu is position:fixed, but an animated ancestor makes it relative to (and clipped by)
   // the scroll area, hiding it behind the mini-player. Hosting it on <body> avoids that.
@@ -1307,8 +1492,10 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly pluralize = pluralize;
 
   protected readonly search = signal('');
-  protected readonly albumFilter = signal<string | null>(null);
-  protected readonly artistFilter = signal<string | null>(null);
+  /** Open drill-down page: an artist's albums, or an album's tracks (viaArtist: opened from the artist page). */
+  protected readonly detail = signal<
+    { kind: 'artist'; artist: string } | { kind: 'album'; album: string; artist: string; viaArtist: boolean } | null
+  >(null);
   protected readonly sort = signal<SortKey>('artist');
   protected readonly mode = signal<'tracks' | 'albums' | 'artists'>('tracks');
   protected readonly showJellyfinSetup = signal(false);
@@ -1316,7 +1503,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly selectMode = signal(false);
   protected readonly selected = signal<Set<string>>(new Set());
   protected readonly selectedCount = computed(() => this.selected().size);
-  protected readonly contextMenu = signal<{ x: number; y: number; track: Track } | null>(null);
+  protected readonly contextMenu = signal<{ x: number; y: number; track: Track; queue?: Track[] } | null>(null);
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressMoved = false;
   private longPressStart: { x: number; y: number } | null = null;
@@ -1345,13 +1532,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected readonly filtered = computed(() => {
     const term = this.search().trim().toLowerCase();
-    const album = this.albumFilter();
-    const artist = this.artistFilter();
     const offlineOnly = this.offlineOnly();
     const isDownloaded = this.downloads.isDownloaded();
     const rows = this.library.tracks().filter((track) => {
-      if (album && track.album !== album) return false;
-      if (artist && (track.albumArtist ?? track.artist) !== artist) return false;
       // "Offline" means it plays with no network: a pinned download or a file
       // imported onto this device.
       if (offlineOnly && !isDownloaded(track.id) && track.sourceId !== 'local') return false;
@@ -1409,34 +1592,97 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       .sort((a, b) => a.artist.localeCompare(b.artist));
   });
 
-  protected readonly activeFilter = computed(() => this.artistFilter() ?? this.albumFilter());
+  /** Tracks on the open page, in play order: an album by track number, an artist by album then track. */
+  protected readonly detailTracks = computed(() => {
+    const d = this.detail();
+    if (!d) return [] as Track[];
+    const rows = this.library.tracks().filter((t) => (t.albumArtist ?? t.artist) === d.artist && (d.kind === 'artist' || t.album === d.album));
+    return rows.sort(
+      (a, b) =>
+        (d.kind === 'artist' ? a.album.localeCompare(b.album) : 0) ||
+        (a.trackNo ?? 0) - (b.trackNo ?? 0) ||
+        a.title.localeCompare(b.title),
+    );
+  });
+
+  protected readonly detailAlbums = computed(() => {
+    const d = this.detail();
+    return d?.kind === 'artist' ? this.library.albums().filter((a) => a.artist === d.artist) : [];
+  });
+
+  protected readonly detailArtwork = computed(() => {
+    const d = this.detail();
+    if (!d) return null;
+    if (d.kind === 'artist') return this.artists().find((a) => a.artist === d.artist)?.artwork ?? null;
+    return this.library.albums().find((a) => a.album === d.album && a.artist === d.artist)?.artwork ?? null;
+  });
+
+  protected readonly detailMeta = computed(() => {
+    const d = this.detail();
+    const tracks = this.detailTracks();
+    const minutes = Math.max(1, Math.round(tracks.reduce((sum, t) => sum + t.durationMs, 0) / 60000));
+    const base = `${tracks.length} track${tracks.length === 1 ? '' : 's'} · ${minutes} min`;
+    if (d?.kind === 'artist') {
+      const albums = this.detailAlbums().length;
+      return `${albums} album${albums === 1 ? '' : 's'} · ${base}`;
+    }
+    const year = tracks.find((t) => t.year)?.year;
+    return year ? `${year} · ${base}` : base;
+  });
+
+  protected readonly backLabel = computed(() => {
+    const d = this.detail();
+    if (d?.kind === 'album' && d.viaArtist) return d.artist;
+    return this.mode() === 'artists' ? 'Artists' : 'Albums';
+  });
 
   protected setMode(mode: 'tracks' | 'albums' | 'artists'): void {
     this.mode.set(mode);
+    this.detail.set(null);
   }
 
-  protected openAlbum(album: string): void {
-    this.albumFilter.set(album);
-    this.artistFilter.set(null);
-    this.search.set('');
-    this.mode.set('tracks');
+  protected openAlbum(album: string, artist: string, viaArtist: boolean): void {
+    this.detail.set({ kind: 'album', album, artist, viaArtist });
+    this.scrollToTop();
   }
 
   protected openArtist(artist: string): void {
-    this.artistFilter.set(artist);
-    this.albumFilter.set(null);
-    this.search.set('');
-    this.mode.set('tracks');
+    this.mode.set('artists');
+    this.detail.set({ kind: 'artist', artist });
+    this.scrollToTop();
+  }
+
+  protected closeDetail(): void {
+    const d = this.detail();
+    this.detail.set(d?.kind === 'album' && d.viaArtist ? { kind: 'artist', artist: d.artist } : null);
+    this.scrollToTop();
   }
 
   protected clearFilters(): void {
     this.search.set('');
-    this.albumFilter.set(null);
-    this.artistFilter.set(null);
   }
 
-  protected play(track: Track): void {
-    void this.playback.playTrack(track.id, this.filtered().map((t) => t.id));
+  private scrollToTop(): void {
+    setTimeout(() => this.host.nativeElement.scrollIntoView?.({ block: 'start' }));
+  }
+
+  protected async playDetail(shuffle: boolean): Promise<void> {
+    const ids = this.detailTracks().map((t) => t.id);
+    if (ids.length === 0) return;
+    if (!shuffle) {
+      await this.playback.playTrack(ids[0], ids);
+      return;
+    }
+    if (!this.playback.snapshot().shuffle) await this.playback.toggleShuffle();
+    await this.playback.playTrack(ids[Math.floor(Math.random() * ids.length)], ids);
+  }
+
+  protected downloadDetail(): void {
+    this.downloadTracks(this.detailTracks());
+  }
+
+  protected play(track: Track, queue: Track[] = this.filtered()): void {
+    void this.playback.playTrack(track.id, queue.map((t) => t.id));
   }
 
   protected async shuffleAll(): Promise<void> {
@@ -1485,8 +1731,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     return fraction == null ? '0%' : `${Math.round(fraction * 100)}%`;
   }
 
-  protected downloadCurrentFilter(): void {
-    const tracks = this.filtered();
+  private downloadTracks(tracks: Track[]): void {
     void this.downloads.downloadMany(
       tracks.map((track) => track.id),
       (id) => tracks.find((track) => track.id === id)?.title ?? '',
@@ -1529,7 +1774,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     this.toggleSelect(track.id);
   }
 
-  protected openContextMenu(track: Track, event: MouseEvent): void {
+  protected openContextMenu(track: Track, event: MouseEvent, queue?: Track[]): void {
     event.preventDefault();
     // Keep the menu on-screen: phones are narrower/shorter than the menu.
     const margin = 8;
@@ -1537,7 +1782,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     const height = 420;
     const x = Math.max(margin, Math.min(event.clientX, window.innerWidth - width - margin));
     const y = Math.max(margin, Math.min(event.clientY, window.innerHeight - height - margin));
-    this.contextMenu.set({ x, y, track });
+    this.contextMenu.set({ x, y, track, queue });
   }
 
   protected closeContextMenu(): void {
