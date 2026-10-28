@@ -12,7 +12,7 @@ class FakeHttpServer(private val handler: (Request) -> Response) : AutoCloseable
         val query: String? get() = target.substringAfter('?', "").ifEmpty { null }
     }
 
-    data class Response(val status: Int = 200, val contentType: String = "application/octet-stream", val body: ByteArray = ByteArray(0), val headers: Map<String, String> = emptyMap())
+    data class Response(val status: Int = 200, val contentType: String = "application/octet-stream", val body: ByteArray = ByteArray(0), val headers: Map<String, String> = emptyMap(), val declaredLength: Long? = null)
 
     private val socket = ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"))
     val requests: MutableList<Request> = Collections.synchronizedList(mutableListOf())
@@ -49,7 +49,7 @@ class FakeHttpServer(private val handler: (Request) -> Response) : AutoCloseable
             val req = Request(parts[0], parts[1], headers, body)
             requests.add(req)
             val res = handler(req)
-            val head = "HTTP/1.1 ${res.status} X\r\nContent-Type: ${res.contentType}\r\nContent-Length: ${res.body.size}\r\nConnection: close\r\n${res.headers.entries.joinToString("") { (k, v) -> "$k: $v\r\n" }}\r\n"
+            val head = "HTTP/1.1 ${res.status} X\r\nContent-Type: ${res.contentType}\r\nContent-Length: ${res.declaredLength ?: res.body.size.toLong()}\r\nConnection: close\r\n${res.headers.entries.joinToString("") { (k, v) -> "$k: $v\r\n" }}\r\n"
             it.getOutputStream().apply {
                 write(head.toByteArray(Charsets.ISO_8859_1))
                 if (req.method != "HEAD") write(res.body)

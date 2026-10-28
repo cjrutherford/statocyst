@@ -24,7 +24,9 @@ import net.christopherrutherford.statocyst.db.PlaylistEntity
 import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.cache.MediaCache
+import net.christopherrutherford.statocyst.downloads.DownloadCenter
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.downloads.QueueSnapshot
 import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.BrowseAccess
@@ -158,8 +160,16 @@ class StatocystPlugin : Plugin() {
     private val pendingWork = mutableListOf<(MediaController) -> Unit>()
     private var ticking = false
 
+    private var wasFinished = false
+    private val downloadQueueListener: (QueueSnapshot) -> Unit = { snapshot ->
+        emit("downloadQueue", queueSnapshotJson(snapshot))
+        if (snapshot.finished && !wasFinished) notifyCacheChanged()
+        wasFinished = snapshot.finished
+    }
+
     override fun load() {
         super.load()
+        DownloadCenter.queue(context).addListener(downloadQueueListener)
         connectController()
         PlaybackService.favoritesListener = { ids ->
             emit("favoritesChanged", JSObject().put("favorites", JSArray(ids)))
@@ -167,6 +177,7 @@ class StatocystPlugin : Plugin() {
     }
 
     override fun handleOnDestroy() {
+        DownloadCenter.queue(context).removeListener(downloadQueueListener)
         PlaybackService.favoritesListener = null
         mainHandler.removeCallbacksAndMessages(null)
         controllerFuture?.let { MediaController.releaseFuture(it) }
@@ -466,6 +477,60 @@ class StatocystPlugin : Plugin() {
             }
         }
     }
+
+    /** Queues tracks on the native download queue (foreground service, retries, resume). */
+    @PluginMethod
+    fun enqueueDownloads(call: PluginCall) {
+        val ids = call.getArray("trackIds")?.toList<String>().orEmpty().filter { it.isNotBlank() }
+        if (ids.isEmpty()) { call.reject("trackIds required"); return }
+        val added = DownloadCenter.enqueue(context, ids)
+        call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()).put("added", added))
+    }
+
+    @PluginMethod
+    fun cancelDownloads(call: PluginCall) {
+        DownloadCenter.queue(context).cancelAll()
+        call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()))
+    }
+
+    @PluginMethod
+    fun retryFailedDownloads(call: PluginCall) {
+        val queue = DownloadCenter.queue(context)
+        val retried = queue.retryFailed()
+        if (retried > 0) net.christopherrutherford.statocyst.downloads.DownloadService.start(context)
+        call.resolve(queueSnapshotJson(queue.snapshot()).put("added", retried))
+    }
+
+    @PluginMethod
+    fun dismissDownloads(call: PluginCall) {
+        val queue = DownloadCenter.queue(context)
+        queue.dismiss()
+        call.resolve(queueSnapshotJson(queue.snapshot()))
+    }
+
+    @PluginMethod
+    fun getDownloadQueue(call: PluginCall) {
+        call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()))
+    }
+
+    private fun queueSnapshotJson(snapshot: QueueSnapshot): JSObject = JSObject()
+        .put("total", snapshot.total)
+        .put("done", snapshot.done)
+        .put("failed", snapshot.failed)
+        .put("pending", snapshot.pending)
+        .put("finished", snapshot.finished)
+        .put("receivedBytes", snapshot.receivedBytes)
+        .put("totalBytes", snapshot.totalBytes)
+        .put("sizesKnown", snapshot.sizesKnown)
+        .put("entries", JSArray(snapshot.entries.map { e ->
+            JSObject()
+                .put("trackId", e.trackId)
+                .put("state", e.state.name.lowercase())
+                .put("receivedBytes", e.receivedBytes)
+                .put("totalBytes", e.totalBytes)
+                .put("attempt", e.attempt)
+                .put("error", e.error)
+        }))
 
     @PluginMethod
     fun removeDownload(call: PluginCall) {

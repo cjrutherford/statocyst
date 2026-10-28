@@ -296,7 +296,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
               </div>
             }
 
-            @if (downloads.isBatchRunning()) {
+            @if (downloads.isBatchRunning() && !downloads.queue()) {
               <div class="dl-progress" role="status" aria-live="polite">
                 <span>Downloading… {{ downloads.batchPercent() ?? 0 }}%</span>
                 <div class="dl-progress__bar">
@@ -1481,7 +1481,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
    */
   protected downloadPercent(trackId: string): string {
     if (!this.downloads.isDownloading()(trackId)) return '0%';
-    const fraction = this.downloads.activePercent();
+    const fraction = this.downloads.trackFraction()(trackId) ?? this.downloads.activePercent();
     return fraction == null ? '0%' : `${Math.round(fraction * 100)}%`;
   }
 

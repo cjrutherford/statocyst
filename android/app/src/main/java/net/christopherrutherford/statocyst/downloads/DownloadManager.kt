@@ -7,11 +7,7 @@ import net.christopherrutherford.statocyst.db.StatocystDatabase
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.InputStream
-import java.net.HttpURLConnection
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
-import java.net.URL
-import java.net.URLEncoder
 import java.security.MessageDigest
 import java.time.Instant
 
@@ -29,12 +25,24 @@ class DownloadManager(private val context: Context) {
     private val mediaDao = database.mediaItemDao()
     private val directory = File(context.filesDir, "downloads")
 
+    companion object {
+        private const val PART_MAX_AGE_MS = 24L * 60 * 60 * 1000
+    }
+
     data class Outcome(val entity: DownloadEntity, val alreadyPresent: Boolean)
 
     fun download(
         trackId: String,
         onProgress: (received: Long, total: Long?, done: Boolean, error: String?) -> Unit,
-    ): Outcome {
+    ): Outcome = download(trackId, object : DownloadEvents {
+        override fun progress(received: Long, total: Long?) = onProgress(received, total, false, null)
+    })
+
+    /**
+     * Downloads [trackId], resuming a leftover `.part` file from an earlier
+     * attempt and retrying transient network failures (see [ResumableDownload]).
+     */
+    fun download(trackId: String, events: DownloadEvents): Outcome {
         val track = runBlockingLookup(trackId)
             ?: throw IllegalArgumentException("The track does not exist")
         directory.mkdirs()
@@ -47,13 +55,21 @@ class DownloadManager(private val context: Context) {
         verifiedFile(trackId)?.let { return Outcome(requireNotNull(daoGet(trackId)), true) }
 
         if (finalFile.exists()) finalFile.delete()
-        partFile.delete()
+        val remote = track.sourceKind.startsWith("jellyfin")
+        // A partial file is only worth resuming for a remote track, and not when it is old.
+        if (!remote || System.currentTimeMillis() - partFile.lastModified() > PART_MAX_AGE_MS) partFile.delete()
 
+        var keepPart = false
         try {
-            if (track.sourceKind.startsWith("jellyfin")) {
-                copyRemote(track, partFile, onProgress)
+            if (remote) {
+                try {
+                    copyRemote(track, partFile, events)
+                } catch (error: java.io.IOException) {
+                    keepPart = true
+                    throw error
+                }
             } else {
-                copyLocal(track, partFile, onProgress)
+                copyLocal(track, partFile, events)
             }
             val size = partFile.length()
             if (size <= 0L) throw IllegalStateException("Downloaded file is empty")
@@ -72,10 +88,10 @@ class DownloadManager(private val context: Context) {
                 createdAt = Instant.now().toString(),
             )
             runBlockingWrite { dao.upsert(entity) }
-            onProgress(size, size, true, null)
+            events.progress(size, size)
             return Outcome(entity, false)
         } catch (error: Exception) {
-            partFile.delete()
+            if (!keepPart) partFile.delete()
             throw error
         }
     }
@@ -131,66 +147,51 @@ class DownloadManager(private val context: Context) {
         return file
     }
 
-    private fun copyRemote(
-        track: MediaItemEntity,
-        target: File,
-        onProgress: (Long, Long?, Boolean, String?) -> Unit,
-    ) {
+    private fun copyRemote(track: MediaItemEntity, target: File, events: DownloadEvents) {
         val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
         val serverUrl = prefs.getString("jellyfin_url", null)
             ?: throw IllegalStateException("The server is not signed in")
         val token = prefs.getString("jellyfin_token", null)
             ?: throw IllegalStateException("The server is not signed in")
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        val connection = JellyfinAuth.open(JellyfinAuth.streamUrl(serverUrl, itemId), token)
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        connection.instanceFollowRedirects = false
-        connection.setRequestProperty("Accept", "*/*")
-        try {
-            val code = connection.responseCode
-            if (code == 401 || code == 403) throw SecurityException("The stored session was rejected")
-            if (code !in 200..299) throw IllegalStateException("The server returned HTTP $code")
-            val total = connection.contentLengthLong.takeIf { it > 0 }
-            connection.inputStream.use { input -> copyWithProgress(input, target, total, onProgress) }
-        } finally {
-            connection.disconnect()
-        }
+        val url = JellyfinAuth.streamUrl(serverUrl, itemId)
+        ResumableDownload.fetch(
+            open = { rangeStart ->
+                JellyfinAuth.open(url, token).also {
+                    it.connectTimeout = 15_000
+                    it.readTimeout = 30_000
+                    it.instanceFollowRedirects = false
+                    it.setRequestProperty("Accept", "*/*")
+                    if (rangeStart > 0) it.setRequestProperty("Range", "bytes=$rangeStart-")
+                }
+            },
+            target = target,
+            events = events,
+        )
     }
 
-    private fun copyLocal(
-        track: MediaItemEntity,
-        target: File,
-        onProgress: (Long, Long?, Boolean, String?) -> Unit,
-    ) {
+    private fun copyLocal(track: MediaItemEntity, target: File, events: DownloadEvents) {
         val source = File(track.path)
         if (!source.isFile) throw IllegalStateException("The source file is missing")
+        val total = source.length()
         FileInputStream(source).use { input ->
-            copyWithProgress(input, target, source.length(), onProgress)
-        }
-    }
-
-    private fun copyWithProgress(
-        input: InputStream,
-        target: File,
-        total: Long?,
-        onProgress: (Long, Long?, Boolean, String?) -> Unit,
-    ) {
-        val buffer = ByteArray(64 * 1024)
-        var received = 0L
-        var lastReport = 0L
-        FileOutputStream(target).use { output ->
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                output.write(buffer, 0, read)
-                received += read
-                if (received - lastReport >= 256 * 1024) {
-                    lastReport = received
-                    onProgress(received, total, false, null)
+            FileOutputStream(target).use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var received = 0L
+                var lastReport = 0L
+                while (true) {
+                    if (events.cancelled()) throw DownloadCancelled()
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    output.write(buffer, 0, read)
+                    received += read
+                    if (received - lastReport >= 256 * 1024) {
+                        lastReport = received
+                        events.progress(received, total)
+                    }
                 }
+                output.flush()
             }
-            output.flush()
         }
     }
 

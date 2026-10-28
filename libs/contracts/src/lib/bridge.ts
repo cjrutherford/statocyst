@@ -205,7 +205,46 @@ export interface DownloadStats {
   totalBytes: number;
 }
 
+export type DownloadQueueState = 'queued' | 'active' | 'retrying' | 'waiting' | 'failed' | 'done';
+
+export interface DownloadQueueEntry {
+  trackId: string;
+  state: DownloadQueueState;
+  receivedBytes: number;
+  totalBytes: number | null;
+  /** Retry attempt in progress (0 when none). */
+  attempt: number;
+  /** Last error: the failure reason, or the transient problem being retried. */
+  error: string | null;
+}
+
+/** The whole native download queue: per-track state plus aggregate progress. */
+export interface DownloadQueueSnapshot {
+  total: number;
+  done: number;
+  failed: number;
+  pending: number;
+  /** Nothing left to do (every track is done or failed). */
+  finished: boolean;
+  receivedBytes: number;
+  /** Sum of known sizes, or null before any size is known. */
+  totalBytes: number | null;
+  /** True once every unfinished track has reported its size, so byte progress is trustworthy. */
+  sizesKnown: boolean;
+  entries: DownloadQueueEntry[];
+}
+
 export interface DownloadsBridge {
+  /**
+   * Native background queue (Android): downloads keep running with the screen off,
+   * retry and resume after network drops. Absent where downloads run one by one.
+   */
+  enqueue?(trackIds: string[]): Promise<DownloadQueueSnapshot>;
+  cancelQueue?(): Promise<DownloadQueueSnapshot>;
+  retryFailed?(): Promise<DownloadQueueSnapshot>;
+  dismissQueue?(): Promise<DownloadQueueSnapshot>;
+  queue?(): Promise<DownloadQueueSnapshot>;
+  onQueue?(listener: (snapshot: DownloadQueueSnapshot) => void): () => void;
   /**
    * False when this runtime cannot store protected downloads (the Android
    * build today). Omitted means supported, so existing bridges need no change.

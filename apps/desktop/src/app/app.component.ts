@@ -13,6 +13,7 @@ import { AudioEngineService } from './core/audio-engine.service';
 import { bridge, bridgeAvailable, isNativePlatform } from './core/bridge';
 import { LibraryStore } from './core/library.store';
 import { DownloadsStore } from './core/downloads.store';
+import { DownloadStatusComponent } from './components/download-status.component';
 import { PlaylistsStore } from './core/playlists.store';
 import { JellyfinStore } from './core/jellyfin.store';
 import { NavigationStore, type View } from './core/navigation.store';
@@ -36,6 +37,7 @@ interface NavItem {
   selector: 'sc-root',
   standalone: true,
   imports: [
+    DownloadStatusComponent,
     IconComponent,
     PlayerBarComponent,
     LibraryViewComponent,
@@ -153,6 +155,8 @@ interface NavItem {
         </div>
       }
     }
+
+    <sc-download-status />
 
     <div class="toasts" aria-live="polite" aria-atomic="false">
       @for (toast of toasts.toasts(); track toast.id) {

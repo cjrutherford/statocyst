@@ -4,6 +4,7 @@ import type {
   CacheStats,
   DiagnosticsInfo,
   DownloadProgress,
+  DownloadQueueSnapshot,
   DownloadStats,
   DownloadSummary,
   DownloadView,
@@ -87,6 +88,7 @@ export class CapacitorBridge {
   private onCommandCb: ((command: EngineCommand) => void) | null = null;
   private eventListeners = new Set<(event: PlaybackEvent) => void>();
   private downloadListeners = new Set<(progress: DownloadProgress) => void>();
+  private queueListeners = new Set<(snapshot: DownloadQueueSnapshot) => void>();
   private importListeners = new Set<(progress: ImportProgress) => void>();
   private cacheListeners = new Set<() => void>();
   private nativeListenersAttached = false;
@@ -111,6 +113,10 @@ export class CapacitorBridge {
         error: raw['error'] == null ? null : String(raw['error']),
       };
       for (const listener of this.downloadListeners) listener(progress);
+    });
+    void plugin.addListener('downloadQueue', (raw: Record<string, unknown>) => {
+      const snapshot = this.toQueueSnapshot(raw);
+      for (const listener of this.queueListeners) listener(snapshot);
     });
     void plugin.addListener('importProgress', (raw: Record<string, unknown>) => {
       const progress: ImportProgress = {
@@ -1171,9 +1177,46 @@ export class CapacitorBridge {
     encryptionAvailable: async () => true,
   };
 
+  private toQueueSnapshot(raw: any): DownloadQueueSnapshot {
+    const entries = Array.isArray(raw?.entries) ? raw.entries : [];
+    return {
+      total: Number(raw?.total ?? 0),
+      done: Number(raw?.done ?? 0),
+      failed: Number(raw?.failed ?? 0),
+      pending: Number(raw?.pending ?? 0),
+      finished: Boolean(raw?.finished),
+      receivedBytes: Number(raw?.receivedBytes ?? 0),
+      totalBytes: raw?.totalBytes == null ? null : Number(raw.totalBytes),
+      sizesKnown: Boolean(raw?.sizesKnown),
+      entries: entries.map((e: any) => ({
+        trackId: String(e?.trackId ?? ''),
+        state: String(e?.state ?? 'queued') as DownloadQueueSnapshot['entries'][number]['state'],
+        receivedBytes: Number(e?.receivedBytes ?? 0),
+        totalBytes: e?.totalBytes == null ? null : Number(e.totalBytes),
+        attempt: Number(e?.attempt ?? 0),
+        error: e?.error == null ? null : String(e.error),
+      })),
+    };
+  }
+
   downloads = {
     // Android keeps pinned, verified downloads in app-private storage.
     supported: true as const,
+    enqueue: async (trackIds: string[]): Promise<DownloadQueueSnapshot> =>
+      this.toQueueSnapshot(await this.plugin().enqueueDownloads({ trackIds })),
+    cancelQueue: async (): Promise<DownloadQueueSnapshot> =>
+      this.toQueueSnapshot(await this.plugin().cancelDownloads()),
+    retryFailed: async (): Promise<DownloadQueueSnapshot> =>
+      this.toQueueSnapshot(await this.plugin().retryFailedDownloads()),
+    dismissQueue: async (): Promise<DownloadQueueSnapshot> =>
+      this.toQueueSnapshot(await this.plugin().dismissDownloads()),
+    queue: async (): Promise<DownloadQueueSnapshot> =>
+      this.toQueueSnapshot(await this.plugin().getDownloadQueue()),
+    onQueue: (listener: (snapshot: DownloadQueueSnapshot) => void) => {
+      this.queueListeners.add(listener);
+      this.attachNativeListeners();
+      return () => this.queueListeners.delete(listener);
+    },
     download: async (trackId: string): Promise<Result<DownloadSummary>> => {
       try {
         const raw = await this.plugin()?.downloadTrack?.({ trackId });
