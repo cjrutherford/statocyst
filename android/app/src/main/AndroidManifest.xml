@@ -67,6 +67,12 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Token-free artwork for the Android Auto host and system media UI; serves Jellyfin album art only. -->
+        <provider
+            android:name=".jellyfin.ArtworkProvider"
+            android:authorities="${applicationId}.artwork"
+            android:exported="true" />
     </application>
 
 </manifest>

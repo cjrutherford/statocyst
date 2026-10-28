@@ -13,6 +13,8 @@ data class SavedQueue(
     val positionMs: Long,
     val shuffle: Boolean,
     val repeatMode: Int,
+    /** Playlist indices in shuffled play order, or null when none was saved. */
+    val shuffleOrder: List<Int>? = null,
 )
 
 /**
@@ -32,6 +34,7 @@ class QueueStore(private val context: Context) {
             .putLong("positionMs", queue.positionMs)
             .putBoolean("shuffle", queue.shuffle)
             .putInt("repeatMode", queue.repeatMode)
+            .putString("order", queue.shuffleOrder?.let(ShuffleOrders::encode))
             .putLong("updatedAt", System.currentTimeMillis())
             .apply()
     }
@@ -57,6 +60,8 @@ class QueueStore(private val context: Context) {
                 positionMs = prefs.getLong("positionMs", 0L).coerceAtLeast(0L),
                 shuffle = prefs.getBoolean("shuffle", false),
                 repeatMode = prefs.getInt("repeatMode", 0),
+                shuffleOrder = ShuffleOrders.decode(prefs.getString("order", null))
+                    ?.takeIf { ShuffleOrders.isPermutation(it, slots.size) },
             )
         } catch (e: Exception) {
             null

@@ -32,4 +32,17 @@ class QueueStoreTest {
         store.savePosition(3, 5_000)
         assertNull(store.load())
     }
+
+    @Test
+    fun shuffleOrderRoundTripsAndIsDiscardedWhenInvalid() {
+        store.clear()
+        store.save(SavedQueue(slots, 1, 0, shuffle = true, repeatMode = 0, shuffleOrder = listOf(2, 0, 1)))
+        assertEquals(listOf(2, 0, 1), store.load()!!.shuffleOrder)
+
+        store.save(SavedQueue(slots, 1, 0, shuffle = true, repeatMode = 0, shuffleOrder = listOf(0, 0, 1)))
+        assertNull(store.load()!!.shuffleOrder)
+
+        store.save(SavedQueue(slots, 1, 0, shuffle = false, repeatMode = 0))
+        assertNull(store.load()!!.shuffleOrder)
+    }
 }

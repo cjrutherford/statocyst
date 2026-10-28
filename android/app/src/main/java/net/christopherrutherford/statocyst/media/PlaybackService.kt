@@ -17,6 +17,7 @@ import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import net.christopherrutherford.statocyst.radio.RadioBuilder
 import net.christopherrutherford.statocyst.radio.RadioScorer
@@ -86,6 +87,7 @@ class PlaybackService : MediaLibraryService() {
                     refreshButtons()
                 }
                 override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                    if (applyPendingShuffle()) return
                     persistQueue()
                     notifyBrowseChanged(BrowseIds.QUEUE)
                 }
@@ -405,12 +407,18 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun savedQueue(): MediaSession.MediaItemsWithStartPosition? {
         val saved = queueStore.load() ?: return null
         val items = mutableListOf<MediaItem>()
+        val keptOld = mutableListOf<Int>()
         var index = saved.index
         saved.slots.forEachIndexed { i, slot ->
             val resolved = resolveItem(QueueItems.placeholder(slot.entryId, slot.trackId))
-            if (resolved != null) items.add(resolved) else if (i < saved.index) index -= 1
+            if (resolved != null) {
+                items.add(resolved)
+                keptOld.add(i)
+            } else if (i < saved.index) index -= 1
         }
         if (items.isEmpty()) return null
+        pendingShuffle = ShuffleOrders.remap(saved.shuffleOrder, saved.slots.size, keptOld)
+            ?.let { PendingShuffle(items.map { it.mediaId }, it) }
         return MediaSession.MediaItemsWithStartPosition(items, index.coerceIn(0, items.size - 1), saved.positionMs)
     }
 
@@ -477,6 +485,39 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /** A saved shuffle order waiting for its queue to be loaded into the player. */
+    private class PendingShuffle(val mediaIds: List<String>, val order: List<Int>)
+
+    private var pendingShuffle: PendingShuffle? = null
+
+    /**
+     * Re-applies a saved shuffle order once the matching queue is in the player.
+     * Returns true when it did, so the caller skips persisting the not-yet-restored
+     * order; the timeline change the new order causes persists the right one.
+     */
+    private fun applyPendingShuffle(): Boolean {
+        val pending = pendingShuffle ?: return false
+        if (player.mediaItemCount == 0) return false
+        pendingShuffle = null
+        val matches = player.mediaItemCount == pending.mediaIds.size &&
+            pending.mediaIds.indices.all { player.getMediaItemAt(it).mediaId == pending.mediaIds[it] }
+        if (!matches) return false
+        player.setShuffleOrder(DefaultShuffleOrder(pending.order.toIntArray(), System.nanoTime()))
+        return true
+    }
+
+    /** Playlist indices in the player's shuffled play order. */
+    private fun currentShuffleOrder(): List<Int> {
+        val timeline = player.currentTimeline
+        val order = ArrayList<Int>(timeline.windowCount)
+        var i = timeline.getFirstWindowIndex(true)
+        while (i != C.INDEX_UNSET && order.size <= timeline.windowCount) {
+            order.add(i)
+            i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
+        }
+        return order
+    }
+
     private fun persistQueue() {
         try {
             if (player.mediaItemCount == 0) return
@@ -491,6 +532,7 @@ class PlaybackService : MediaLibraryService() {
                     positionMs = player.currentPosition.coerceAtLeast(0),
                     shuffle = player.shuffleModeEnabled,
                     repeatMode = player.repeatMode,
+                    shuffleOrder = currentShuffleOrder().takeIf { ShuffleOrders.isPermutation(it, slots.size) },
                 ),
             )
         } catch (e: Exception) {

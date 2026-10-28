@@ -316,6 +316,45 @@ class MediaLibraryServiceBrowseTest {
         app { browser.pause() }
     }
 
+    @Test
+    fun savedShuffleOrderIsReappliedWhenTheServiceRestarts() {
+        val ids = fixtureIds.take(8)
+        val order = listOf(5, 2, 7, 0, 3, 6, 1, 4)
+        app { browser.release() }
+        context.stopService(android.content.Intent(context, PlaybackService::class.java))
+        Thread.sleep(2_000)
+
+        val store = QueueStore(context)
+        store.save(
+            SavedQueue(
+                slots = ids.mapIndexed { i, id -> QueueSlot("q_zz$i", id) },
+                index = 3, positionMs = 0, shuffle = true, repeatMode = 0, shuffleOrder = order,
+            ),
+        )
+        browser = MediaBrowser.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+            .setApplicationLooper(thread.looper)
+            .buildAsync().get(15, TimeUnit.SECONDS)
+
+        waitFor { app { browser.mediaItemCount } == ids.size }
+        fun playOrder() = app {
+            val tl = browser.currentTimeline
+            val out = mutableListOf<Int>()
+            var i = tl.getFirstWindowIndex(true)
+            while (i != androidx.media3.common.C.INDEX_UNSET && out.size <= tl.windowCount) {
+                out.add(i)
+                i = tl.getNextWindowIndex(i, androidx.media3.common.Player.REPEAT_MODE_OFF, true)
+            }
+            out
+        }
+        waitFor { playOrder() == order }
+        assertTrue(app { browser.shuffleModeEnabled })
+        // The service persists the order the player really holds, not a fresh random one.
+        waitFor { store.load()?.shuffleOrder == order }
+        // Leave the long-lived service clean for the tests that follow.
+        app { browser.shuffleModeEnabled = false; browser.clearMediaItems() }
+        store.clear()
+    }
+
     private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) {
         val end = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < end) {

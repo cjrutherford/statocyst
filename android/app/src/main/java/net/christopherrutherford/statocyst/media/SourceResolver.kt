@@ -9,6 +9,7 @@ import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.jellyfin.ArtworkProvider
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 
 data class StreamResolution(
@@ -65,14 +66,14 @@ class SourceResolver(private val context: Context) {
     }
 
     /**
-     * Direct Jellyfin primary-image URL for a given album + image tag. Uses the
-     * stored session token. Returns null when no session or no album id.
+     * Artwork URI for a given album + image tag: a token-free content:// URI served
+     * by [ArtworkProvider], so the head unit and system UI can load it without
+     * Jellyfin credentials. Null when there is no session or no album id.
      */
     fun artworkUrl(albumId: String?, imageTag: String?): String? {
         if (albumId.isNullOrEmpty()) return null
-        val url = prefs.getString("jellyfin_url", null) ?: return null
-        val token = prefs.getString("jellyfin_token", null) ?: return null
-        if (url.isEmpty() || token.isEmpty()) return null
-        return JellyfinAuth.imageUrl(url, albumId, imageTag)
+        if (prefs.getString("jellyfin_url", null).isNullOrEmpty()) return null
+        if (prefs.getString("jellyfin_token", null).isNullOrEmpty()) return null
+        return ArtworkProvider.uri(context, albumId, imageTag)
     }
 }
