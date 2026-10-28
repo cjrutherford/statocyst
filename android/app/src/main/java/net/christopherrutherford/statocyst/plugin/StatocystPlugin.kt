@@ -18,6 +18,9 @@ import net.christopherrutherford.statocyst.diagnostics.SupportBundle
 import net.christopherrutherford.statocyst.db.DownloadEntity
 import net.christopherrutherford.statocyst.db.MediaItemDao
 import net.christopherrutherford.statocyst.db.MediaItemEntity
+import net.christopherrutherford.statocyst.db.FavoriteEntity
+import net.christopherrutherford.statocyst.db.PlaylistEntity
+import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.downloads.DownloadManager
@@ -67,6 +70,7 @@ class StatocystPlugin : Plugin() {
             cache.lookup(trackId)?.delete()
             downloads.remove(trackId)
             val removed = importer.removeTrack(trackId)
+            PlaybackService.onCatalogChanged()
             call.resolve(JSObject().put("removed", removed))
         }
     }
@@ -601,6 +605,7 @@ class StatocystPlugin : Plugin() {
                     emit("importProgress", JSObject().put("phase", "importing").put("scanned", scanned).put("imported", imported))
                 }
                 val tracks = JSArray(summary.imported.map(::trackJson))
+                if (summary.imported.isNotEmpty()) PlaybackService.onCatalogChanged()
                 call.resolve(
                     JSObject()
                         .put("sourceId", LibraryImporter.SOURCE_ID)
@@ -706,7 +711,40 @@ class StatocystPlugin : Plugin() {
                 }
                 startIndex += items.size
             } while (startIndex < total && items.isNotEmpty())
+            if (imported > 0) PlaybackService.onCatalogChanged()
             call.resolve(JSObject().put("imported", imported).put("total", total))
+        }
+    }
+
+    /**
+     * Mirrors the web layer's favorites and playlists into Room so the Android Auto
+     * browse tree (which has no WebView) can list them. Replaces the whole mirror.
+     */
+    @PluginMethod
+    fun syncUserState(call: PluginCall) {
+        val favorites = call.getArray("favorites")?.toList<String>().orEmpty()
+        val playlistsJson = call.getArray("playlists")
+        io {
+            try {
+                val favoriteRows = favorites.mapIndexed { i, id -> FavoriteEntity(id, i) }
+                val playlistRows = mutableListOf<PlaylistEntity>()
+                val trackRows = mutableListOf<PlaylistTrackEntity>()
+                for (i in 0 until (playlistsJson?.length() ?: 0)) {
+                    val obj = playlistsJson!!.getJSONObject(i)
+                    val id = obj.optString("id")
+                    if (id.isEmpty()) continue
+                    playlistRows.add(PlaylistEntity(id, obj.optString("name", "Playlist"), obj.optLong("createdAt", 0L), i))
+                    val ids = obj.optJSONArray("trackIds")
+                    for (j in 0 until (ids?.length() ?: 0)) {
+                        trackRows.add(PlaylistTrackEntity(id, j, ids!!.getString(j)))
+                    }
+                }
+                db.userDao().replaceUserState(favoriteRows, playlistRows, trackRows)
+                PlaybackService.onUserStateChanged()
+                call.resolve(JSObject().put("favorites", favoriteRows.size).put("playlists", playlistRows.size))
+            } catch (error: Exception) {
+                call.reject(error.message ?: "syncUserState failed", error)
+            }
         }
     }
 

@@ -2,109 +2,220 @@ package net.christopherrutherford.statocyst.media
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Handler
+import android.os.HandlerThread
+import androidx.media3.common.MediaItem
+import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaBrowser
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.runBlocking
+import net.christopherrutherford.statocyst.db.FavoriteEntity
 import net.christopherrutherford.statocyst.db.MediaItemEntity
+import net.christopherrutherford.statocyst.db.PlaylistEntity
+import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Instrumented gate for S018: cold-start the MediaLibraryService via a
- * MediaBrowser (no WebView/Activity) and assert a deterministic tree.
+ * Device gate for the Android Auto browse tree: a separate MediaBrowser (the same
+ * binder path Auto uses) browses the real service with no Activity or WebView.
+ *
+ * Non-destructive: it adds fixture tracks (ids "zz-fix-*", backed by one empty file) and
+ * snapshots/restores the favorite/playlist mirror, so a real library is left untouched.
  */
 @RunWith(AndroidJUnit4::class)
 class MediaLibraryServiceBrowseTest {
 
     private lateinit var context: Context
+    private lateinit var thread: HandlerThread
+    private lateinit var handler: Handler
+    private lateinit var browser: MediaBrowser
+    private lateinit var fixtureIds: List<String>
+    private val fixtureFile by lazy { java.io.File(context.cacheDir, "zz-fix.mp3").apply { createNewFile() } }
+    private val db by lazy { StatocystDatabase.getInstance(context) }
+
+    private var savedFavorites = emptyList<FavoriteEntity>()
+    private var savedPlaylists = emptyList<PlaylistEntity>()
+    private var savedPlaylistTracks = emptyList<PlaylistTrackEntity>()
+    private val changed = mutableListOf<String>()
+    private var changedLatch = CountDownLatch(1)
 
     @Before
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
-        val db = StatocystDatabase.getInstance(context)
-        db.clearAllTables()
+        fixtureIds = (1..250).map { "zz-fix-%03d".format(it) }
         runBlocking {
-            db.mediaItemDao().upsert(entity("t1", "Eat The Elephant", "A Perfect Circle", "Eat The Elephant", trackNo = 1))
-            db.mediaItemDao().upsert(entity("t2", "Cochise", "Audioslave", "Audioslave", trackNo = 1))
+            fixtureIds.forEachIndexed { i, id ->
+                db.mediaItemDao().upsert(fixture(id, "ZZ Fixture %03d".format(i + 1), i))
+            }
+            savedFavorites = db.userDao().favorites()
+            savedPlaylists = db.userDao().playlists()
+            savedPlaylistTracks = db.userDao().playlistTracks()
+        }
+        thread = HandlerThread("browser-test").also { it.start() }
+        handler = Handler(thread.looper)
+        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        browser = MediaBrowser.Builder(context, token)
+            .setApplicationLooper(thread.looper)
+            .setListener(object : MediaBrowser.Listener {
+                override fun onChildrenChanged(
+                    browser: MediaBrowser,
+                    parentId: String,
+                    itemCount: Int,
+                    params: MediaLibraryService.LibraryParams?,
+                ) {
+                    synchronized(changed) { changed.add(parentId) }
+                    changedLatch.countDown()
+                }
+            })
+            .buildAsync().get(15, TimeUnit.SECONDS)
+    }
+
+    @After
+    fun tearDown() {
+        if (::browser.isInitialized) app { browser.release() }
+        runBlocking {
+            fixtureIds.forEach { db.mediaItemDao().deleteById(it) }
+            db.userDao().replaceUserState(savedFavorites, savedPlaylists, savedPlaylistTracks)
+        }
+        PlaybackService.onUserStateChanged()
+        PlaybackService.onCatalogChanged()
+        thread.quitSafely()
+    }
+
+    /** Runs [block] on the browser's application thread and waits for the result. */
+    private fun <T> app(block: () -> T): T {
+        val result = SettableFuture.create<T>()
+        handler.post {
+            try { result.set(block()) } catch (e: Throwable) { result.setException(e) }
+        }
+        return result.get(15, TimeUnit.SECONDS)
+    }
+
+    private fun children(parent: String, page: Int = 0, size: Int = 100): List<MediaItem> {
+        val future: ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> =
+            app { browser.getChildren(parent, page, size, null) }
+        val result = future.get(20, TimeUnit.SECONDS)
+        assertEquals("getChildren($parent) failed", LibraryResult.RESULT_SUCCESS, result.resultCode)
+        return result.value!!
+    }
+
+    private fun seedUserState(trackIds: List<String>) {
+        runBlocking {
+            db.userDao().replaceUserState(
+                favorites = listOf(FavoriteEntity(trackIds[0], 0), FavoriteEntity(trackIds[1], 1)),
+                playlists = listOf(PlaylistEntity("zz-test", "ZZ Test Mix", 1L, 0)),
+                playlistTracks = trackIds.take(3).mapIndexed { i, id -> PlaylistTrackEntity("zz-test", i, id) },
+            )
         }
     }
 
     @Test
-    fun coldStartBrowsesDeterministicTree() {
-        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val browser = MediaBrowser.Builder(context, token).buildAsync().get(10, TimeUnit.SECONDS)
-        try {
-            val params = MediaLibraryService.LibraryParams.Builder().build()
+    fun rootAdvertisesFoldersAndContentStyleHints() {
+        val root = app { browser.getLibraryRoot(null) }.get(15, TimeUnit.SECONDS)
+        assertEquals(BrowseIds.ROOT, root.value!!.mediaId)
 
-            val root = browser.getLibraryRoot(params).get(10, TimeUnit.SECONDS)
-            assertEquals(BrowseIds.ROOT, root.value!!.mediaId)
+        val ids = children(BrowseIds.ROOT).map { it.mediaId }
+        assertTrue(ids.containsAll(listOf(BrowseIds.ALBUMS, BrowseIds.ARTISTS, BrowseIds.TRACKS)))
 
-            val categories = browser.getChildren(BrowseIds.ROOT, 0, 100, params).get(10, TimeUnit.SECONDS)
-            assertEquals(
-                listOf(BrowseIds.ALBUMS, BrowseIds.ARTISTS, BrowseIds.TRACKS, BrowseIds.QUEUE),
-                categories.value!!.map { it.mediaId },
-            )
-
-            val albums = browser.getChildren(BrowseIds.ALBUMS, 0, 100, params).get(10, TimeUnit.SECONDS)
-            assertEquals(
-                listOf(
-                    BrowseIds.album("Audioslave", "Audioslave"),
-                    BrowseIds.album("A Perfect Circle", "Eat The Elephant"),
-                ),
-                albums.value!!.map { it.mediaId },
-            )
-
-            val tracks = browser.getChildren(BrowseIds.album("A Perfect Circle", "Eat The Elephant"), 0, 100, params)
-                .get(10, TimeUnit.SECONDS)
-            assertEquals(listOf("track::t1"), tracks.value!!.map { it.mediaId })
-        } finally {
-            browser.release()
-        }
+        val albums = children(BrowseIds.ROOT).first { it.mediaId == BrowseIds.ALBUMS }
+        assertEquals(
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
+            albums.mediaMetadata.extras!!.getInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE),
+        )
     }
 
-    private fun entity(
-        id: String,
-        title: String,
-        artist: String,
-        album: String,
-        trackNo: Int? = null,
-    ): MediaItemEntity = MediaItemEntity(
-        id = id,
-        sourceId = "jellyfin",
-        path = id,
-        pathKey = "jellyfin:$id",
-        fileName = title,
-        ext = "flac",
-        sizeBytes = 0,
-        mtimeMs = 0,
-        title = title,
-        artist = artist,
-        album = album,
-        albumArtist = artist,
-        trackNo = trackNo,
-        discNo = null,
-        year = null,
-        genre = null,
-        durationMs = 200_000,
-        bitrate = null,
-        sampleRate = null,
-        channels = null,
-        codec = null,
-        format = "flac",
-        artworkPath = null,
-        jellyfinImageTag = null,
-        sourceKind = "jellyfin",
-        sourceLabel = "Jellyfin",
-        addedAt = "",
-        updatedAt = "",
-        missing = false,
-        albumId = null,
+    @Test
+    fun trackFolderIsPaged() {
+        val total = runBlocking { db.mediaItemDao().count() }
+        assertTrue(total >= 250)
+        val first = children(BrowseIds.TRACKS, 0, 100)
+        val second = children(BrowseIds.TRACKS, 1, 100)
+        assertEquals(100, first.size)
+        assertTrue(first.map { it.mediaId }.intersect(second.map { it.mediaId }.toSet()).isEmpty())
+        val last = children(BrowseIds.TRACKS, (total - 1) / 100, 100)
+        assertEquals(total - ((total - 1) / 100) * 100, last.size)
+        assertEquals(emptyList<MediaItem>(), children(BrowseIds.TRACKS, total / 100 + 5, 100))
+    }
+
+    @Test
+    fun favoritesPlaylistsAndRecentsAppearAndNotifySubscribers() {
+        val ids = fixtureIds.take(4)
+        app { browser.subscribe(BrowseIds.FAVORITES, null) }.get(15, TimeUnit.SECONDS)
+        changedLatch = CountDownLatch(1)
+
+        seedUserState(ids)
+        PlaybackService.onUserStateChanged()
+        assertTrue("no onChildrenChanged for favorites", changedLatch.await(10, TimeUnit.SECONDS))
+        assertTrue(synchronized(changed) { BrowseIds.FAVORITES in changed })
+
+        val root = children(BrowseIds.ROOT).map { it.mediaId }
+        assertTrue(BrowseIds.FAVORITES in root && BrowseIds.PLAYLISTS in root)
+        // Newest favorite first.
+        assertEquals(listOf(ids[1], ids[0]), children(BrowseIds.FAVORITES).map { BrowseIds.trackEntityId(it.mediaId) })
+
+        val playlists = children(BrowseIds.PLAYLISTS)
+        assertEquals(listOf("playlist::zz-test"), playlists.map { it.mediaId }.filter { it == "playlist::zz-test" })
+        assertEquals(ids.take(3), children("playlist::zz-test").map { BrowseIds.trackEntityId(it.mediaId) })
+    }
+
+    @Test
+    fun playingFromAPlaylistQueuesThePlaylistAndQueueFolderJumpsWithinIt() {
+        val ids = fixtureIds.take(4)
+        seedUserState(ids)
+        PlaybackService.onUserStateChanged()
+
+        val second = children("playlist::zz-test")[1]
+        app { browser.setMediaItem(second) }
+        // Queue is built asynchronously by the service.
+        waitFor { app { browser.mediaItemCount } == 3 }
+        assertEquals(1, app { browser.currentMediaItemIndex })
+        assertEquals(ids.take(3), (0 until 3).map { i ->
+            app { browser.getMediaItemAt(i).mediaMetadata.extras!!.getString("trackId") }
+        })
+
+        val queue = children(BrowseIds.QUEUE)
+        assertEquals(3, queue.size)
+        assertTrue(queue.all { it.mediaId.startsWith("queue::") })
+
+        // Picking a queue row jumps within the same queue instead of replacing it.
+        app { browser.setMediaItem(queue[2]) }
+        waitFor { app { browser.currentMediaItemIndex } == 2 }
+        assertEquals(3, app { browser.mediaItemCount })
+
+        // Starting playback recorded the track as recent.
+        app { browser.pause() }
+    }
+
+    private fun waitFor(timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        val end = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < end) {
+            if (condition()) return
+            Thread.sleep(100)
+        }
+        assertTrue("condition not met in ${timeoutMs}ms", condition())
+    }
+
+    private fun fixture(id: String, title: String, i: Int): MediaItemEntity = MediaItemEntity(
+        id = id, sourceId = "local", path = fixtureFile.absolutePath, pathKey = "zz:$id", fileName = "$id.mp3",
+        ext = "mp3", sizeBytes = 0, mtimeMs = 0, title = title, artist = "ZZ Artist", album = "ZZ Album",
+        albumArtist = "ZZ Artist", trackNo = i + 1, discNo = null, year = null, genre = null, durationMs = 200_000,
+        bitrate = null, sampleRate = null, channels = null, codec = null, format = "mp3", artworkPath = null,
+        jellyfinImageTag = null, sourceKind = "local", sourceLabel = "Test", addedAt = "", updatedAt = "",
+        missing = false, albumId = null,
     )
 }

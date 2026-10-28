@@ -9,18 +9,42 @@ import net.christopherrutherford.statocyst.db.MediaItemEntity
  */
 object BrowseIds {
     const val ROOT = "statocyst"
+    const val RECENTS = "recents"
+    const val FAVORITES = "favorites"
+    const val PLAYLISTS = "playlists"
     const val ALBUMS = "albums"
     const val ARTISTS = "artists"
     const val TRACKS = "tracks"
     const val QUEUE = "queue"
 
+    /** Folders that sit directly under the root, in display order. */
+    val ROOT_FOLDERS = listOf(RECENTS, FAVORITES, PLAYLISTS, ALBUMS, ARTISTS, TRACKS, QUEUE)
+
     fun album(albumArtist: String, album: String): String = "album::$albumArtist::$album"
     fun artist(artist: String): String = "artist::$artist"
-    fun track(id: String): String = "track::$id"
+    fun playlist(id: String): String = "playlist::$id"
+    /**
+     * Track IDs listed inside a folder carry that folder (`track::<id>@@<folder>`):
+     * Android Auto sends back only the media ID, so this is how "play this track"
+     * knows which list to queue.
+     */
+    fun track(id: String, contextId: String? = null): String =
+        if (contextId == null) "track::$id" else "track::$id$CONTEXT_SEP$contextId"
+    private const val CONTEXT_SEP = "@@"
+    fun queueItem(entryId: String): String = "queue::$entryId"
 
     fun trackEntityId(mediaId: String): String? =
-        if (mediaId.startsWith("track::")) mediaId.removePrefix("track::") else null
+        if (mediaId.startsWith("track::")) mediaId.removePrefix("track::").substringBefore(CONTEXT_SEP) else null
+
+    fun contextOf(mediaId: String): String? =
+        if (mediaId.startsWith("track::") && mediaId.contains(CONTEXT_SEP)) mediaId.substringAfter(CONTEXT_SEP) else null
+
+    fun queueEntryId(mediaId: String): String? =
+        if (mediaId.startsWith("queue::")) mediaId.removePrefix("queue::") else null
 }
+
+/** How a car head unit should lay out a folder's children (Auto content-style hints). */
+enum class ChildStyle { LIST, GRID }
 
 /** A single browse-tree node, independent of any Android framework type. */
 data class BrowseNode(
@@ -32,59 +56,166 @@ data class BrowseNode(
     val trackId: String? = null,
     val albumId: String? = null,
     val imageTag: String? = null,
+    /** Layout hint for this node's children (browsable nodes only). */
+    val childStyle: ChildStyle? = null,
+)
+
+data class PlaylistInfo(val id: String, val name: String, val trackIds: List<String>)
+
+data class QueueEntry(val entryId: String, val trackId: String)
+
+/** Everything the tree is derived from. Favorites and recents are newest first. */
+data class BrowseData(
+    val tracks: List<MediaItemEntity>,
+    val favorites: List<String> = emptyList(),
+    val playlists: List<PlaylistInfo> = emptyList(),
+    val recents: List<String> = emptyList(),
+    val queue: List<QueueEntry> = emptyList(),
 )
 
 /**
  * Builds a deterministic browse hierarchy from the local catalog. Pure Kotlin so
- * the tree shape and stable IDs can be unit-tested without an Android runtime.
+ * the tree shape, stable IDs and paging can be unit-tested without an Android runtime.
  */
 object BrowseTree {
 
-    fun root(): BrowseNode = BrowseNode(BrowseIds.ROOT, "Statocyst")
+    /** Most tracks that "play from here" will queue around the chosen one. */
+    const val CONTEXT_BEFORE = 50
+    const val CONTEXT_AFTER = 250
 
-    fun children(parentId: String, tracks: List<MediaItemEntity>): List<BrowseNode> = when {
-        parentId == BrowseIds.ROOT -> listOf(
-            BrowseNode(BrowseIds.ALBUMS, "Albums"),
-            BrowseNode(BrowseIds.ARTISTS, "Artists"),
-            BrowseNode(BrowseIds.TRACKS, "Tracks"),
-            BrowseNode(BrowseIds.QUEUE, "Queue"),
-        )
-        parentId == BrowseIds.ALBUMS -> albums(tracks)
-        parentId.startsWith("album::") -> albumTracks(parentId, tracks)
-        parentId == BrowseIds.ARTISTS -> artists(tracks)
-        parentId.startsWith("artist::") -> artistTracks(parentId, tracks)
-        parentId == BrowseIds.TRACKS -> tracks.map(::trackNode)
-        parentId == BrowseIds.QUEUE -> emptyList() // native queue lands in S021
+    fun root(): BrowseNode = BrowseNode(BrowseIds.ROOT, "Statocyst", childStyle = ChildStyle.GRID)
+
+    fun children(
+        parentId: String,
+        data: BrowseData,
+        page: Int = 0,
+        pageSize: Int = Int.MAX_VALUE,
+    ): List<BrowseNode> = paged(allChildren(parentId, data), page, pageSize)
+
+    private fun allChildren(parentId: String, data: BrowseData): List<BrowseNode> = when {
+        parentId == BrowseIds.ROOT -> BrowseIds.ROOT_FOLDERS.mapNotNull { folder(it, data) }
+        parentId == BrowseIds.RECENTS -> trackNodes(data.recents, data, parentId)
+        parentId == BrowseIds.FAVORITES -> trackNodes(data.favorites, data, parentId)
+        parentId == BrowseIds.PLAYLISTS -> data.playlists.map(::playlistNode)
+        parentId.startsWith("playlist::") ->
+            data.playlists.firstOrNull { BrowseIds.playlist(it.id) == parentId }
+                ?.let { trackNodes(it.trackIds, data, parentId) }.orEmpty()
+        parentId == BrowseIds.ALBUMS -> albums(data.tracks)
+        parentId.startsWith("album::") -> trackNodes(albumTrackIds(parentId, data.tracks), data, parentId)
+        parentId == BrowseIds.ARTISTS -> artists(data.tracks)
+        parentId.startsWith("artist::") -> trackNodes(artistTrackIds(parentId, data.tracks), data, parentId)
+        parentId == BrowseIds.TRACKS -> trackNodes(allTrackIds(data.tracks), data, parentId)
+        parentId == BrowseIds.QUEUE -> queueNodes(data)
         else -> emptyList()
     }
 
     /** Resolves a single media ID back to its node (used by onGetItem). */
-    fun node(mediaId: String, tracks: List<MediaItemEntity>): BrowseNode? = when {
+    fun node(mediaId: String, data: BrowseData): BrowseNode? = when {
         mediaId == BrowseIds.ROOT -> root()
-        mediaId == BrowseIds.ALBUMS -> BrowseNode(BrowseIds.ALBUMS, "Albums")
-        mediaId == BrowseIds.ARTISTS -> BrowseNode(BrowseIds.ARTISTS, "Artists")
-        mediaId == BrowseIds.TRACKS -> BrowseNode(BrowseIds.TRACKS, "Tracks")
-        mediaId == BrowseIds.QUEUE -> BrowseNode(BrowseIds.QUEUE, "Queue")
+        mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
+        mediaId.startsWith("playlist::") ->
+            data.playlists.firstOrNull { BrowseIds.playlist(it.id) == mediaId }?.let(::playlistNode)
         mediaId.startsWith("album::") -> {
             val key = mediaId.removePrefix("album::")
-            tracks.firstOrNull {
+            data.tracks.firstOrNull {
                 BrowseIds.album(it.albumArtist ?: it.artist, it.album) == "album::$key"
             }?.let {
-                BrowseNode(mediaId, it.album, it.albumArtist ?: it.artist, albumId = it.albumId, imageTag = it.jellyfinImageTag)
+                BrowseNode(
+                    mediaId, it.album, it.albumArtist ?: it.artist,
+                    albumId = it.albumId, imageTag = it.jellyfinImageTag, childStyle = ChildStyle.LIST,
+                )
             }
         }
         mediaId.startsWith("artist::") -> {
             val artist = mediaId.removePrefix("artist::")
-            tracks.firstOrNull { (it.albumArtist ?: it.artist) == artist }?.let {
-                BrowseNode(mediaId, artist, albumId = it.albumId, imageTag = it.jellyfinImageTag)
-            } ?: BrowseNode(mediaId, artist)
+            data.tracks.firstOrNull { (it.albumArtist ?: it.artist) == artist }?.let {
+                BrowseNode(mediaId, artist, albumId = it.albumId, imageTag = it.jellyfinImageTag, childStyle = ChildStyle.LIST)
+            } ?: BrowseNode(mediaId, artist, childStyle = ChildStyle.LIST)
         }
         mediaId.startsWith("track::") -> {
-            val id = mediaId.removePrefix("track::")
-            tracks.firstOrNull { it.id == id }?.let(::trackNode)
+            val id = BrowseIds.trackEntityId(mediaId)
+            data.tracks.firstOrNull { it.id == id }?.let { trackNode(it, BrowseIds.contextOf(mediaId)) }
+        }
+        mediaId.startsWith("queue::") -> {
+            val entry = data.queue.firstOrNull { BrowseIds.queueItem(it.entryId) == mediaId }
+            val track = entry?.let { e -> data.tracks.firstOrNull { it.id == e.trackId } }
+            track?.let { trackNode(it, BrowseIds.QUEUE).copy(id = mediaId) }
         }
         else -> null
     }
+
+    /**
+     * The ordered track IDs behind a folder, used to turn "play this track" in a
+     * list into "play this list from here". Null when [contextId] is not a track list.
+     */
+    fun contextTrackIds(contextId: String, data: BrowseData): List<String>? = when {
+        contextId == BrowseIds.RECENTS -> data.recents.filter { known(it, data) }
+        contextId == BrowseIds.FAVORITES -> data.favorites.filter { known(it, data) }
+        contextId.startsWith("playlist::") ->
+            data.playlists.firstOrNull { BrowseIds.playlist(it.id) == contextId }
+                ?.trackIds?.filter { known(it, data) }
+        contextId.startsWith("album::") -> albumTrackIds(contextId, data.tracks)
+        contextId.startsWith("artist::") -> artistTrackIds(contextId, data.tracks)
+        contextId == BrowseIds.TRACKS -> allTrackIds(data.tracks)
+        else -> null
+    }
+
+    /** Bounded slice of [ids] around [at], so one tap never ships thousands of items over Binder. */
+    fun window(ids: List<String>, at: Int): Pair<List<String>, Int> {
+        val from = (at - CONTEXT_BEFORE).coerceAtLeast(0)
+        val to = (at + CONTEXT_AFTER + 1).coerceAtMost(ids.size)
+        return ids.subList(from, to) to (at - from)
+    }
+
+    fun <T> paged(items: List<T>, page: Int, pageSize: Int): List<T> {
+        if (pageSize <= 0 || page < 0) return emptyList()
+        val from = page.toLong() * pageSize
+        if (from >= items.size) return emptyList()
+        val to = (from + pageSize).coerceAtMost(items.size.toLong())
+        return items.subList(from.toInt(), to.toInt())
+    }
+
+    private fun known(trackId: String, data: BrowseData) = data.tracks.any { it.id == trackId }
+
+    private fun folder(id: String, data: BrowseData, always: Boolean = false): BrowseNode? {
+        fun count(n: Int, noun: String) = "$n $noun" + if (n == 1) "" else "s"
+        return when (id) {
+            BrowseIds.RECENTS -> data.recents.size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Recently played", count(it, "track"), childStyle = ChildStyle.LIST) }
+            BrowseIds.FAVORITES -> data.favorites.size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Favorites", count(it, "track"), childStyle = ChildStyle.LIST) }
+            BrowseIds.PLAYLISTS -> data.playlists.size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Playlists", count(it, "playlist"), childStyle = ChildStyle.LIST) }
+            BrowseIds.ALBUMS -> BrowseNode(id, "Albums", childStyle = ChildStyle.GRID)
+            BrowseIds.ARTISTS -> BrowseNode(id, "Artists", childStyle = ChildStyle.LIST)
+            BrowseIds.TRACKS -> BrowseNode(id, "All tracks", count(data.tracks.size, "track"), childStyle = ChildStyle.LIST)
+            BrowseIds.QUEUE -> data.queue.size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Now playing queue", count(it, "track"), childStyle = ChildStyle.LIST) }
+            else -> null
+        }
+    }
+
+    private fun playlistNode(p: PlaylistInfo) = BrowseNode(
+        id = BrowseIds.playlist(p.id),
+        title = p.name,
+        subtitle = "${p.trackIds.size} track" + if (p.trackIds.size == 1) "" else "s",
+        childStyle = ChildStyle.LIST,
+    )
+
+    private fun queueNodes(data: BrowseData): List<BrowseNode> {
+        val byId = data.tracks.associateBy { it.id }
+        return data.queue.mapNotNull { entry ->
+            byId[entry.trackId]?.let { trackNode(it, BrowseIds.QUEUE).copy(id = BrowseIds.queueItem(entry.entryId)) }
+        }
+    }
+
+    private fun trackNodes(ids: List<String>, data: BrowseData, contextId: String): List<BrowseNode> {
+        val byId = data.tracks.associateBy { it.id }
+        return ids.mapNotNull { id -> byId[id]?.let { trackNode(it, contextId) } }
+    }
+
+    private fun allTrackIds(tracks: List<MediaItemEntity>): List<String> =
+        tracks.sortedBy { it.title.lowercase() }.map { it.id }
 
     private fun albums(tracks: List<MediaItemEntity>): List<BrowseNode> {
         val map = LinkedHashMap<String, BrowseNode>()
@@ -92,7 +223,10 @@ object BrowseTree {
             val artist = t.albumArtist ?: t.artist
             val id = BrowseIds.album(artist, t.album)
             if (!map.containsKey(id)) {
-                map[id] = BrowseNode(id, t.album, artist, albumId = t.albumId, imageTag = t.jellyfinImageTag)
+                map[id] = BrowseNode(
+                    id, t.album, artist,
+                    albumId = t.albumId, imageTag = t.jellyfinImageTag, childStyle = ChildStyle.LIST,
+                )
             }
         }
         return map.values.sortedBy { it.title.lowercase() }
@@ -104,30 +238,30 @@ object BrowseTree {
             val artist = t.albumArtist ?: t.artist
             val id = BrowseIds.artist(artist)
             if (!map.containsKey(id)) {
-                map[id] = BrowseNode(id, artist, albumId = t.albumId, imageTag = t.jellyfinImageTag)
+                map[id] = BrowseNode(id, artist, albumId = t.albumId, imageTag = t.jellyfinImageTag, childStyle = ChildStyle.LIST)
             }
         }
         return map.values.sortedBy { it.title.lowercase() }
     }
 
-    private fun albumTracks(parentId: String, tracks: List<MediaItemEntity>): List<BrowseNode> {
+    private fun albumTrackIds(parentId: String, tracks: List<MediaItemEntity>): List<String> {
         val key = parentId.removePrefix("album::")
         return tracks
             .filter { BrowseIds.album(it.albumArtist ?: it.artist, it.album) == "album::$key" }
             .sortedWith(compareBy({ it.discNo ?: 0 }, { it.trackNo ?: 0 }, { it.title.lowercase() }))
-            .map(::trackNode)
+            .map { it.id }
     }
 
-    private fun artistTracks(parentId: String, tracks: List<MediaItemEntity>): List<BrowseNode> {
+    private fun artistTrackIds(parentId: String, tracks: List<MediaItemEntity>): List<String> {
         val artist = parentId.removePrefix("artist::")
         return tracks
             .filter { (it.albumArtist ?: it.artist) == artist }
             .sortedBy { it.title.lowercase() }
-            .map(::trackNode)
+            .map { it.id }
     }
 
-    private fun trackNode(t: MediaItemEntity): BrowseNode = BrowseNode(
-        id = BrowseIds.track(t.id),
+    private fun trackNode(t: MediaItemEntity, contextId: String?): BrowseNode = BrowseNode(
+        id = BrowseIds.track(t.id, contextId),
         title = t.title,
         subtitle = t.artist,
         playable = true,

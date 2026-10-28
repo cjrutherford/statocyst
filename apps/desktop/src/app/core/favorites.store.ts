@@ -1,6 +1,7 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import type { Track } from '@statocyst/contracts';
 import { LibraryStore } from './library.store';
+import { pushNativeUserState } from './native-user-state';
 
 const STORAGE_KEY = 'statocyst.favorites';
 
@@ -8,6 +9,10 @@ const STORAGE_KEY = 'statocyst.favorites';
 export class FavoritesStore {
   private readonly library = inject(LibraryStore);
   private readonly ids = signal<Set<string>>(this.load());
+
+  constructor() {
+    pushNativeUserState({ favorites: [...this.ids()] });
+  }
 
   readonly favoriteIds = this.ids.asReadonly();
   readonly isFavorite = computed(() => {
@@ -24,6 +29,7 @@ export class FavoritesStore {
     if (next.has(trackId)) next.delete(trackId);
     else next.add(trackId);
     this.ids.set(next);
+    pushNativeUserState({ favorites: [...next] });
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
     } catch {

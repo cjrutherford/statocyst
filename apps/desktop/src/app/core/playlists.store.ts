@@ -1,6 +1,7 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import type { Track } from '@statocyst/contracts';
 import { LibraryStore } from './library.store';
+import { pushNativeUserState } from './native-user-state';
 
 interface StoredPlaylist {
   id: string;
@@ -16,6 +17,10 @@ export class PlaylistsStore {
   private readonly library = inject(LibraryStore);
 
   private readonly playlists = signal<StoredPlaylist[]>(this.load());
+
+  constructor() {
+    pushNativeUserState({ playlists: this.playlists() });
+  }
 
   readonly all = this.playlists.asReadonly();
   readonly count = computed(() => this.playlists().length);
@@ -46,6 +51,7 @@ export class PlaylistsStore {
   }
 
   private persist(): void {
+    pushNativeUserState({ playlists: this.playlists() });
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.playlists()));
     } catch {
