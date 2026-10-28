@@ -11,6 +11,9 @@ import { formatDuration } from '../core/format';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="player">
+      <div class="player__hairline" aria-hidden="true">
+        <span [style.width.%]="progressPercent()"></span>
+      </div>
       <button
         type="button"
         class="player__track"
@@ -41,7 +44,7 @@ import { formatDuration } from '../core/format';
         <div class="player__controls">
           <button
             type="button"
-            class="icon-btn"
+            class="icon-btn player__aux"
             [class.is-active]="playback.snapshot().shuffle"
             [attr.aria-pressed]="playback.snapshot().shuffle"
             aria-label="Shuffle queue"
@@ -80,7 +83,7 @@ import { formatDuration } from '../core/format';
           </button>
           <button
             type="button"
-            class="icon-btn"
+            class="icon-btn player__aux"
             [class.is-active]="playback.snapshot().repeat !== 'off'"
             [attr.aria-label]="'Repeat ' + playback.snapshot().repeat"
             [title]="'Repeat (R): ' + playback.snapshot().repeat"
@@ -332,12 +335,19 @@ import { formatDuration } from '../core/format';
           display: none;
         }
       }
+      .player {
+        position: relative;
+      }
+      .player__hairline {
+        display: none;
+      }
       @media (max-width: 760px) {
+        /* Phone mini-player: one compact row. Shuffle/repeat/seek/volume live in Now Playing and Queue. */
         .player {
-          grid-template-columns: 1fr auto;
-          grid-template-areas:
-            'track extras'
-            'transport transport';
+          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-areas: 'track transport';
+          gap: 8px;
+          padding: 8px 12px;
         }
         .player__track {
           grid-area: track;
@@ -345,8 +355,25 @@ import { formatDuration } from '../core/format';
         .player__transport {
           grid-area: transport;
         }
-        .player__extras {
-          grid-area: extras;
+        .player__extras,
+        .player__seek,
+        .player__aux,
+        .player__expand {
+          display: none;
+        }
+        .player__hairline {
+          display: block;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: var(--line);
+        }
+        .player__hairline span {
+          display: block;
+          height: 100%;
+          background: var(--cyan-deep, #1b9fd0);
         }
       }
     `,

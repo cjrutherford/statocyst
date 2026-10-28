@@ -134,6 +134,7 @@ interface NavItem {
 
         <sc-player-bar
           class="player-slot"
+          [class.player-slot--hidden-phone]="navigation.view() === 'now'"
           (openNow)="navigation.navigate('now')"
           (openQueue)="navigation.navigate('queue')"
         />
@@ -541,6 +542,10 @@ interface NavItem {
         .player-slot {
           grid-column: 1;
           grid-row: 2;
+        }
+        /* Now Playing already carries full transport; don't stack a mini-player over it. */
+        .player-slot--hidden-phone {
+          display: none;
         }
       }
       /* Touch devices: never present a control smaller than 44×44 CSS pixels. */
