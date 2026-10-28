@@ -5,6 +5,8 @@ import android.net.Uri;
 import android.util.Log;
 import android.webkit.MimeTypeMap;
 
+import net.christopherrutherford.statocyst.jellyfin.JellyfinArtwork;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -94,6 +96,53 @@ public final class LocalMediaServer {
             + Uri.encode(file.getAbsolutePath());
     }
 
+    /** Loopback URL for a Jellyfin primary image; the server adds the session header, the URL carries no token. */
+    public static String artUri(Context context, String itemId, String tag) {
+        start(context);
+        if (port <= 0 || !JellyfinArtwork.INSTANCE.isValidId(itemId)) return null;
+        String safeTag = JellyfinArtwork.INSTANCE.isValidTag(tag) ? tag : "";
+        return "http://" + HOST + ":" + port + PREFIX + "art?id=" + itemId
+            + (safeTag.isEmpty() ? "" : "&tag=" + safeTag);
+    }
+
+    private static void serveArtwork(Socket socket, Uri url, boolean head) throws IOException {
+        String id = url.getQueryParameter("id");
+        String tag = url.getQueryParameter("tag");
+        if (tag == null) tag = "";
+        if (!JellyfinArtwork.INSTANCE.isValidId(id) || !JellyfinArtwork.INSTANCE.isValidTag(tag)) {
+            writeText(socket, 400, "Bad Request", "Bad artwork request");
+            return;
+        }
+        File image = JellyfinArtwork.INSTANCE.fetch(appContext, id, tag, 300);
+        if (image == null) {
+            writeText(socket, 404, "Not Found", "No artwork");
+            return;
+        }
+        byte[] head16 = new byte[16];
+        try (java.io.FileInputStream in = new java.io.FileInputStream(image)) {
+            in.read(head16);
+        }
+        String mime = JellyfinArtwork.INSTANCE.sniffMime(head16);
+        if (mime == null) mime = "application/octet-stream";
+        long length = image.length();
+        String header = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: " + mime + "\r\n"
+            + "Content-Length: " + length + "\r\n"
+            + "Cache-Control: private, max-age=86400\r\n"
+            + "Access-Control-Allow-Origin: *\r\n"
+            + "Connection: close\r\n\r\n";
+        OutputStream output = socket.getOutputStream();
+        output.write(header.getBytes(StandardCharsets.ISO_8859_1));
+        if (!head) {
+            try (java.io.FileInputStream in = new java.io.FileInputStream(image)) {
+                byte[] buffer = new byte[32 * 1024];
+                int read;
+                while ((read = in.read(buffer)) >= 0) output.write(buffer, 0, read);
+            }
+        }
+        output.flush();
+    }
+
     private static void handle(Socket client) {
         try (Socket socket = client) {
             socket.setSoTimeout(20_000);
@@ -124,6 +173,10 @@ public final class LocalMediaServer {
 
             Uri url = Uri.parse(target);
             String path = url.getPath();
+            if (path != null && path.equals(PREFIX + "art")) {
+                serveArtwork(socket, url, "HEAD".equals(method));
+                return;
+            }
             if (path == null || !path.startsWith(PREFIX) || !path.endsWith("/file")) {
                 writeText(socket, 404, "Not Found", "Not found");
                 return;

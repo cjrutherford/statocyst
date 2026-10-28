@@ -1029,7 +1029,16 @@ class StatocystPlugin : Plugin() {
         .put("format", t.format)
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)
+        .put("artworkUrl", artworkFor(t))
         .put("missing", t.missing)
+
+    /** Loopback artwork URL for a Jellyfin track (the server adds the session header); null for other sources. */
+    private fun artworkFor(t: MediaItemEntity): String? {
+        if (!t.sourceKind.startsWith("jellyfin")) return null
+        val itemId = t.albumId?.takeIf { it.isNotEmpty() } ?: t.id.removePrefix("jf-")
+        val tag = if (t.albumId.isNullOrEmpty()) "" else t.jellyfinImageTag.orEmpty()
+        return LocalMediaServer.artUri(context, itemId, tag)
+    }
 
     private fun downloadJson(d: DownloadEntity): JSObject = JSObject()
         .put("trackId", d.trackId)

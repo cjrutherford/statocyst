@@ -609,15 +609,7 @@ export class CapacitorBridge {
       const result = await (window as any).Capacitor?.Plugins?.['Statocyst']?.listTracks?.() ?? { tracks: [] };
       const rawTracks = (result.tracks ?? []) as Array<Record<string, unknown>>;
 
-      // Resolve server info for Jellyfin artwork URLs
-      const servers = this.loadServers();
-      const connectedServer = servers.find((s) => s.connected) ?? servers[0];
-      const serverUrl = connectedServer?.url ?? '';
-      const serverToken = connectedServer
-        ? (localStorage.getItem(`statocyst.jellyfin.token.${connectedServer.id}`) ?? '')
-        : '';
-
-      const tracks: Track[] = rawTracks.map((t) => this.toTrack(t, serverUrl, serverToken));
+      const tracks: Track[] = rawTracks.map((t) => this.toTrack(t));
       this.tracks.clear();
       for (const t of tracks) this.tracks.set(t.id, t);
       this.refreshCurrentTrack();
@@ -699,34 +691,16 @@ export class CapacitorBridge {
   }
 
   // App info and diagnostics — read from the native plugin, never invented.
-  private artworkContext(): { serverUrl: string; serverToken: string } {
-    const servers = this.loadServers();
-    const server = servers.find((candidate) => candidate.connected) ?? servers[0];
-    return {
-      serverUrl: server?.url ?? '',
-      serverToken: server
-        ? (localStorage.getItem(`statocyst.jellyfin.token.${server.id}`) ?? '')
-        : '',
-    };
-  }
-
-  private toTrack(raw: Record<string, unknown>, serverUrl: string, serverToken: string): Track {
+  private toTrack(raw: Record<string, unknown>): Track {
     const id = String(raw['id'] ?? '');
     const sourceKind = String(raw['sourceKind'] ?? 'local');
     const sourceLabel = String(raw['sourceLabel'] ?? 'Local');
 
-    let artworkUrl: string | null = null;
-    if (sourceKind === 'jellyfin' && serverUrl) {
-      const itemId = id.replace(/^jf-/, '');
-      // Audio tracks carry no Primary image of their own; the artwork lives on
-      // the album. Use AlbumId + AlbumPrimaryImageTag when present, otherwise
-      // fall back to the track item (which Jellyfin resolves for non-track items).
-      const albumId = (raw['albumId'] as string | undefined) ?? null;
-      const tag = (raw['jellyfinImageTag'] as string | undefined) ?? '';
-      const targetId = albumId || itemId;
-      const tagParam = albumId && tag ? `&tag=${encodeURIComponent(tag)}` : '';
-      artworkUrl = `${serverUrl}/Items/${targetId}/Images/Primary?maxHeight=300${tagParam}&api_key=${encodeURIComponent(serverToken)}`;
-    }
+    // Jellyfin artwork comes from the native loopback route, which adds the session
+    // header itself: the token is never put into an image URL. Without the native
+    // plugin (browser smoke tests) a Jellyfin track simply has no artwork.
+    const nativeArtwork = raw['artworkUrl'];
+    const artworkUrl = typeof nativeArtwork === 'string' && nativeArtwork ? nativeArtwork : null;
 
     return {
       id,
@@ -747,7 +721,6 @@ export class CapacitorBridge {
   }
 
   private importSummaryFromNative(raw: any): ImportSummary {
-    const { serverUrl, serverToken } = this.artworkContext();
     const summary: ImportSummary = {
       sourceId: raw?.sourceId == null ? null : String(raw.sourceId),
       sourceLabel: raw?.sourceLabel == null ? null : String(raw.sourceLabel),
@@ -762,7 +735,7 @@ export class CapacitorBridge {
           }))
         : [],
       tracks: Array.isArray(raw?.tracks)
-        ? (raw.tracks as Array<Record<string, unknown>>).map((t) => this.toTrack(t, serverUrl, serverToken))
+        ? (raw.tracks as Array<Record<string, unknown>>).map((t) => this.toTrack(t))
         : [],
       cancelled: Boolean(raw?.cancelled),
     };
