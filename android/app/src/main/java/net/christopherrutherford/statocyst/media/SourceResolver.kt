@@ -78,10 +78,17 @@ class SourceResolver(private val context: Context) {
         return ArtworkProvider.uri(context, albumId, imageTag)
     }
 
-    /** Jellyfin artwork when the item has some, else opt-in MusicBrainz artwork, else null. */
-    fun artwork(albumId: String?, imageTag: String?, art: ArtKey?): String? =
-        artworkUrl(albumId, imageTag) ?: art?.let {
-            if (it.album != null) ExternalArt.coverUri(context, it.artist, it.album)
-            else ExternalArt.artistUri(context, it.artist)
+    /**
+     * Opt-in MusicBrainz artwork overrides the server's; the Jellyfin image is the fallback
+     * when nothing is found online or the setting is off.
+     */
+    fun artwork(albumId: String?, imageTag: String?, art: ArtKey?): String? {
+        val jellyfin = artworkUrl(albumId, imageTag)
+        val fallback = albumId?.takeIf { jellyfin != null }?.let { it to imageTag }
+        val external = art?.let {
+            if (it.album != null) ExternalArt.coverUri(context, it.artist, it.album, fallback)
+            else ExternalArt.artistUri(context, it.artist, fallback)
         }
+        return external ?: jellyfin
+    }
 }

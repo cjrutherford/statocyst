@@ -22,7 +22,9 @@ import java.io.FileNotFoundException
  * the head unit host is another app; it only serves album art for valid item ids.
  *
  * `/cover?artist=&album=` and `/artist?name=` serve opt-in MusicBrainz artwork
- * (see [ExternalArt]); they return nothing while that setting is off.
+ * (see [ExternalArt]); they return nothing while that setting is off. Pulled artwork
+ * takes precedence: an optional `id`/`tag` names the Jellyfin image to serve only when
+ * nothing could be found online.
  */
 class ArtworkProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
@@ -68,14 +70,24 @@ class ArtworkProvider : ContentProvider() {
             "cover" -> {
                 val artist = uri.getQueryParameter("artist") ?: return null
                 val album = uri.getQueryParameter("album") ?: return null
-                ExternalArt.cover(ctx, artist, album)
+                ExternalArt.cover(ctx, artist, album) ?: fallback(ctx, uri)
             }
-            "artist" -> ExternalArt.artist(ctx, uri.getQueryParameter("name") ?: return null)
+            "artist" -> {
+                val name = uri.getQueryParameter("name") ?: return null
+                ExternalArt.artist(ctx, name) ?: fallback(ctx, uri)
+            }
             else -> {
                 val (id, tag) = request(uri) ?: return null
                 JellyfinArtwork.fetch(ctx, id, tag)
             }
         }
+    }
+
+    /** The Jellyfin image named by `id`/`tag`, used when no pulled artwork exists. */
+    private fun fallback(ctx: Context, uri: Uri): File? {
+        val id = uri.getQueryParameter("id")?.takeIf { JellyfinArtwork.isValidId(it) } ?: return null
+        val tag = uri.getQueryParameter("tag")?.takeIf { JellyfinArtwork.isValidTag(it) } ?: ""
+        return JellyfinArtwork.fetch(ctx, id, tag)
     }
 
     companion object {

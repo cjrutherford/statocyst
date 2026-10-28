@@ -1099,14 +1099,17 @@ class StatocystPlugin : Plugin() {
         .put("artistArtworkUrl", artistArtworkFor(t))
         .put("missing", t.missing)
 
-    /** Loopback artwork URL for a Jellyfin track (the server adds the session header); null for other sources. */
+    /**
+     * Loopback artwork URL. Opt-in MusicBrainz artwork overrides the server's; a Jellyfin track
+     * falls back to its own image (the server adds the session header) when nothing is found online.
+     */
     private fun artworkFor(t: MediaItemEntity): String? {
-        if (!t.sourceKind.startsWith("jellyfin")) {
-            return LocalMediaServer.extArtUri(context, t.albumArtist ?: t.artist, t.album)
-        }
+        val artist = t.albumArtist ?: t.artist
+        if (!t.sourceKind.startsWith("jellyfin")) return LocalMediaServer.extArtUri(context, artist, t.album)
         val itemId = t.albumId?.takeIf { it.isNotEmpty() } ?: t.id.removePrefix("jf-")
         val tag = if (t.albumId.isNullOrEmpty()) "" else t.jellyfinImageTag.orEmpty()
-        return LocalMediaServer.artUri(context, itemId, tag)
+        return LocalMediaServer.extArtUri(context, artist, t.album, itemId, tag)
+            ?: LocalMediaServer.artUri(context, itemId, tag)
     }
 
     /** Opt-in MusicBrainz artist photo for tracks with no Jellyfin artwork of their own; null otherwise. */

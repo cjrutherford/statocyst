@@ -108,9 +108,14 @@ public final class LocalMediaServer {
 
     /** Loopback URL for an opt-in MusicBrainz cover (artist + album) or artist photo (album null); null when off. */
     public static String extArtUri(Context context, String artist, String album) {
+        return extArtUri(context, artist, album, null, null);
+    }
+
+    /** As above; itemId/tag name the Jellyfin image served only when nothing is found online. */
+    public static String extArtUri(Context context, String artist, String album, String itemId, String tag) {
         String path = album == null
-            ? ExternalArt.INSTANCE.artistUri(context, artist)
-            : ExternalArt.INSTANCE.coverUri(context, artist, album);
+            ? ExternalArt.INSTANCE.artistUri(context, artist, null)
+            : ExternalArt.INSTANCE.coverUri(context, artist, album, null);
         if (path == null) return null;
         start(context);
         if (port <= 0) return null;
@@ -118,6 +123,10 @@ public final class LocalMediaServer {
             .appendEncodedPath(PREFIX.substring(1) + "ext");
         if (album == null) b.appendQueryParameter("name", artist);
         else b.appendQueryParameter("artist", artist).appendQueryParameter("album", album);
+        if (itemId != null && JellyfinArtwork.INSTANCE.isValidId(itemId)) {
+            b.appendQueryParameter("id", itemId);
+            if (tag != null && !tag.isEmpty() && JellyfinArtwork.INSTANCE.isValidTag(tag)) b.appendQueryParameter("tag", tag);
+        }
         return b.build().toString();
     }
 
@@ -131,6 +140,14 @@ public final class LocalMediaServer {
         else {
             writeText(socket, 400, "Bad Request", "Bad artwork request");
             return;
+        }
+        if (image == null) {
+            String id = url.getQueryParameter("id");
+            String tag = url.getQueryParameter("tag");
+            if (tag == null) tag = "";
+            if (id != null && JellyfinArtwork.INSTANCE.isValidId(id) && JellyfinArtwork.INSTANCE.isValidTag(tag)) {
+                image = JellyfinArtwork.INSTANCE.fetch(appContext, id, tag, 300);
+            }
         }
         if (image == null) {
             writeText(socket, 404, "Not Found", "No artwork");

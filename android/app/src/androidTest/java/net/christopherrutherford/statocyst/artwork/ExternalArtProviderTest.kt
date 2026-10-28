@@ -77,4 +77,22 @@ class ExternalArtProviderTest {
         assertNull(ExternalArt.coverUri(context, "Zz Test Artist", null))
         assertNull(ExternalArt.artistUri(context, " "))
     }
+
+    @Test
+    fun pulledArtworkWinsOverTheJellyfinImageItCarriesAsFallback() {
+        seedCover("Zz Test Artist", "Zz Test Album")
+        ExternalArt.setEnabled(context, true)
+        val uri = ExternalArt.coverUri(context, "Zz Test Artist", "Zz Test Album", "abc123" to "tag.1")!!
+        assertEquals("abc123", Uri.parse(uri).getQueryParameter("id"))
+        assertEquals("tag.1", Uri.parse(uri).getQueryParameter("tag"))
+        assertArrayEquals(png, read(uri))
+    }
+
+    @Test
+    fun anInvalidFallbackIdIsNotCarriedInTheUri() {
+        ExternalArt.setEnabled(context, true)
+        val uri = ExternalArt.coverUri(context, "Zz Test Artist", "Zz Test Album", "../etc/passwd" to "x")!!
+        assertNull(Uri.parse(uri).getQueryParameter("id"))
+        assertNull(Uri.parse(uri).getQueryParameter("tag"))
+    }
 }

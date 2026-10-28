@@ -2,6 +2,7 @@ package net.christopherrutherford.statocyst.artwork
 
 import android.content.Context
 import android.net.Uri
+import net.christopherrutherford.statocyst.jellyfin.JellyfinArtwork
 import java.io.File
 
 /**
@@ -44,18 +45,30 @@ object ExternalArt {
     fun artist(context: Context, name: String): File? =
         if (enabled(context)) store(context).artist(name) else null
 
-    /** Token-free content URI for an album cover, or null when disabled or not worth looking up. */
-    fun coverUri(context: Context, artist: String?, album: String?): String? {
+    /**
+     * Token-free content URI for an album cover, or null when disabled or not worth looking up.
+     * Pulled artwork overrides the server's: [fallback] (Jellyfin item id and image tag) is only
+     * served when nothing could be found online.
+     */
+    fun coverUri(context: Context, artist: String?, album: String?, fallback: Pair<String, String?>? = null): String? {
         if (!enabled(context) || !ExternalArtwork.worthLooking(artist) || !ExternalArtwork.worthLooking(album)) return null
         return Uri.Builder().scheme("content").authority("${context.packageName}.artwork")
             .appendPath("cover").appendQueryParameter("artist", artist).appendQueryParameter("album", album)
-            .build().toString()
+            .withFallback(fallback).build().toString()
     }
 
-    fun artistUri(context: Context, name: String?): String? {
+    fun artistUri(context: Context, name: String?, fallback: Pair<String, String?>? = null): String? {
         if (!enabled(context) || !ExternalArtwork.worthLooking(name)) return null
         return Uri.Builder().scheme("content").authority("${context.packageName}.artwork")
             .appendPath("artist").appendQueryParameter("name", name)
-            .build().toString()
+            .withFallback(fallback).build().toString()
+    }
+
+    /** Appends `id` and `tag` for the Jellyfin image to fall back to; invalid values are dropped. */
+    fun Uri.Builder.withFallback(fallback: Pair<String, String?>?): Uri.Builder {
+        val id = fallback?.first?.takeIf { JellyfinArtwork.isValidId(it) } ?: return this
+        appendQueryParameter("id", id)
+        fallback.second?.takeIf { it.isNotEmpty() && JellyfinArtwork.isValidTag(it) }?.let { appendQueryParameter("tag", it) }
+        return this
     }
 }
