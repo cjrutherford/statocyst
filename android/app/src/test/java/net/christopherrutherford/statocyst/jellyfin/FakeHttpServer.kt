@@ -7,7 +7,7 @@ import java.util.Collections
 
 /** Minimal in-process HTTP/1.1 server for JVM tests (no Android, no real Jellyfin). */
 class FakeHttpServer(private val handler: (Request) -> Response) : AutoCloseable {
-    data class Request(val method: String, val target: String, val headers: Map<String, String>) {
+    data class Request(val method: String, val target: String, val headers: Map<String, String>, val body: String = "") {
         val path: String get() = target.substringBefore('?')
         val query: String? get() = target.substringAfter('?', "").ifEmpty { null }
     }
@@ -44,13 +44,15 @@ class FakeHttpServer(private val handler: (Request) -> Response) : AutoCloseable
                 val i = h.indexOf(':')
                 if (i > 0) headers[h.substring(0, i).trim().lowercase()] = h.substring(i + 1).trim()
             }
-            val req = Request(parts[0], parts[1], headers)
+            val length = headers["content-length"]?.toIntOrNull() ?: 0
+            val body = if (length > 0) CharArray(length).also { buf -> reader.read(buf, 0, length) }.concatToString() else ""
+            val req = Request(parts[0], parts[1], headers, body)
             requests.add(req)
             val res = handler(req)
             val head = "HTTP/1.1 ${res.status} X\r\nContent-Type: ${res.contentType}\r\nContent-Length: ${res.body.size}\r\nConnection: close\r\n\r\n"
             it.getOutputStream().apply {
                 write(head.toByteArray(Charsets.ISO_8859_1))
-                write(res.body)
+                if (req.method != "HEAD") write(res.body)
                 flush()
             }
         }
