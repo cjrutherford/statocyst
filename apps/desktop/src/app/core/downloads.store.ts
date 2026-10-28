@@ -119,7 +119,7 @@ export class DownloadsStore {
       ? Math.round((q.done / q.total) * 100)
       : byBytes
         ? Math.min(99, Math.floor((q.receivedBytes / (q.totalBytes as number)) * 100))
-        : Math.min(99, Math.floor((finishedCount / q.total) * 100));
+        : Math.min(99, Math.floor((trackFractions(q.entries) / q.total) * 100));
 
     const running = q.entries.filter((e) => e.state === 'active' || e.state === 'retrying' || e.state === 'waiting');
     const waiting = running.some((e) => e.state === 'waiting');
@@ -343,4 +343,13 @@ export class DownloadsStore {
       if (progress.done) void this.refresh();
     });
   }
+}
+
+/** Sum of per-track progress (finished = 1, in flight = bytes so far when its size is known) so the bar moves before every size is known. */
+function trackFractions(entries: DownloadQueueEntry[]): number {
+  return entries.reduce((sum, e) => {
+    if (e.state === 'done' || e.state === 'failed') return sum + 1;
+    if (e.totalBytes && e.totalBytes > 0) return sum + Math.min(1, e.receivedBytes / e.totalBytes);
+    return sum;
+  }, 0);
 }

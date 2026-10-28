@@ -1,6 +1,7 @@
 package net.christopherrutherford.statocyst.artwork
 
 import net.christopherrutherford.statocyst.jellyfin.JellyfinArtwork
+import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -51,6 +52,7 @@ class ExternalArtwork(
                 return try {
                     val bytes = lookup()
                     if (bytes == null || bytes.isEmpty() || JellyfinArtwork.sniffMime(bytes.copyOf(16)) == null) {
+                        note("no image for $key (${bytes?.size ?: "none"} bytes)")
                         remember(key, MISS_TTL_MS)
                         null
                     } else {
@@ -64,7 +66,8 @@ class ExternalArtwork(
                             target
                         }
                     }
-                } catch (_: IOException) {
+                } catch (e: IOException) {
+                    note("lookup failed for $key: $e")
                     remember(key, RETRY_TTL_MS)
                     null
                 }
@@ -73,6 +76,11 @@ class ExternalArtwork(
             waiting.decrementAndGet()
             locks.remove(key)
         }
+    }
+
+    /** Logcat breadcrumb; unit tests run without the Android Log implementation. */
+    private fun note(message: String) {
+        runCatching { Log.i(TAG, message) }
     }
 
     private fun hit(target: File): File? =
@@ -105,6 +113,7 @@ class ExternalArtwork(
     }
 
     companion object {
+        private const val TAG = "ExternalArtwork"
         const val MISS_TTL_MS = 7L * 24 * 60 * 60 * 1000
         const val RETRY_TTL_MS = 15L * 60 * 1000
         private const val MAX_CACHE_BYTES = 48L * 1024 * 1024

@@ -15,6 +15,8 @@ data class Endpoints(
     val wikidata: String = "https://www.wikidata.org",
     val commons: String = "https://commons.wikimedia.org",
     val isAllowedImageUrl: (String) -> Boolean = ::defaultAllowedImageUrl,
+    /** Pause before retrying a 503, which these services send briefly under load (429 is not retried: it asks us to back off). */
+    val retryDelayMs: Long = 1_500,
 ) {
     companion object {
         private val HOSTS = listOf("coverartarchive.org", "archive.org", "wikimedia.org")
@@ -100,8 +102,9 @@ class MusicBrainzClient(
             }
         }
         val id = qid ?: return null
-        val entity = getJson("${endpoints.wikidata}/wiki/Special:EntityData/$id.json") ?: return null
-        val file = entity.optJSONObject("entities")?.optJSONObject(id)?.optJSONObject("claims")
+        // wbgetclaims returns ~1 KB; Special:EntityData is the whole entity (~135 KB) and is rate-limited far sooner.
+        val entity = getJson("${endpoints.wikidata}/w/api.php?action=wbgetclaims&entity=$id&property=P18&format=json") ?: return null
+        val file = entity.optJSONObject("claims")
             ?.optJSONArray("P18")?.optJSONObject(0)?.optJSONObject("mainsnak")
             ?.optJSONObject("datavalue")?.optString("value")?.takeIf { it.isNotEmpty() } ?: return null
         return image(filePath(file))
@@ -123,18 +126,29 @@ class MusicBrainzClient(
     }
 
     private fun getJson(url: String): JSONObject? {
-        val conn = open(url, "application/json")
-        try {
-            return when (val code = conn.responseCode) {
-                200 -> JSONObject(conn.inputStream.use { String(it.readBytes(), Charsets.UTF_8) })
-                400, 404 -> null
-                else -> throw IOException("HTTP $code for ${URI(url).host}")
+        repeat(JSON_ATTEMPTS) { attempt ->
+            val conn = open(url, "application/json")
+            try {
+                when (val code = conn.responseCode) {
+                    200 -> return JSONObject(conn.inputStream.use { String(it.readBytes(), Charsets.UTF_8) })
+                    400, 404 -> return null
+                    503 -> if (attempt == JSON_ATTEMPTS - 1) throw IOException(describe(conn, code, url))
+                    else -> throw IOException(describe(conn, code, url))
+                }
+            } catch (e: org.json.JSONException) {
+                throw IOException("bad JSON", e)
+            } finally {
+                conn.disconnect()
             }
-        } catch (e: org.json.JSONException) {
-            throw IOException("bad JSON", e)
-        } finally {
-            conn.disconnect()
+            if (endpoints.retryDelayMs > 0) Thread.sleep(endpoints.retryDelayMs)
         }
+        return null
+    }
+
+    /** Error text for logs: status, host, Retry-After and the start of the body. */
+    private fun describe(conn: HttpURLConnection, code: Int, url: String): String {
+        val body = runCatching { conn.errorStream?.use { String(it.readNBytes(160), Charsets.UTF_8) } }.getOrNull().orEmpty().replace('\n', ' ')
+        return "HTTP $code for ${URI(url).host} retry-after=${conn.getHeaderField("Retry-After")} body=$body"
     }
 
     /** Follows a few redirects, but only to image hosts we allow; null for 404, an error for anything else. */
@@ -188,6 +202,7 @@ class MusicBrainzClient(
     companion object {
         const val MAX_IMAGE_BYTES = 6L * 1024 * 1024
         private const val MAX_REDIRECTS = 4
+        private const val JSON_ATTEMPTS = 3
         private const val MIN_ALBUM_SCORE = 90
         private const val MIN_ARTIST_SCORE = 95
         private val QID = Regex("Q[0-9]{1,12}")

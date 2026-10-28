@@ -37,8 +37,8 @@ class ExternalArtworkTest {
                 """{"relations":[{"type":"official homepage","url":{"resource":"https://x.example"}},""" +
                     """{"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q42"}}]}""",
             )
-            p == "/wd/wiki/Special:EntityData/Q42.json" -> json(
-                """{"entities":{"Q42":{"claims":{"P18":[{"mainsnak":{"datavalue":{"value":"Drift wood.jpg"}}}]}}}}""",
+            p == "/wd/w/api.php" -> json(
+                """{"claims":{"P18":[{"mainsnak":{"datavalue":{"value":"Drift wood.jpg"}}}]}}""",
             )
             p == "/commons/wiki/Special:FilePath/Drift_wood.jpg" ->
                 Response(302, headers = mapOf("Location" to "${server.url}/img/drift.jpg"))
@@ -57,6 +57,7 @@ class ExternalArtworkTest {
             musicBrainz = server.url + "/mb", coverArt = server.url + "/caa",
             wikidata = server.url + "/wd", commons = server.url + "/commons",
             isAllowedImageUrl = { it.startsWith(server.url) && !it.contains(imageHost.ifEmpty { "\u0000" }) },
+            retryDelayMs = 0,
         )
         return ExternalArtwork(dir, MusicBrainzClient("Statocyst/test", endpoints, RateGate(0)), { clock })
     }
@@ -110,6 +111,14 @@ class ExternalArtworkTest {
         clock += ExternalArtwork.RETRY_TTL_MS + 1
         mbStatus = 200
         assertNotNull(art().cover("Driftwood", "High Tide"))
+    }
+
+    @Test
+    fun aBriefServiceErrorIsRetriedWithinTheLookup() {
+        mbStatus = 503
+        val before = server.requests.size
+        assertNull(art().cover("Driftwood", "High Tide"))
+        assertEquals("three attempts before giving up", 3, server.requests.size - before)
     }
 
     @Test
