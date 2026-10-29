@@ -2,14 +2,22 @@ apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.kapt'
 
-// Release signing is opt-in: create android/keystore.properties (git-ignored)
-// with storeFile/storePassword/keyAlias/keyPassword. Without it, `assembleRelease`
-// still builds an unsigned APK and debug installs keep working.
+// Release signing is opt-in. Provide the key either as android/keystore.properties (git-ignored)
+// with storeFile/storePassword/keyAlias/keyPassword, or as the environment variables
+// STATOCYST_STORE_FILE / STATOCYST_STORE_PASSWORD / STATOCYST_KEY_ALIAS / STATOCYST_KEY_PASSWORD.
+// Without either, `assembleRelease` and `bundleRelease` still build, but unsigned, and debug
+// installs keep working.
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+def signingValue = { String prop, String env -> keystoreProperties[prop] ?: System.getenv(env) }
+def releaseStoreFile = signingValue('storeFile', 'STATOCYST_STORE_FILE')
+def hasReleaseSigning = releaseStoreFile != null &&
+        signingValue('storePassword', 'STATOCYST_STORE_PASSWORD') != null &&
+        signingValue('keyAlias', 'STATOCYST_KEY_ALIAS') != null &&
+        signingValue('keyPassword', 'STATOCYST_KEY_PASSWORD') != null
 
 android {
     namespace = "net.christopherrutherford.statocyst"
@@ -28,23 +36,35 @@ android {
         }
     }
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
+        if (hasReleaseSigning) {
             release {
-                storeFile rootProject.file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
+                storeFile rootProject.file(releaseStoreFile)
+                storePassword signingValue('storePassword', 'STATOCYST_STORE_PASSWORD')
+                keyAlias signingValue('keyAlias', 'STATOCYST_KEY_ALIAS')
+                keyPassword signingValue('keyPassword', 'STATOCYST_KEY_PASSWORD')
             }
         }
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (keystorePropertiesFile.exists()) {
+            // R8 shrinks and obfuscates; keep rules live in proguard-rules.pro. The mapping file is
+            // written to app/build/outputs/mapping/release/ and must be uploaded to Play Console.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
         }
+    }
+    bundle {
+        // Play serves per-device splits; keep every language so in-app locale changes work.
+        language { enableSplit = false }
+    }
+    lint {
+        // Release lint is a gate for Play-blocking problems, not style.
+        abortOnError true
+        checkReleaseBuilds true
     }
 }
 

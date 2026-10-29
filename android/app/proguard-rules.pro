@@ -1,21 +1,25 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# R8 rules for the release build (minifyEnabled + shrinkResources).
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Capacitor, Room, Media3, WorkManager-style libraries ship their own consumer rules; this file only
+# covers what the app itself reaches through reflection or the WebView bridge.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Keep readable stack traces in Play Console crash reports (upload mapping.txt with each release).
+-keepattributes SourceFile,LineNumberTable,*Annotation*,Signature,InnerClasses,EnclosingMethod
+-renamesourcefileattribute SourceFile
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Capacitor plugin: found by annotation, methods invoked by name from the JS bridge.
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+-keepclassmembers class * {
+    @com.getcapacitor.PluginMethod public <methods>;
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class net.christopherrutherford.statocyst.plugin.StatocystPlugin { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Resolved by name from PlaybackService (Class.forName) and registered in the manifest.
+-keep class net.christopherrutherford.statocyst.MainActivity { *; }
+
+# Room entities/DAOs are generated and referenced by name; keep the schema classes intact.
+-keep class net.christopherrutherford.statocyst.db.** { *; }
+
+# Local media server serves WebView requests through reflection-free paths, but keep it stable.
+-keep class net.christopherrutherford.statocyst.media.LocalMediaServer { *; }
