@@ -145,9 +145,9 @@ export class OfflineViewComponent {
   protected readonly playback = inject(PlaybackStore);
 
   protected readonly tracks = computed<Track[]>(() => {
-    const downloaded = this.downloads.downloadedIds();
+    const isDownloaded = this.downloads.isDownloaded();
     return this.library.tracks().filter(
-      (track) => track.sourceId === 'local' || downloaded.has(track.id),
+      (track) => track.sourceId === 'local' || isDownloaded(track.id),
     );
   });
 

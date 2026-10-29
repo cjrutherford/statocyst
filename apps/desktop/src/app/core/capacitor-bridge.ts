@@ -260,6 +260,7 @@ export class CapacitorBridge {
       play: opts.play,
       keepCurrent: opts.keepCurrent,
       cacheBudgetBytes: settings?.cacheBudgetBytes,
+      quality: settings?.quality,
     });
   }
 
@@ -685,7 +686,14 @@ export class CapacitorBridge {
     if (patch.density !== undefined) await setPref('density', String(next.density));
     if (patch.volume !== undefined) await setPref('volume', String(next.volume));
     if (patch.muted !== undefined) await setPref('muted', String(next.muted));
-    if (patch.quality !== undefined) await setPref('quality', String(next.quality));
+    if (patch.quality !== undefined) {
+      await setPref('quality', String(next.quality));
+      try {
+        await (window as any).Capacitor?.Plugins?.['Statocyst']?.setQuality?.({ quality: next.quality });
+      } catch {
+        /* applied with the next queue */
+      }
+    }
     if (patch.cacheBudgetBytes !== undefined)
       await setPref('cacheBudgetBytes', String(next.cacheBudgetBytes));
     if (patch.listeningHistory !== undefined)
@@ -729,6 +737,9 @@ export class CapacitorBridge {
       genre: (raw['genre'] as string | null) ?? null,
       format: (raw['format'] as string | null) ?? null,
       missing: Boolean(raw['missing']),
+      ...(Array.isArray(raw['aliases']) && raw['aliases'].length > 0
+        ? { aliases: (raw['aliases'] as unknown[]).map(String) }
+        : {}),
     };
   }
 

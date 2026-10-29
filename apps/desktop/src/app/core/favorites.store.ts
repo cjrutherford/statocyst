@@ -25,19 +25,27 @@ export class FavoritesStore {
   }
 
   readonly favoriteIds = this.ids.asReadonly();
+  /** Favorited under this id or under a copy of the same recording on another server. */
   readonly isFavorite = computed(() => {
     const set = this.ids();
-    return (trackId: string) => set.has(trackId);
+    const library = this.library;
+    return (trackId: string) => {
+      const id = library.canonicalId(trackId);
+      return set.has(id) || set.has(trackId) || (library.aliasesOf(id).some((alias) => set.has(alias)));
+    };
   });
-  readonly tracks = computed<Track[]>(() =>
-    this.library.tracks().filter((track) => this.ids().has(track.id)),
-  );
-  readonly count = computed(() => this.ids().size);
+  readonly tracks = computed<Track[]>(() => {
+    const isFavorite = this.isFavorite();
+    return this.library.tracks().filter((track) => isFavorite(track.id));
+  });
+  readonly count = computed(() => this.tracks().length);
 
   toggle(trackId: string): void {
     const next = new Set(this.ids());
-    if (next.has(trackId)) next.delete(trackId);
-    else next.add(trackId);
+    const id = this.library.canonicalId(trackId);
+    const family = [id, trackId, ...this.library.aliasesOf(id)];
+    if (family.some((member) => next.has(member))) for (const member of family) next.delete(member);
+    else next.add(id);
     this.ids.set(next);
     pushNativeUserState({ favorites: [...next] });
     try {

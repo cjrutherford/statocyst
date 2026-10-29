@@ -17,6 +17,7 @@ import android.net.NetworkCapabilities
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
@@ -78,7 +79,10 @@ class PlaybackService : MediaLibraryService() {
     private var positionTicker: kotlinx.coroutines.Job? = null
 
     private val player: ExoPlayer by lazy {
+        val bandwidthMeter = DefaultBandwidthMeter.Builder(this).build()
+        AdaptiveQuality.bandwidth = bandwidthMeter
         ExoPlayer.Builder(this)
+            .setBandwidthMeter(bandwidthMeter)
             .setMediaSourceFactory(DefaultMediaSourceFactory(JellyfinAuth.dataSourceFactory(this)))
             // Audio is small, so hold minutes of it rather than the default fifty seconds:
             // a tunnel or a dead spot then passes without the music stopping.
@@ -100,6 +104,8 @@ class PlaybackService : MediaLibraryService() {
             setWakeMode(C.WAKE_MODE_NETWORK)
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // A swap of the item itself (below) must not trigger another look at it.
+                    if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) refreshItem(currentMediaItemIndex)
                     publishWidget()
                     persistQueue()
                     extendContext()
@@ -120,15 +126,20 @@ class PlaybackService : MediaLibraryService() {
                     persistQueue()
                     refreshButtons()
                 }
-                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publishWidget()
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) watchForStall()
+                    publishWidget()
+                }
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     if (playbackState == Player.STATE_READY) endRecovery()
+                    if (playbackState == Player.STATE_BUFFERING && playWhenReady) watchForStall() else stallWatch?.cancel()
                     publishWidget()
                 }
                 override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = publishWidget()
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) {
                         consecutiveErrors = 0
+                        vanishedTried.clear()
                         startPositionTicker()
                     } else {
                         positionTicker?.cancel()
@@ -140,6 +151,12 @@ class PlaybackService : MediaLibraryService() {
                     newPosition: Player.PositionInfo,
                     reason: Int,
                 ) {
+                    // The server cannot seek inside a transcode, so a seek into one plays the original instead.
+                    if (reason == Player.DISCONTINUITY_REASON_SEEK && newPosition.positionMs > TRANSCODE_START_MS &&
+                        JellyfinAuth.isTranscodeUrl(currentMediaItem?.localConfiguration?.uri?.toString())
+                    ) {
+                        refreshItem(currentMediaItemIndex, AdaptiveQuality.Mode.DIRECT, resumeAtMs = newPosition.positionMs)
+                    }
                     if (reason == Player.DISCONTINUITY_REASON_SEEK ||
                         reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
                     ) {
@@ -153,19 +170,96 @@ class PlaybackService : MediaLibraryService() {
                         recoverFromNetworkLoss(error)
                         return
                     }
-                    reportFailure(error)
-                    // Skip an unplayable item (offline, expired token, deleted file) instead
-                    // of stalling, but stop once every remaining item has failed in a row.
-                    if (++consecutiveErrors <= mediaItemCount && hasNextMediaItem()) {
-                        seekToNextMediaItem()
-                        prepare()
+                    // A copy on the device that is gone (evicted, or the cache was cleared) is streamed
+                    // again, once, rather than treated as an unplayable song.
+                    val item = currentMediaItem
+                    if (http == 404 && item != null && !isRemote(item) && vanishedTried.add(item.mediaId)) {
+                        reloadFromSource(item)
+                        return
                     }
+                    skipFailedItem(error)
                 }
             })
         }
     }
 
     private var consecutiveErrors = 0
+    private val vanishedTried = mutableSetOf<String>()
+
+    /** Skip an unplayable item (offline, expired token) instead of stalling, but stop once every remaining item has failed in a row. */
+    private fun skipFailedItem(error: PlaybackException) {
+        reportFailure(error)
+        if (++consecutiveErrors <= player.mediaItemCount && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+            player.prepare()
+        }
+    }
+
+    private fun reloadFromSource(item: MediaItem) {
+        scope.launch {
+            val index = player.currentMediaItemIndex
+            val position = player.currentPosition
+            val fresh = resolveItem(item)
+            val moved = player.currentMediaItem?.mediaId != item.mediaId
+            if (fresh == null || moved || fresh.localConfiguration?.uri == item.localConfiguration?.uri) {
+                if (!moved) skipFailedItem(PlaybackException("file gone", null, PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND))
+                return@launch
+            }
+            player.replaceMediaItem(index, fresh.buildUpon().setMediaId(item.mediaId).build())
+            player.seekTo(index, position)
+            player.prepare()
+        }
+    }
+
+    private var stallWatch: Job? = null
+
+    /**
+     * A song that is still buffering after a few seconds is on a connection too slow for the
+     * original. In Adaptive mode, and while it is still near its start, it is restarted as a
+     * transcode instead.
+     */
+    private fun watchForStall() {
+        stallWatch?.cancel()
+        stallWatch = scope.launch {
+            delay(STALL_MS)
+            if (player.playbackState != Player.STATE_BUFFERING || !isOnline() || !AdaptiveQuality.isAuto(this@PlaybackService)) return@launch
+            if (player.currentPosition > TRANSCODE_START_MS) return@launch
+            refreshItem(player.currentMediaItemIndex, stalled = true)
+        }
+    }
+
+    /**
+     * Looks again at how the queue entry at [index] should be played: a copy that has since reached
+     * the device replaces its stream, and a connection that has since changed can change the
+     * quality. A transcode is only taken at the start of a song, as it cannot be joined later.
+     */
+    private fun refreshItem(
+        index: Int,
+        mode: AdaptiveQuality.Mode? = null,
+        stalled: Boolean = false,
+        resumeAtMs: Long? = null,
+    ) {
+        if (index < 0 || index >= player.mediaItemCount) return
+        val old = player.getMediaItemAt(index)
+        if (!isRemote(old)) return
+        scope.launch {
+            try {
+                val fresh = resolveItem(old, mode, stalled) ?: return@launch
+                if (index >= player.mediaItemCount) return@launch
+                val now = player.getMediaItemAt(index)
+                if (now.mediaId != old.mediaId) return@launch
+                val newUri = fresh.localConfiguration?.uri?.toString()
+                if (newUri == now.localConfiguration?.uri?.toString()) return@launch
+                val isCurrent = index == player.currentMediaItemIndex
+                val position = resumeAtMs ?: player.currentPosition
+                if (isCurrent && JellyfinAuth.isTranscodeUrl(newUri) && position > TRANSCODE_START_MS) return@launch
+                player.replaceMediaItem(index, fresh.buildUpon().setMediaId(old.mediaId).build())
+                if (isCurrent) player.seekTo(index, position)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "refreshItem failed", e)
+            }
+        }
+    }
 
     private val networkSignal = Channel<Unit>(Channel.CONFLATED)
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -214,7 +308,9 @@ class PlaybackService : MediaLibraryService() {
                 current.localConfiguration?.uri?.toString()
                     ?.let { JellyfinSessions.forUri(this@PlaybackService, it) }
                     ?.let { StreamFailover.markFailed(it.serverId) }
-                val fresh = resolveItem(current) ?: continue
+                // A transcode cannot be joined part-way through; the original can.
+                val mode = if (position > TRANSCODE_START_MS) AdaptiveQuality.Mode.DIRECT else null
+                val fresh = resolveItem(current, mode) ?: continue
                 player.replaceMediaItem(index, fresh.buildUpon().setMediaId(current.mediaId).build())
                 player.seekTo(index, position)
                 player.prepare()
@@ -241,6 +337,7 @@ class PlaybackService : MediaLibraryService() {
 
     @Volatile
     private var cachedTracks: List<MediaItemEntity>? = null
+    private var cachedAliases: Map<String, String> = emptyMap()
 
     override fun onCreate() {
         super.onCreate()
@@ -418,8 +515,17 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun tracks(): List<MediaItemEntity> {
         cachedTracks?.let { return it }
-        return withContext(Dispatchers.IO) { Duplicates.collapse(dao.getAll()) }.also { cachedTracks = it }
+        return withContext(Dispatchers.IO) {
+            val all = dao.getAll()
+            val hidden = Duplicates.hiddenToKeeper(all)
+            cachedAliases = hidden
+            if (hidden.isEmpty()) all else all.filterNot { it.id in hidden }
+        }.also { cachedTracks = it }
     }
+
+    /** A favorite, recent or playlist entry saved against a hidden duplicate shows as the row kept. */
+    private fun canonical(ids: List<String>, aliases: Map<String, String>): List<String> =
+        if (aliases.isEmpty()) ids else ids.map { aliases[it] ?: it }.distinct()
 
     private fun isOnline(): Boolean {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return true
@@ -430,6 +536,7 @@ class PlaybackService : MediaLibraryService() {
     /** Catalog + favorites/playlists/recents + the live queue. Must run on the main thread. */
     private suspend fun browseData(): BrowseData {
         val catalog = tracks()
+        val aliases = cachedAliases
         val user = withContext(Dispatchers.IO) {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
@@ -448,11 +555,11 @@ class PlaybackService : MediaLibraryService() {
             notice = notice,
             currentTrackId = player.currentMediaItem?.let(QueueItems::trackIdOf),
             // Web order is oldest-first; Auto shows the most recent favorite on top.
-            favorites = favorites.sortedByDescending { it.position }.map { it.trackId },
+            favorites = canonical(favorites.sortedByDescending { it.position }.map { it.trackId }, aliases),
             playlists = playlistRows.first.map { pl ->
-                PlaylistInfo(pl.id, pl.name, tracksByPlaylist[pl.id].orEmpty().map { it.trackId })
+                PlaylistInfo(pl.id, pl.name, canonical(tracksByPlaylist[pl.id].orEmpty().map { it.trackId }, aliases))
             },
-            recents = recents.map { it.trackId },
+            recents = canonical(recents.map { it.trackId }, aliases),
             queue = (0 until player.mediaItemCount).map {
                 val item = player.getMediaItemAt(it)
                 QueueEntry(item.mediaId, QueueItems.trackIdOf(item))
@@ -497,7 +604,8 @@ class PlaybackService : MediaLibraryService() {
         item ?: return
         val trackId = QueueItems.trackIdOf(item)
         val upcoming = mutableListOf<String>()
-        if (isRemote(item)) upcoming.add(trackId)
+        // A song already coming down as a transcode is not fetched a second time as the original.
+        if (isRemote(item) && !JellyfinAuth.isTranscodeUrl(item.localConfiguration?.uri?.toString())) upcoming.add(trackId)
         // The songs about to play, in the order they will play (shuffle included), so a
         // dropped connection between songs finds the next one already on the device.
         val current = player.currentMediaItemIndex
@@ -516,9 +624,14 @@ class PlaybackService : MediaLibraryService() {
         item.localConfiguration?.uri?.host?.let { it != "127.0.0.1" } == true
 
     /** Resolves a queue slot placeholder into a playable item with full metadata. */
-    private suspend fun resolveItem(item: MediaItem): MediaItem? {
+    private suspend fun resolveItem(
+        item: MediaItem,
+        mode: AdaptiveQuality.Mode? = null,
+        stalled: Boolean = false,
+    ): MediaItem? {
         val trackId = QueueItems.trackIdOf(item)
-        val prepared = resolver.prepare(trackId) ?: return null
+        val prepared = resolver.prepare(trackId, mode, stalled) ?: return null
+        android.util.Log.i(TAG, "resolved $trackId: ${if (!prepared.remote) "device" else if (prepared.transcoded) "transcode" else "original"}")
         val entityMeta = MediaMetadata.Builder()
             .setTitle(prepared.entity.title)
             .setArtist(prepared.entity.artist)
@@ -981,6 +1094,10 @@ class PlaybackService : MediaLibraryService() {
         /** How many upcoming songs are fetched onto the device while the current one plays. */
         private const val PREFETCH_AHEAD = 2
         private const val POSITION_SAVE_MS = 5_000L
+        /** Buffering this long at the start of a song means the connection cannot carry the original. */
+        private const val STALL_MS = 6_000L
+        /** A transcode cannot be seeked into, so it is only taken within this far of the start. */
+        private const val TRANSCODE_START_MS = 5_000L
         private const val CHANNEL_ID = "statocyst_media"
         private const val RECENT_LIMIT = 100
         private const val CMD_SHUFFLE = "statocyst.shuffle"
@@ -999,6 +1116,17 @@ class PlaybackService : MediaLibraryService() {
             svc.scope.launch {
                 svc.dropCatalogCache()
                 svc.notifyBrowseChanged(*BrowseIds.ROOT_FOLDERS.toTypedArray())
+            }
+        }
+
+        /** A song finished downloading into the cache: queued entries still streaming it switch to the copy. */
+        fun onTrackCached(trackId: String) = instance?.let { svc ->
+            svc.scope.launch {
+                val current = svc.player.currentMediaItemIndex
+                for (i in 0 until svc.player.mediaItemCount) {
+                    // The song playing now is left alone rather than interrupted for a better source.
+                    if (i != current && QueueItems.trackIdOf(svc.player.getMediaItemAt(i)) == trackId) svc.refreshItem(i)
+                }
             }
         }
 

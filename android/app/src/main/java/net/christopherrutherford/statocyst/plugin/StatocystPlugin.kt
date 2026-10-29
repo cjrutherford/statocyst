@@ -34,6 +34,7 @@ import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.BrowseAccess
 import net.christopherrutherford.statocyst.media.LocalMediaServer
+import net.christopherrutherford.statocyst.media.AdaptiveQuality
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.QueueItems
 import net.christopherrutherford.statocyst.media.StreamFailover
@@ -65,7 +66,14 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun listTracks(call: PluginCall) {
         io(call) {
-            val tracks = Duplicates.collapse(dao.getAll()).map(::trackJson)
+            val all = dao.getAll()
+            val hidden = Duplicates.hiddenToKeeper(all)
+            val aliases = hidden.entries.groupBy({ it.value }, { it.key })
+            val tracks = all.filterNot { it.id in hidden }.map { track ->
+                trackJson(track).also { json ->
+                    aliases[track.id]?.let { json.put("aliases", JSArray(it)) }
+                }
+            }
             call.resolve(JSObject().put("tracks", JSArray(tracks)))
         }
     }
@@ -333,12 +341,19 @@ class StatocystPlugin : Plugin() {
      * how queue edits made in the UI are pushed down.
      */
     @PluginMethod
+    fun setQuality(call: PluginCall) {
+        AdaptiveQuality.setPreference(context, if (call.getString("quality") == "auto") "auto" else "lossless")
+        call.resolve()
+    }
+
+    @PluginMethod
     fun setQueue(call: PluginCall) {
         val entries = slotsFrom(call.getArray("entries"))
         val currentEntryId = call.getString("currentEntryId")
         val startPositionMs = call.getLong("startPositionMs") ?: 0L
         val play = call.getBoolean("play") ?: false
         val keepCurrent = call.getBoolean("keepCurrent") ?: false
+        call.getString("quality")?.let { AdaptiveQuality.setPreference(context, it) }
         call.getLong("cacheBudgetBytes")?.let {
             context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
                 .edit().putLong("cache_budget_bytes", it).apply()
@@ -822,17 +837,30 @@ class StatocystPlugin : Plugin() {
             var startIndex = 0
             val pageSize = 200
             var total = 0
+            val seen = HashSet<String>()
             do {
                 val (items, totalCount) = JellyfinClient.listAudioItems(url, userId, token, startIndex, pageSize)
                 total = totalCount
                 for (item in items) {
-                    dao.upsert(scopedToServer(jellyfinEntity(item, serverId, serverName)))
+                    val entity = scopedToServer(jellyfinEntity(item, serverId, serverName))
+                    dao.upsert(entity)
+                    seen += entity.id
                     imported++
                 }
                 startIndex += items.size
             } while (startIndex < total && items.isNotEmpty())
-            if (imported > 0) PlaybackService.onCatalogChanged()
-            call.resolve(JSObject().put("imported", imported).put("total", total))
+            // Only a listing that ran to the end can say what is gone. Anything this server held
+            // before and did not return now is deleted there, so it leaves the library too.
+            var removed = 0
+            if (seen.isNotEmpty() && startIndex >= total) {
+                val gone = dao.idsByServer(serverId).filter { it !in seen }
+                gone.forEach { runCatching { downloads.remove(it) } }
+                gone.forEach { runCatching { cache.lookup(it)?.delete() } }
+                gone.chunked(500).forEach { dao.deleteByIds(it) }
+                removed = gone.size
+            }
+            if (imported > 0 || removed > 0) PlaybackService.onCatalogChanged()
+            call.resolve(JSObject().put("imported", imported).put("total", total).put("removed", removed))
         }
     }
 

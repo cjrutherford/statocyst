@@ -28,7 +28,13 @@ object Duplicates {
      * the catalog and keep playing by id.
      */
     fun collapse(tracks: List<MediaItemEntity>): List<MediaItemEntity> {
-        val hidden = HashSet<String>()
+        val hidden = hiddenToKeeper(tracks)
+        return if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+    }
+
+    /** Each hidden duplicate's id mapped to the id of the row shown in its place. */
+    fun hiddenToKeeper(tracks: List<MediaItemEntity>): Map<String, String> {
+        val hidden = HashMap<String, String>()
         for ((key, group) in tracks.groupBy { key(it) }) {
             if (key == null || group.mapTo(HashSet()) { it.serverId }.size < 2) continue
             val ordered = group.sortedWith(compareBy({ it.serverId }, { it.id }))
@@ -38,12 +44,12 @@ object Duplicates {
                 for (other in ordered) {
                     if (other.id == keeper.id || other.id in hidden || other.serverId in claimed) continue
                     if (!sameLength(keeper, other)) continue
-                    hidden += other.id
+                    hidden[other.id] = keeper.id
                     claimed += other.serverId
                 }
             }
         }
-        return if (hidden.isEmpty()) tracks else tracks.filterNot { it.id in hidden }
+        return hidden
     }
 
     /** Copies of [track] on other servers, at most one per server, in a stable order. */

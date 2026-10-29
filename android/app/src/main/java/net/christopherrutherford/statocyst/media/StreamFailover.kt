@@ -48,7 +48,12 @@ object StreamFailover {
     }
 
     /** The stream URL for [track], from whichever server holding it answers first. */
-    suspend fun remoteUrl(context: Context, dao: MediaItemDao, track: MediaItemEntity): String? {
+    suspend fun remoteUrl(
+        context: Context,
+        dao: MediaItemDao,
+        track: MediaItemEntity,
+        transcode: Boolean = false,
+    ): String? {
         val candidates = buildList {
             JellyfinSessions.forTrack(context, track)?.let { add(Candidate(track, it)) }
             for (alt in alternates(dao, track)) {
@@ -57,7 +62,11 @@ object StreamFailover {
         }
         val chosen = choose(candidates, ::httpProbe) ?: candidates.firstOrNull() ?: return null
         // The session token is added by the player's data source, not put in the URL.
-        return JellyfinAuth.streamUrl(chosen.session.url, chosen.itemId)
+        return if (transcode) {
+            JellyfinAuth.transcodeUrl(chosen.session.url, chosen.itemId, AdaptiveQuality.TRANSCODE_BITS)
+        } else {
+            JellyfinAuth.streamUrl(chosen.session.url, chosen.itemId)
+        }
     }
 
     internal suspend fun choose(

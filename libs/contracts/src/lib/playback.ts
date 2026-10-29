@@ -62,6 +62,8 @@ export interface Track {
   genre?: string | null;
   format?: string | null;
   missing: boolean;
+  /** Ids of the same recording on other servers, hidden behind this row. */
+  aliases?: string[];
 }
 
 export interface QueueEntry {

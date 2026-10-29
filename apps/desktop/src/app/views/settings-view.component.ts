@@ -133,8 +133,8 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
             </div>
             <p class="card__hint">
               {{ settings.settings().quality === 'lossless'
-                ? 'Direct play whenever the device and network allow it.'
-                : 'Allow policy-driven transcoding when throughput drops.' }}
+                ? 'Always plays the original file.'
+                : 'Plays the original while the connection can carry it, and falls back to a 192 kbps stream when it cannot. Songs already downloaded or cached always play as the original.' }}
             </p>
           </div>
         </section>

@@ -19,7 +19,12 @@ data class StreamResolution(
 )
 
 /** A track ready for the player: its catalog row and the URI to play. */
-data class PreparedTrack(val entity: MediaItemEntity, val uri: String, val remote: Boolean)
+data class PreparedTrack(
+    val entity: MediaItemEntity,
+    val uri: String,
+    val remote: Boolean,
+    val transcoded: Boolean = false,
+)
 
 /**
  * Headless source resolver. Turns a track id into a playable URI using the local
@@ -37,7 +42,12 @@ class SourceResolver(private val context: Context) {
 
     private val prefs by lazy { context.getSharedPreferences("statocyst", Context.MODE_PRIVATE) }
 
-    suspend fun prepare(trackId: String): PreparedTrack? = withContext(Dispatchers.IO) {
+    /**
+     * [mode] overrides the quality decision: a seek inside a stream the server cannot seek
+     * wants the original, and a stalled start wants the transcode. A copy on the device
+     * always wins over either.
+     */
+    suspend fun prepare(trackId: String, mode: AdaptiveQuality.Mode? = null, stalled: Boolean = false): PreparedTrack? = withContext(Dispatchers.IO) {
         val entity = dao.getById(trackId) ?: return@withContext null
         val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
             ?: StreamFailover.alternates(dao, entity).firstNotNullOfOrNull { downloads.verifiedFile(it.id) ?: cache.lookup(it.id) }
@@ -45,7 +55,9 @@ class SourceResolver(private val context: Context) {
             return@withContext localUri(local)?.let { PreparedTrack(entity, it, remote = false) }
         }
         if (entity.sourceKind.startsWith("jellyfin")) {
-            return@withContext StreamFailover.remoteUrl(context, dao, entity)?.let { PreparedTrack(entity, it, remote = true) }
+            val transcode = (mode ?: AdaptiveQuality.modeFor(context, entity, stalled)) == AdaptiveQuality.Mode.TRANSCODE
+            return@withContext StreamFailover.remoteUrl(context, dao, entity, transcode)
+                ?.let { PreparedTrack(entity, it, remote = true, transcoded = transcode) }
         }
         File(entity.path).takeIf { it.isFile }
             ?.let { file -> localUri(file)?.let { PreparedTrack(entity, it, remote = false) } }
@@ -66,7 +78,10 @@ class SourceResolver(private val context: Context) {
             queued.forEach { it.cancel(false) }
             queued.clear()
             trackIds.forEach { id ->
-                queued.add(prefetchExecutor.submit { runCatching { cache.prefetch(id, budget) } })
+                queued.add(prefetchExecutor.submit {
+                    val file = runCatching { cache.prefetch(id, budget) }.getOrNull()
+                    if (file != null) PlaybackService.onTrackCached(id)
+                })
             }
         }
     }

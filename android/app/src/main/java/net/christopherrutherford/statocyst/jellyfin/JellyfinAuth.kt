@@ -33,6 +33,15 @@ object JellyfinAuth {
     fun streamUrl(serverUrl: String, itemId: String): String =
         "${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true"
 
+    /**
+     * A progressive MP3 transcode at [bitsPerSecond]. The server cannot seek inside one, so a
+     * transcode is only for playing a track from its start.
+     */
+    fun transcodeUrl(serverUrl: String, itemId: String, bitsPerSecond: Long): String =
+        "${serverUrl.trimEnd('/')}/Audio/$itemId/stream.mp3?audioCodec=mp3&audioBitRate=$bitsPerSecond"
+
+    fun isTranscodeUrl(uri: String?): Boolean = uri != null && uri.contains("/stream.mp3?")
+
     fun imageUrl(serverUrl: String, itemId: String, tag: String?): String {
         val suffix = if (!tag.isNullOrEmpty()) "?tag=$tag" else ""
         return "${serverUrl.trimEnd('/')}/Items/$itemId/Images/Primary$suffix"
