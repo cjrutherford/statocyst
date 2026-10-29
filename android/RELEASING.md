@@ -140,3 +140,30 @@ after running the Desktop Head Unit (or a real car) and recording, in
 browse tree reachable, playback started from the tree, custom buttons, voice
 search. For a sideloaded build the phone needs Android Auto developer settings
 -> **Unknown sources**, and Statocyst ticked under **Customize launcher**.
+
+## 9. CI and the GitHub release pipeline
+
+- `.github/workflows/ci.yml` runs on every push: typecheck + tests for the web
+  libs and apps, the Angular build, then Android unit tests and a debug APK
+  (uploaded as an artifact). The emulator-based instrumented tests run for pull
+  requests into `main` and on demand (Actions -> CI -> Run workflow).
+- `.github/workflows/release.yml` runs when a tag `v<versionName>` is pushed
+  (e.g. `git tag v1.4.0 && git push origin v1.4.0`). It refuses a tag that does
+  not match `versionName`, runs the tests, builds the **signed** release APK,
+  checks that the signing certificate is the one in section 3, and creates a
+  GitHub Release with `statocyst-<version>.apk` and `SHA256SUMS` attached. A tag
+  with a `-` (e.g. `v1.5.0-rc1`) is marked as a pre-release.
+
+One-time setup: add these repository secrets (Settings -> Secrets and variables
+-> Actions), from the key in section 3:
+
+```bash
+base64 -w0 ~/.statocyst-signing/statocyst-release.jks | gh secret set ANDROID_KEYSTORE_BASE64
+gh secret set ANDROID_KEYSTORE_PASSWORD   # storePassword from keystore.properties
+gh secret set ANDROID_KEY_ALIAS           # keyAlias
+gh secret set ANDROID_KEY_PASSWORD        # keyPassword
+```
+
+The release job reads them only to write a temporary `keystore.properties`,
+which is deleted at the end of the job. The Funnel publish in section 5 remains
+the way to ship to the tailnet; bump `versionCode`/`versionName` before tagging.
