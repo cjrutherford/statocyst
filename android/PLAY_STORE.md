@@ -71,21 +71,36 @@ Package name: `com.hopefulaspirationsindustries.statocyst` (permanent once the a
 
 ## 2. Where the repo stands
 
-| Item | State | Action |
+Everything that can be done without account secrets is done on the `play-store-release` branch.
+
+| Item | State | Notes |
 | --- | --- | --- |
-| Package name, targetSdk 36 | OK | Bump yearly |
-| Signed release build | APK only (`assembleRelease`) | Add `bundleRelease` (AAB) to `release.yml`; attach the `.aab` to the GitHub release too |
-| Play App Signing | Not enrolled | Decide key strategy (above) before the first upload |
-| Release secrets in CI | Not set (4 `ANDROID_*` secrets) | Add; then a `v<versionName>` tag exercises `release.yml` |
-| Automated upload | None | Optional: `r0adkll/upload-google-play` with a Play service-account JSON secret, to the internal track |
-| `minifyEnabled` | `false` | Optional but recommended: enable R8 and add keep rules for Capacitor plugins, Room and Media3; upload the mapping file. Test thoroughly, release builds are not exercised in CI |
-| `allowBackup` | `true` | Review `dataExtractionRules`/`fullBackupContent`: server tokens and the Room DB should not be backed up unintentionally |
-| Foreground services | `mediaPlayback`, `dataSync` declared in manifest | Fill in the Play Console declarations |
-| Permissions | INTERNET, FOREGROUND_SERVICE(+MEDIA_PLAYBACK,+DATA_SYNC), ACCESS_NETWORK_STATE, POST_NOTIFICATIONS, WAKE_LOCK, WIFI_LOCK (+ widget has none) | All justified; list in the listing notes |
-| Icon | Adaptive + monochrome present | Export 512 x 512 store icon |
-| Feature graphic, screenshots | Missing | Create (1024 x 500; 2+ phone shots; Auto shots) |
-| Privacy policy | Missing | Write and host; must name the data below |
-| Cleartext traffic | `networkSecurityConfig` present | Confirm it only allows the user's own LAN/tailnet servers; reviewers may ask |
+| Package name, targetSdk 36 | Done | Bump targetSdk yearly |
+| Signed AAB | Done: `./gradlew bundleRelease` | Signs from `android/keystore.properties` or `STATOCYST_STORE_FILE/_STORE_PASSWORD/_KEY_ALIAS/_KEY_PASSWORD`; unsigned without either |
+| R8 shrinking | Done: `minifyEnabled` + `shrinkResources` | Rules in `app/proguard-rules.pro`. CI builds the release variant on every push. Upload `mapping.txt` with each release (the release workflow attaches it) |
+| Release lint | Done: `lintVitalRelease` in CI and release | |
+| Backup | Done: `allowBackup=false` plus extraction rules | Nothing is backed up; token and DB are device-local |
+| Release workflow | Done: builds, signs and verifies the APK and AAB, attaches both and the mapping to the GitHub Release | Cert fingerprint is overridable via the `EXPECTED_CERT_SHA256` repo variable |
+| Automated Play upload | Done, dormant | Runs only when the `PLAY_SERVICE_ACCOUNT_JSON` secret exists; uploads the AAB as a draft to the internal track |
+| Store listing text | Done: `store/en-US/` | Title, short and full description, release notes |
+| Store graphics | Done: `store/graphics/` (regenerate with `tools/make-store-graphics.py`) | Icon 512 and feature graphic 1024x500. Phone screenshots are still needed |
+| Data safety, FGS and permission text | Drafted: `store/data-safety.md`, `store/foreground-services.md` | Re-verify against the live forms |
+| App access instructions | Drafted: `store/app-access.md` | Needs hosted sample files and/or a demo server |
+| Privacy policy | Drafted: `docs/privacy-policy.md` | Fill the date and contact; host at a public URL |
+| Cleartext traffic | Loopback only | Remote Jellyfin servers must use HTTPS. Plain-HTTP LAN servers do not work; mention in the listing |
+
+### Needs you (secrets, accounts, decisions)
+1. Play Console developer account, and create the app with package name above.
+2. Key strategy: enroll the existing release key (cert `7d850dae...e416`) as the app-signing key on
+   first upload so sideloaded and Play installs share one signature, or use a separate upload key.
+   If the signing certificate differs, set the `EXPECTED_CERT_SHA256` repo variable.
+3. CI secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+   `ANDROID_KEY_PASSWORD`; optionally `PLAY_SERVICE_ACCOUNT_JSON`.
+4. Host the privacy policy and fill its placeholders; host sample audio or a demo server for reviewers.
+5. Phone screenshots (at least 2) and, optionally, Android Auto screenshots.
+6. Complete Play Console forms (Data safety, content rating, target audience, FGS declarations).
+7. Run the Android Auto gate (S019), the closed test (12 testers, 14 days for personal accounts) and
+   review the pre-launch report.
 
 ## 3. Data safety form: what to declare
 

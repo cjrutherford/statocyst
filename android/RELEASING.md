@@ -51,8 +51,13 @@ and write `android/keystore.properties` with `storeFile`, `storePassword`,
 
 ```bash
 cd android
-JAVA_HOME=/opt/android-studio/jbr ANDROID_HOME=$HOME/Android/Sdk ./gradlew clean assembleRelease
+JAVA_HOME=/opt/android-studio/jbr ANDROID_HOME=$HOME/Android/Sdk ./gradlew clean assembleRelease bundleRelease lintVitalRelease
 ```
+
+`bundleRelease` produces the Play upload bundle (`app/build/outputs/bundle/release/app-release.aab`) and
+`mapping/release/mapping.txt` is the R8 map to upload to Play Console. Signing comes from
+`keystore.properties` or the `STATOCYST_STORE_*` / `STATOCYST_KEY_*` environment variables.
+See `PLAY_STORE.md` for the Play submission checklist.
 
 Verify the signature and that the APK is not debuggable:
 
