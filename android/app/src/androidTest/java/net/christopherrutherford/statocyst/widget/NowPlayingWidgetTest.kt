@@ -147,23 +147,73 @@ class NowPlayingWidgetTest {
     }
 
     @Test
-    fun speedDialShowsTheCurrentSongAndRecentsExceptIt() {
-        val state = WidgetState(trackId = ids[0], title = "Widget Song 1", artist = "ZZ Artist", playing = true)
-        val data = WidgetData(state, recents = tiles(BrowseIds.RECENTS))
-        val recents = SpeedDialWidget.recents(data)
-        assertEquals(ids.subList(1, 5), recents.map { it.trackId })
+    fun speedDialMixesHistoryAndFavoritesOrShowsWhicheverExists() {
+        val history = tiles(BrowseIds.RECENTS).take(3)
+        val favorites = tiles(BrowseIds.FAVORITES).drop(2) // overlaps history on song 3
 
-        val root = inflate(SpeedDialWidget.render(context, data))
-        assertEquals("Widget Song 1", root.findViewById<TextView>(R.id.widget_title).text.toString())
-        assertEquals("Now playing", root.findViewById<TextView>(R.id.widget_eyebrow).text.toString())
-        assertEquals("Widget Song 2", root.findViewById<TextView>(R.id.dial_1_title).text.toString())
-        assertEquals(View.VISIBLE, root.findViewById<View>(R.id.dial_4).visibility)
-        assertEquals(View.GONE, root.findViewById<View>(R.id.dial_empty).visibility)
-        snapshot(root, "widget-dial.png", 300, 190)
+        val both = SpeedDialWidget.mix(WidgetData(WidgetState(), favorites = favorites, history = history))
+        assertEquals(ids.toSet(), both.map { it.trackId }.toSet())
+        assertEquals(both.size, both.map { it.trackId }.toSet().size)
+        assertEquals(BrowseIds.RECENTS, both[0].contextId)
+        assertEquals(BrowseIds.FAVORITES, both[1].contextId)
+        assertEquals("History & favorites", SpeedDialWidget.label(context, WidgetData(WidgetState(), favorites = favorites, history = history)))
 
-        val idle = inflate(SpeedDialWidget.render(context, WidgetData(WidgetState())))
-        assertEquals(View.VISIBLE, idle.findViewById<View>(R.id.dial_empty).visibility)
-        assertEquals(View.GONE, idle.findViewById<View>(R.id.dial_row).visibility)
+        val onlyFavorites = WidgetData(WidgetState(), favorites = favorites)
+        assertTrue(SpeedDialWidget.mix(onlyFavorites).all { it.contextId == BrowseIds.FAVORITES })
+        assertEquals("Favorites", SpeedDialWidget.label(context, onlyFavorites))
+        val onlyHistory = WidgetData(WidgetState(), history = history)
+        assertTrue(SpeedDialWidget.mix(onlyHistory).all { it.contextId == BrowseIds.RECENTS })
+        assertEquals("History", SpeedDialWidget.label(context, onlyHistory))
+        assertTrue(SpeedDialWidget.mix(WidgetData(WidgetState())).isEmpty())
+    }
+
+    @Test
+    fun speedDialGridItemsRenderAndCarryTheirTrack() {
+        val tile = tiles(BrowseIds.FAVORITES)[1]
+        val item = inflate(SpeedDialService.Factory.item(context, tile))
+        assertEquals("Widget Song 2", item.findViewById<TextView>(R.id.dial_item_title).text.toString())
+
+        // The factory reads the real library: favorites exist (set up above), so they are listed.
+        val factory = SpeedDialService.Factory(context)
+        factory.onDataSetChanged()
+        assertTrue(factory.count >= ids.size)
+    }
+
+    @Test
+    fun speedDialPopulatesThroughARealWidgetHost() {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        inst.uiAutomation.adoptShellPermissionIdentity("android.permission.BIND_APPWIDGET")
+        val host = android.appwidget.AppWidgetHost(context, 4242)
+        val manager = android.appwidget.AppWidgetManager.getInstance(context)
+        val id = host.allocateAppWidgetId()
+        try {
+            host.startListening()
+            val provider = ComponentName(context, SpeedDialWidget::class.java)
+            assertTrue("bind", manager.bindAppWidgetIdIfAllowed(id, provider))
+            val info = manager.getAppWidgetInfo(id)
+            var hostView: View? = null
+            inst.runOnMainSync { hostView = host.createView(context, id, info) }
+            val view = hostView!!
+            Widgets.refresh(context)
+
+            val d = context.resources.displayMetrics.density
+            val w = (300 * d).toInt()
+            val h = (220 * d).toInt()
+            fun grid(): android.widget.GridView? = view.findViewById(R.id.dial_grid)
+            waitFor("grid populated through the service") {
+                inst.runOnMainSync {
+                    view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
+                    view.layout(0, 0, w, h)
+                }
+                (grid()?.childCount ?: 0) >= 4
+            }
+            assertTrue(view.findViewById<TextView>(R.id.dial_header).text.toString() in setOf("Favorites", "History & favorites"))
+            snapshot(view, "widget-dial-host.png", 300, 220)
+        } finally {
+            host.stopListening()
+            host.deleteAppWidgetId(id)
+            inst.uiAutomation.dropShellPermissionIdentity()
+        }
     }
 
     @Test

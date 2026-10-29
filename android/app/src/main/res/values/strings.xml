@@ -24,6 +24,9 @@
     <string name="widget_eyebrow_playing">Now playing</string>
     <string name="widget_eyebrow_paused">Paused</string>
     <string name="widget_eyebrow_idle">Statocyst</string>
-    <string name="widget_recent">Recent</string>
-    <string name="widget_speed_dial_description">Now playing with your recent songs one tap away</string>
+    <string name="widget_speed_dial">Speed dial</string>
+    <string name="widget_history">History</string>
+    <string name="widget_favorites_label">Favorites</string>
+    <string name="widget_history_and_favorites">History &amp; favorites</string>
+    <string name="widget_speed_dial_description">Scrolling covers from your history and favorites</string>
 </resources>

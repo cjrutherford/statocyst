@@ -3,9 +3,11 @@ package net.christopherrutherford.statocyst.widget
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.content.Intent
 import android.view.KeyEvent
 import android.view.View
 import android.widget.RemoteViews
+import android.widget.RemoteViewsService
 import net.christopherrutherford.statocyst.R
 
 /** Shared by the three now-playing layouts: title, artist, artwork and the play/pause icon. */
@@ -186,43 +188,78 @@ class QuickPicksWidget : AppWidgetProvider() {
 }
 
 /**
- * Speed dial: the current song with its controls on top and the last few songs played below,
- * one tap each.
+ * Speed dial: a scrolling grid of covers that mixes listening history with favorites, using
+ * whichever of the two the library has. Tapping a cover plays it with its list queued around it.
  */
 class SpeedDialWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
 
     companion object {
-        private val cells = listOf(
-            Triple(R.id.dial_1, R.id.dial_1_art, R.id.dial_1_title),
-            Triple(R.id.dial_2, R.id.dial_2_art, R.id.dial_2_title),
-            Triple(R.id.dial_3, R.id.dial_3_art, R.id.dial_3_title),
-            Triple(R.id.dial_4, R.id.dial_4_art, R.id.dial_4_title),
-        )
+        /** History and favorites interleaved, history first, with songs in both lists shown once. */
+        internal fun mix(data: WidgetData): List<Tile> {
+            val out = LinkedHashMap<String, Tile>()
+            val history = data.history.iterator()
+            val favorites = data.favorites.iterator()
+            while (history.hasNext() || favorites.hasNext()) {
+                if (history.hasNext()) history.next().let { out.putIfAbsent(it.trackId, it) }
+                if (favorites.hasNext()) favorites.next().let { out.putIfAbsent(it.trackId, it) }
+            }
+            return out.values.take(Widgets.SPEED_DIAL)
+        }
 
-        /** Recent songs other than the one already shown above. */
-        internal fun recents(data: WidgetData): List<Tile> =
-            data.recents.filter { it.trackId != data.state.trackId }.take(cells.size)
+        internal fun label(context: Context, data: WidgetData): String = context.getString(
+            when {
+                data.history.isNotEmpty() && data.favorites.isNotEmpty() -> R.string.widget_history_and_favorites
+                data.favorites.isNotEmpty() -> R.string.widget_favorites_label
+                data.history.isNotEmpty() -> R.string.widget_history
+                else -> R.string.widget_speed_dial
+            },
+        )
 
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_speed_dial)
-            bindNowPlaying(context, views, data.state, 160)
-            val recents = recents(data)
-            views.setViewVisibility(R.id.dial_empty, if (recents.isEmpty()) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.dial_row, if (recents.isEmpty()) View.GONE else View.VISIBLE)
-            cells.forEachIndexed { i, (cell, art, title) ->
-                val tile = recents.getOrNull(i)
-                if (tile == null) {
-                    views.setViewVisibility(cell, View.INVISIBLE)
-                } else {
-                    views.setViewVisibility(cell, View.VISIBLE)
-                    views.setImageViewBitmap(art, WidgetArt.tile(context, tile.artUri, tile.title, 160))
-                    views.setTextViewText(title, tile.title)
-                    views.setOnClickPendingIntent(cell, Widgets.playTile(context, "dial", i, tile))
-                }
-            }
+            views.setTextViewText(R.id.dial_header, label(context, data))
+            views.setRemoteAdapter(R.id.dial_grid, Intent(context, SpeedDialService::class.java))
+            views.setEmptyView(R.id.dial_grid, R.id.dial_empty)
+            views.setPendingIntentTemplate(R.id.dial_grid, Widgets.playTemplate(context))
             return views
+        }
+    }
+}
+
+/** Supplies the speed dial grid; re-reads the library whenever the widget is told its data changed. */
+class SpeedDialService : RemoteViewsService() {
+    override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = Factory(applicationContext)
+
+    internal class Factory(private val context: Context) : RemoteViewsFactory {
+        private var tiles = emptyList<Tile>()
+
+        override fun onCreate() = Unit
+        override fun onDataSetChanged() {
+            tiles = SpeedDialWidget.mix(Widgets.load(context))
+        }
+        override fun onDestroy() { tiles = emptyList() }
+        override fun getCount() = tiles.size
+        override fun getViewAt(position: Int): RemoteViews = item(context, tiles[position])
+        override fun getLoadingView(): RemoteViews? = null
+        override fun getViewTypeCount() = 1
+        override fun getItemId(position: Int) = tiles.getOrNull(position)?.trackId.hashCode().toLong()
+        override fun hasStableIds() = true
+
+        companion object {
+            internal fun item(context: Context, tile: Tile): RemoteViews {
+                val views = RemoteViews(context.packageName, R.layout.widget_speed_dial_item)
+                views.setImageViewBitmap(R.id.dial_item_art, WidgetArt.tile(context, tile.artUri, tile.title, 160))
+                views.setTextViewText(R.id.dial_item_title, tile.title)
+                views.setOnClickFillInIntent(
+                    R.id.dial_item,
+                    Intent()
+                        .putExtra(WidgetActionReceiver.EXTRA_TRACK_ID, tile.trackId)
+                        .putExtra(WidgetActionReceiver.EXTRA_CONTEXT, tile.contextId),
+                )
+                return views
+            }
         }
     }
 }

@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import android.widget.RemoteViews
 import androidx.media3.session.MediaButtonReceiver
 import kotlinx.coroutines.runBlocking
+import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.media.ArtKey
@@ -33,12 +34,15 @@ data class WidgetData(
     val currentIsFavorite: Boolean = false,
     val favorites: List<Tile> = emptyList(),
     val recents: List<Tile> = emptyList(),
+    /** Recently played songs (not collapsed to one per album), newest first; feeds the speed dial. */
+    val history: List<Tile> = emptyList(),
 )
 
 /** The set of home-screen widgets and the one place that re-renders them. */
 object Widgets {
     const val LIST_ROWS = 4
     const val QUICK_PICKS = 8
+    const val SPEED_DIAL = 24
 
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "widget-render").apply { isDaemon = true } }
 
@@ -61,7 +65,10 @@ object Widgets {
         worker.execute {
             try {
                 val data = load(app)
-                placed.forEach { (ids, render, _) -> manager.updateAppWidget(ids, render(app, data)) }
+                placed.forEach { (ids, render, cls) ->
+                    manager.updateAppWidget(ids, render(app, data))
+                    if (cls == SpeedDialWidget::class.java) manager.notifyAppWidgetViewDataChanged(ids, R.id.dial_grid)
+                }
             } catch (e: Exception) {
                 android.util.Log.w("Widgets", "render failed", e)
             }
@@ -73,6 +80,7 @@ object Widgets {
         val resolver = SourceResolver(context)
         val state = WidgetStateStore(context).load()
         val favoriteIds = db.userDao().favorites().map { it.trackId }
+        val recentIds = db.userDao().recents(100).map { it.trackId }
 
         suspend fun tiles(ids: List<String>, contextId: String, limit: Int, distinctAlbums: Boolean): List<Tile> {
             val out = mutableListOf<Tile>()
@@ -89,8 +97,9 @@ object Widgets {
         WidgetData(
             state = state,
             currentIsFavorite = state.trackId?.let { it in favoriteIds } ?: false,
-            favorites = tiles(favoriteIds, BrowseIds.FAVORITES, QUICK_PICKS, distinctAlbums = false),
-            recents = tiles(db.userDao().recents(60).map { it.trackId }, BrowseIds.RECENTS, QUICK_PICKS, distinctAlbums = true),
+            favorites = tiles(favoriteIds, BrowseIds.FAVORITES, SPEED_DIAL, distinctAlbums = false),
+            recents = tiles(recentIds, BrowseIds.RECENTS, QUICK_PICKS, distinctAlbums = true),
+            history = tiles(recentIds, BrowseIds.RECENTS, SPEED_DIAL, distinctAlbums = false),
         )
     }
 
@@ -122,6 +131,13 @@ object Widgets {
             .putExtra(WidgetActionReceiver.EXTRA_TRACK_ID, tile.trackId)
             .putExtra(WidgetActionReceiver.EXTRA_CONTEXT, tile.contextId)
         return PendingIntent.getBroadcast(context, kind.hashCode() + slot, intent, FLAGS)
+    }
+
+    /** Template for a collection widget; each item supplies the track through a fill-in intent. */
+    fun playTemplate(context: Context): PendingIntent {
+        val intent = Intent(WidgetActionReceiver.ACTION_PLAY_TRACK)
+            .setComponent(ComponentName(context, WidgetActionReceiver::class.java))
+        return PendingIntent.getBroadcast(context, 11, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     fun toggleFavorite(context: Context): PendingIntent {
