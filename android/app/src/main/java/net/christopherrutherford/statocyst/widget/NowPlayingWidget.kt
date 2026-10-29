@@ -188,15 +188,15 @@ class QuickPicksWidget : AppWidgetProvider() {
 }
 
 /**
- * Speed dial: a scrolling grid of covers that mixes listening history with favorites, using
- * whichever of the two the library has. Tapping a cover plays it with its list queued around it.
+ * Speed dial: the player (current song and controls) above a scrolling grid of covers that
+ * mixes listening history with favorites, using whichever of the two the library has. Tapping a cover plays it with its list queued around it.
  */
 class SpeedDialWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
 
     companion object {
-        /** History and favorites interleaved, history first, with songs in both lists shown once. */
+        /** History and favorites interleaved, history first, songs shown once, minus the current song. */
         internal fun mix(data: WidgetData): List<Tile> {
             val out = LinkedHashMap<String, Tile>()
             val history = data.history.iterator()
@@ -205,6 +205,8 @@ class SpeedDialWidget : AppWidgetProvider() {
                 if (history.hasNext()) history.next().let { out.putIfAbsent(it.trackId, it) }
                 if (favorites.hasNext()) favorites.next().let { out.putIfAbsent(it.trackId, it) }
             }
+            // The song playing now is already shown above the grid.
+            data.state.trackId?.let { out.remove(it) }
             return out.values.take(Widgets.SPEED_DIAL)
         }
 
@@ -219,6 +221,7 @@ class SpeedDialWidget : AppWidgetProvider() {
 
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_speed_dial)
+            bindNowPlaying(context, views, data.state, 160)
             views.setTextViewText(R.id.dial_header, label(context, data))
             views.setRemoteAdapter(R.id.dial_grid, Intent(context, SpeedDialService::class.java))
             views.setEmptyView(R.id.dial_grid, R.id.dial_empty)

@@ -165,6 +165,10 @@ class NowPlayingWidgetTest {
         assertTrue(SpeedDialWidget.mix(onlyHistory).all { it.contextId == BrowseIds.RECENTS })
         assertEquals("History", SpeedDialWidget.label(context, onlyHistory))
         assertTrue(SpeedDialWidget.mix(WidgetData(WidgetState())).isEmpty())
+
+        // The playing song is shown in the player strip, not repeated in the grid.
+        val playing = WidgetState(trackId = ids[0], title = "Widget Song 1", playing = true)
+        assertTrue(SpeedDialWidget.mix(WidgetData(playing, favorites = favorites, history = history)).none { it.trackId == ids[0] })
     }
 
     @Test
@@ -198,7 +202,7 @@ class NowPlayingWidgetTest {
 
             val d = context.resources.displayMetrics.density
             val w = (300 * d).toInt()
-            val h = (220 * d).toInt()
+            val h = (260 * d).toInt()
             fun grid(): android.widget.GridView? = view.findViewById(R.id.dial_grid)
             waitFor("grid populated through the service") {
                 inst.runOnMainSync {
@@ -208,7 +212,8 @@ class NowPlayingWidgetTest {
                 (grid()?.childCount ?: 0) >= 4
             }
             assertTrue(view.findViewById<TextView>(R.id.dial_header).text.toString() in setOf("Favorites", "History & favorites"))
-            snapshot(view, "widget-dial-host.png", 300, 220)
+            assertTrue("player controls present", view.findViewById<View>(R.id.widget_play_pause) != null)
+            snapshot(view, "widget-dial-host.png", 300, 260)
         } finally {
             host.stopListening()
             host.deleteAppWidgetId(id)
