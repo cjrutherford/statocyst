@@ -26,7 +26,8 @@
       "@statocyst/contracts": ["./libs/contracts/src/index.ts"],
       "@statocyst/playback-core": ["./libs/playback-core/src/index.ts"],
       "@statocyst/persistence": ["./libs/persistence/src/index.ts"],
-      "@statocyst/media-library": ["./libs/media-library/src/index.ts"]
+      "@statocyst/media-library": ["./libs/media-library/src/index.ts"],
+      "@statocyst/jellyfin-client": ["./libs/jellyfin-client/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist", "release"]

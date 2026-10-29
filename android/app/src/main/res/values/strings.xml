@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Statocyst</string>
+    <string name="title_activity_main">Statocyst</string>
+    <string name="package_name">com.hopefulaspirationsindustries.statocyst</string>
+    <string name="custom_url_scheme">com.hopefulaspirationsindustries.statocyst</string>
+    <string name="auto_shuffle">Shuffle</string>
+    <string name="auto_repeat">Repeat</string>
+    <string name="auto_favorite">Favorite</string>
+    <string name="widget_description">Player with your top favorites</string>
+    <string name="widget_nothing_playing">Not playing</string>
+    <string name="widget_top_favorites">TOP FAVORITES</string>
+    <string name="widget_no_favorites">Favorite songs to see them here</string>
+    <string name="widget_play">Play</string>
+    <string name="widget_pause">Pause</string>
+    <string name="widget_previous">Previous</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_favorite">Favorite</string>
+    <string name="widget_quick_picks">Quick picks</string>
+    <string name="widget_no_picks">Play something and it will show up here</string>
+    <string name="widget_large_description">Big player with artwork and controls</string>
+    <string name="widget_compact_description">Slim player with controls</string>
+    <string name="widget_picks_description">Tap a cover to play from your recent listening</string>
+    <string name="widget_eyebrow_playing">Now playing</string>
+    <string name="widget_eyebrow_paused">Paused</string>
+    <string name="widget_eyebrow_idle">Statocyst</string>
+    <string name="widget_speed_dial">Speed dial</string>
+    <string name="widget_history">History</string>
+    <string name="widget_favorites_label">Favorites</string>
+    <string name="widget_history_and_favorites">History &amp; favorites</string>
+    <string name="widget_speed_dial_description">Scrolling covers from your history and favorites</string>
+</resources>

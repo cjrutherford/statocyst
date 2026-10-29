@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Statocyst brand: deep abyss background, matching abyss-900 in styles.scss. -->
+    <color name="splash_background">#050a18</color>
+
+    <!-- Widget tokens, mirrored from the design system in apps/desktop/src/styles.scss. -->
+    <color name="widget_text">#E9F4FF</color>
+    <color name="widget_muted">#A9C0D8</color>
+    <color name="widget_dim">#8BA4C0</color>
+    <color name="widget_cyan">#38E1FF</color>
+    <color name="widget_line">#2494C5FF</color>
+</resources>

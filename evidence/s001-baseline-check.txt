@@ -1,0 +1,81 @@
+== 2026-10-28T15:57:44-04:00 ==
+sdk_gphone64_x86_64
+16
+== package ==
+    versionCode=2 minSdk=24 targetSdk=36
+    versionName=0.2.1-s1
+== media_session ==
+  uid=10227 packages=net.christopherrutherford.statocyst 
+  uid=10156 packages=com.google.android.tts 
+Media session config:
+  media_button_receiver_fgs_allowlist_duration_ms: [cur: 10000, def: 10000]
+  media_session_calback_fgs_allowlist_duration_ms: [cur: 10000, def: 10000]
+  media_session_callback_fgs_while_in_use_temp_allow_duration_ms: [cur: 10000, def: 10000]
+  media_session_temp_user_engaged_duration_ms: [cur: 600000, def: 600000]
+== notifications ==
+      AppSettings: com.android.systemui.emulation.pixel_3a (10057)
+      AppSettings: com.android.cts.ctsshim (10192) importance=NONE userSet=false
+      AppSettings: net.christopherrutherford.statocyst (10227)
+      AppSettings: com.android.phone.auto_generated_rro_product__ (10080)
+      AppSettings: com.google.android.ext.shared (10124)
+      AppSettings: com.android.dreams.basic (10115)
+      AppSettings: com.google.android.overlay.googlewebview (10041)
+      AppSettings: com.android.phone (1001) importance=DEFAULT userSet=false fixedImportance=true
+        NotificationChannel{mId='satellite', mName=satelliteChannel, mDescription=, mImportance=3, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=null, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=3, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='voiceMail', mName=Voicemail messages, mDescription=, mImportance=3, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=3, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='mobileDataAlertNew', mName=Mobile data status, mDescription=, mImportance=2, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=true, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=2, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='sim', mName=SIM status, mDescription=, mImportance=2, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=null, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=2, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='sms', mName=SMS messages, mDescription=, mImportance=4, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=4, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='wfc', mName=Wi-Fi calling, mDescription=, mImportance=2, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=false, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=2, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+        NotificationChannel{mId='alert', mName=Alerts, mDescription=, mImportance=3, mBypassDnd=false, mLockscreenVisibility=-1000, mSound=content://settings/system/notification_sound, mLights=false, mLightColor=0, mVibrationPattern=null, mVibrationEffect=null, mUserLockedFields=0, mUserVisibleTaskShown=false, mVibrationEnabled=false, mShowBadge=true, mDeleted=false, mDeletedTimeMs=-1, mGroup='null', mAudioAttributes=AudioAttributes: usage=USAGE_NOTIFICATION content=CONTENT_TYPE_UNKNOWN flags=0x800(FLAG_MUTE_HAPTIC)  tags= bundle=null, mBlockableSystem=true, mAllowBubbles=-1, mImportanceLockedDefaultApp=true, mOriginalImp=3, mParent=null, mConversationId=null, mDemoted=false, mImportantConvo=false, mLastNotificationUpdateTimeMs=0}
+== logcat (statocyst/media3) ==
+10-28 15:57:15.032 15979 16066 D WellbeingModel: ....actionId: pause, packages: net.christopherrutherford.statocyst
+10-28 15:57:15.319  1299  6161 I ProximityAuth: [RecentAppsMediator] Package added: (user=UserHandle{0}) net.christopherrutherford.statocyst
+10-28 15:57:15.375 32396  6164 W SQLiteLog: (28) double-quoted string literal: "net.christopherrutherford.statocyst"
+10-28 15:57:15.459  6130  6130 I rford.statocyst: hiddenapi: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/appcompat
+10-28 15:57:15.471  6130  6130 W rford.statocyst: Failed to find entry 'classes.dex': Entry not found
+10-28 15:57:15.475  6130  6130 W rford.statocyst: Loading /data/app/~~k27csK6RVZp9XPPThgsjsQ==/com.google.android.webview-GhXVrMSbxzfdsd3njQ8WrQ==/oat/x86_64/base.odex non-executable as it requires an image which we fail
+10-28 15:57:15.565   761   791 I ActivityManager: Start proc 6194:com.google.android.webview:sandboxed_process0:org.chromium.content.app.SandboxedProcessService0:0/u0i53 for  {net.christopherrutherford.statocyst/org.chro
+10-28 15:57:15.669   761  1259 D ConnectivityService: requestNetwork for uid/pid:10227/6130 activeRequest: null callbackRequest: 995 [NetworkRequest [ REQUEST id=996, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_V
+10-28 15:57:15.672   761   901 D WifiNetworkFactory: got request NetworkRequest [ REQUEST id=996, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10227 RequestorUid: 10227 R
+10-28 15:57:15.673   761   901 D UntrustedWifiNetworkFactory: got request NetworkRequest [ REQUEST id=996, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10227 RequestorUid
+10-28 15:57:15.674   761   901 D OemPaidWifiNetworkFactory: got request NetworkRequest [ REQUEST id=996, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10227 RequestorUid: 
+10-28 15:57:15.674   761   901 D MultiInternetWifiNetworkFactory: got request NetworkRequest [ REQUEST id=996, [ Capabilities: INTERNET&NOT_RESTRICTED&TRUSTED&NOT_VCN_MANAGED&NOT_BANDWIDTH_CONSTRAINED Uid: 10227 Requesto
+10-28 15:57:15.719  6130  6130 D Capacitor: Registering plugin instance: Statocyst
+10-28 15:57:15.874   761  2110 D CoreBackPreview: Window{7f9b684 u0 net.christopherrutherford.statocyst/net.christopherrutherford.statocyst.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android
+10-28 15:57:15.876   761  2110 D CoreBackPreview: Window{7f9b684 u0 net.christopherrutherford.statocyst/net.christopherrutherford.statocyst.MainActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android
+10-28 15:57:16.052   761   780 I ActivityTaskManager: Displayed net.christopherrutherford.statocyst/.MainActivity for user 0: +1s134ms
+10-28 15:57:16.141   761   876 I ImeTracker: net.christopherrutherford.statocyst:d198431a: onRequestHide at ORIGIN_SERVER reason HIDE_UNSPECIFIED_WINDOW fromUser false
+10-28 15:57:16.147  6130  6130 I ImeTracker: net.christopherrutherford.statocyst:d198431a: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+10-28 15:57:16.163  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503658, pluginId: Statocyst, methodName: saveSession
+10-28 15:57:16.164  6130  6130 V Capacitor: callback: 100503658, pluginId: Statocyst, methodName: saveSession, methodData: {"url":"https:\/\/jelly.christopherrutherford.net","userId":"3ded7faaf05142e8818972881e92e76b","t
+10-28 15:57:16.191 16114 16114 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1345 onStartInput(EditorInfo{EditorInfo{packageName=net.christopherrutherford.statocyst, inputType=0, inputTypeString=NUL
+10-28 15:57:16.202   761  2110 W PackageConfigPersister: App-specific configuration not found for packageName: net.christopherrutherford.statocyst and userId: 0
+10-28 15:57:16.226  6130  6207 D Capacitor: Handling local request: https://localhost/branding/statocyst-symbol.png
+10-28 15:57:16.265  6130  6142 I rford.statocyst: Compiler allocated 5200KB to compile void android.view.ViewRootImpl.performTraversals()
+10-28 15:57:16.312  6130  6208 D Capacitor: Handling local request: https://localhost/branding/statocyst-icon.png
+10-28 15:57:19.568  6130  6207 D Capacitor: Handling local request: https://localhost/branding/statocyst-icon.png
+10-28 15:57:20.252  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503667, pluginId: Statocyst, methodName: listTracks
+10-28 15:57:20.252  6130  6130 V Capacitor: callback: 100503667, pluginId: Statocyst, methodName: listTracks, methodData: {}
+10-28 15:57:20.252  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503668, pluginId: Statocyst, methodName: listTracks
+10-28 15:57:20.253  6130  6130 V Capacitor: callback: 100503668, pluginId: Statocyst, methodName: listTracks, methodData: {}
+10-28 15:57:20.698  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503669, pluginId: Statocyst, methodName: addListener
+10-28 15:57:20.698  6130  6130 V Capacitor: callback: 100503669, pluginId: Statocyst, methodName: addListener, methodData: {"eventName":"downloadProgress"}
+10-28 15:57:20.699  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503670, pluginId: Statocyst, methodName: addListener
+10-28 15:57:20.699  6130  6130 V Capacitor: callback: 100503670, pluginId: Statocyst, methodName: addListener, methodData: {"eventName":"importProgress"}
+10-28 15:57:20.700  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503671, pluginId: Statocyst, methodName: addListener
+10-28 15:57:20.700  6130  6130 V Capacitor: callback: 100503671, pluginId: Statocyst, methodName: addListener, methodData: {"eventName":"cacheChanged"}
+10-28 15:57:20.700  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503672, pluginId: Statocyst, methodName: listDownloads
+10-28 15:57:20.700  6130  6130 V Capacitor: callback: 100503672, pluginId: Statocyst, methodName: listDownloads, methodData: {}
+10-28 15:57:20.700  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503673, pluginId: Statocyst, methodName: downloadStats
+10-28 15:57:20.700  6130  6130 V Capacitor: callback: 100503673, pluginId: Statocyst, methodName: downloadStats, methodData: {}
+10-28 15:57:20.712  6130  6143 W rford.statocyst: userfaultfd: MOVE ioctl seems unsupported: Connection timed out
+10-28 15:57:20.726  6130  6143 I rford.statocyst: Background concurrent mark compact GC freed 16MB AllocSpace bytes, 78(16MB) LOS objects, 49% free, 13MB/26MB, paused 125us,3.736ms total 181.588ms
+10-28 15:57:21.224   994  2747 I artd    : GetBestInfo: /data/app/~~ixZq-y8kywfNQ5-hggQQrg==/net.christopherrutherford.statocyst-H20UsO00LnFYAQQPMGXL9w==/base.apk has no usable artifacts
+10-28 15:57:21.444  6130  6286 D ProfileInstaller: Installing profile for net.christopherrutherford.statocyst
+10-28 15:57:23.211  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503674, pluginId: Statocyst, methodName: validateSession
+10-28 15:57:23.212  6130  6130 V Capacitor: callback: 100503674, pluginId: Statocyst, methodName: validateSession, methodData: {"url":"https:\/\/jelly.christopherrutherford.net","token":"211487812f0b4aeda3e012b0d0f31a12"
+10-28 15:57:23.213  6130  6130 V Capacitor/Plugin: To native (Capacitor plugin): callbackId: 100503675, pluginId: Statocyst, methodName: appInfo
+10-28 15:57:23.215  6130  6130 V Capacitor: callback: 100503675, pluginId: Statocyst, methodName: appInfo, methodData: {}
+10-28 15:57:23.367  6130  6130 I Capacitor/Console: File:  - Line 333 - Msg: {"name":"Statocyst","version":"0.2.1-s1","versionCode":2,"platform":"android","android":"16","device":"Google sdk_gphone64_x86_64","dataPath":"
+10-28 15:57:30.750   994  2747 I artd    : GetBestInfo: /data/app/~~ixZq-y8kywfNQ5-hggQQrg==/net.christopherrutherford.statocyst-H20UsO00LnFYAQQPMGXL9w==/base.apk has no usable artifacts

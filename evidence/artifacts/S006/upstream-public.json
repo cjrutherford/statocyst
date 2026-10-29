@@ -1,0 +1,134 @@
+{
+  "base": "https://jelly.christopherrutherford.net",
+  "version": "12.1.0",
+  "serverName": "Totally Legit Streaming Service",
+  "checks": [
+    {
+      "name": "upstream: public info returns product + version",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "upstream: health endpoint reachable",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "upstream: user listing requires auth (401)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "upstream: invalid credentials do not yield a token (status recorded)",
+      "pass": true,
+      "detail": "status=500"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://jelly.christopherrutherford.net/System/Info/Public",
+      "status": 200,
+      "durationMs": 428,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "LocalAddress": "http://172.18.0.7:8096",
+        "ServerName": "Totally Legit Streaming Service",
+        "Version": "12.1.0",
+        "ProductName": "Jellyfin Server",
+        "OperatingSystem": "",
+        "Id": "d7b77fc9ffef4746832229552b6e7852",
+        "StartupWizardCompleted": "[redacted]"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://jelly.christopherrutherford.net/health",
+      "status": 200,
+      "durationMs": 97,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "text/plain",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 7,
+        "preview": "Healthy"
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://jelly.christopherrutherford.net/Users",
+      "status": 401,
+      "durationMs": 194,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": null,
+        "content-length": "0",
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": null
+    },
+    {
+      "method": "POST",
+      "url": "https://jelly.christopherrutherford.net/Users/AuthenticateByName",
+      "status": 500,
+      "durationMs": 1541,
+      "requestHeaders": {
+        "Authorization": "[redacted]",
+        "Content-Type": "application/json"
+      },
+      "responseHeaders": {
+        "content-type": "text/plain",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "bytes": 25,
+        "preview": "Error processing request."
+      }
+    },
+    {
+      "method": "GET",
+      "url": "https://jelly.christopherrutherford.net/System/Info/Public",
+      "status": 200,
+      "durationMs": 92,
+      "requestHeaders": {},
+      "responseHeaders": {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": null,
+        "content-range": null,
+        "accept-ranges": null,
+        "content-disposition": null,
+        "location": null
+      },
+      "bodySummary": {
+        "LocalAddress": "http://172.18.0.7:8096",
+        "ServerName": "Totally Legit Streaming Service",
+        "Version": "12.1.0",
+        "ProductName": "Jellyfin Server",
+        "OperatingSystem": "",
+        "Id": "d7b77fc9ffef4746832229552b6e7852",
+        "StartupWizardCompleted": "[redacted]"
+      }
+    }
+  ]
+}

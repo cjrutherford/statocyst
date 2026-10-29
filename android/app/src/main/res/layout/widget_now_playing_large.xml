@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_header"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_bg" android:gravity="center_vertical" android:orientation="horizontal" android:padding="12dp">
+        <ImageView android:id="@+id/widget_art" android:layout_width="88dp" android:layout_height="88dp" android:contentDescription="@null" android:scaleType="fitCenter" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="14dp" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/widget_eyebrow" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium" android:letterSpacing="0.14" android:maxLines="1" android:textAllCaps="true"
+            android:text="@string/widget_eyebrow_idle" android:textColor="@color/widget_cyan" android:textSize="9sp" />
+            <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1"
+            android:text="@string/widget_nothing_playing" android:textColor="@color/widget_text" android:textSize="17sp" android:layout_marginTop="2dp" />
+            <TextView android:id="@+id/widget_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_muted" android:textSize="13sp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+                <ImageButton android:id="@+id/widget_favorite" android:layout_width="36dp" android:layout_height="36dp"
+            android:background="@null" android:contentDescription="@string/widget_favorite" android:padding="6dp" android:src="@drawable/ic_widget_heart_outline" /><ImageButton android:id="@+id/widget_prev" android:layout_width="36dp" android:layout_height="36dp"
+            android:background="@null" android:contentDescription="@string/widget_previous" android:src="@drawable/ic_widget_prev" /><ImageButton android:id="@+id/widget_play_pause" android:layout_width="42dp" android:layout_height="42dp" android:layout_marginStart="4dp" android:layout_marginEnd="4dp"
+            android:background="@drawable/widget_play_bg" android:contentDescription="@string/widget_play" android:padding="11dp" android:src="@drawable/ic_widget_play_dark" /><ImageButton android:id="@+id/widget_next" android:layout_width="36dp" android:layout_height="36dp"
+            android:background="@null" android:contentDescription="@string/widget_next" android:src="@drawable/ic_widget_next" />
+            </LinearLayout>
+        </LinearLayout>
+</LinearLayout>

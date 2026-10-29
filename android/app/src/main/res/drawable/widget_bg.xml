@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Neon-glass: abyss water with a cyan bloom top-left and a violet bloom bottom-right. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:angle="270" android:startColor="#F20B1A33" android:endColor="#F2050A18" />
+            <stroke android:width="1dp" android:color="@color/widget_line" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:type="radial" android:centerX="0.1" android:centerY="0.0"
+                android:gradientRadius="75%p" android:startColor="#3038E1FF" android:endColor="#0038E1FF" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient android:type="radial" android:centerX="0.95" android:centerY="1.0"
+                android:gradientRadius="70%p" android:startColor="#2CA78BFA" android:endColor="#00A78BFA" />
+            <corners android:radius="22dp" />
+        </shape>
+    </item>
+</layer-list>

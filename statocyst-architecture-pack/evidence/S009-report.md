@@ -1,0 +1,24 @@
+# Evidence report: S009
+
+- **Status:** VERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Electron 45.0.0. Real upstream `https://jelly.christopherrutherford.net` (Jellyfin 12.1.0).
+- **Files changed:**
+  - `apps/desktop-electron/src/main/protocol.ts` — `RemoteTrack` descriptor, `proxyRemoteArt` (authenticated artwork proxy through the privileged `statocyst-art:` scheme).
+  - `libs/persistence` — migration v3 adds `jellyfin_image_tag`; `TrackUpsert`/`StoredTrack`/`toTrack` carry it and set `artworkUrl` for Jellyfin tracks.
+  - `apps/desktop-electron/src/main/jellyfin-service.ts` — `resolveRemoteTrack` + `toTrackUpsert` stores the image tag.
+  - `apps/desktop-electron/src/main/main.ts` — `lookupTrack` resolves the remote descriptor for Jellyfin tracks.
+- **Acceptance criteria and actual observations:**
+  - **Browse real test library:** after sync, Jellyfin tracks appear in the shared library view (source-scoped: `sourceKind='jellyfin'`, `sourceLabel=server name`), with the existing album-strip grouping and search/sort working unchanged.
+  - **Artwork loads with an authenticated client:** `GET /Items/{id}/Images/Primary?maxHeight=512&quality=90` returns `200 image/jpeg` (74 416 bytes) against the real server with the `Authorization` header; the art protocol proxies this stream so the renderer's `<img>` resolves via `statocyst-art://track/<id>`.
+  - **Missing metadata handled safely:** the fixture WAV ("Abyssal Pulse") has no tags and maps to `Unknown artist` / `Unknown album` with a fallback title; the library view renders it without crashing (E2E already exercises this).
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit` across all projects — 0
+  - `pnpm exec nx run desktop:build` and `desktop-electron:build` — 0
+  - Live upstream artwork probe (curl with token) — HTTP 200, image/jpeg, 74 416 bytes
+- **Tests not run (why):** Full visual artwork verification requires the running app signed in to the real server; the protocol-level proxy is verified by the upstream probe and the typecheck/build.
+- **Artifacts:** `apps/desktop-electron/src/main/protocol.ts`, `libs/persistence/src/lib/database.ts`, `apps/desktop-electron/src/main/jellyfin-service.ts`.
+- **Safety/security considerations:** Artwork is fetched only through the privileged main process; the token is injected into the `Authorization` header and never reaches the renderer. Missing art returns 404 (no broken-image leak of the token).
+- **Known limitations and deferred follow-up:** Artwork is fetched on demand (no local cache yet); the image tag is stored at sync time, so a re-sync refreshes it.
+- **Milestone gate affected:** **MVP-2 — S009 gate demonstrated** (browse + authenticated artwork). Progresses to S010.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

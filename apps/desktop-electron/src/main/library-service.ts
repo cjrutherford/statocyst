@@ -1,7 +1,7 @@
 import { access, mkdir, stat, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { ImportRejection, ImportSummary, LibraryStats, Track } from '@statocyst/contracts';
+import type { ImportProgress, ImportRejection, ImportSummary, LibraryStats, Track } from '@statocyst/contracts';
 import type { StatocystDatabase, StoredTrack } from '@statocyst/persistence';
 import { pathIsInside, scanPaths, type ScanResult } from '@statocyst/media-library';
 import type { Logger } from './logger';
@@ -11,6 +11,12 @@ export interface LibraryServiceOptions {
   artworkDirectory: string;
   logger: Logger;
   onChanged?: (reason: string) => void;
+}
+
+export interface ImportPathsOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: ImportProgress) => void;
+  maxConcurrency?: number;
 }
 
 async function commonRoot(paths: readonly string[]): Promise<string | null> {
@@ -48,6 +54,7 @@ export class LibraryService {
   async importPaths(
     inputPaths: readonly string[],
     kind: 'local' | 'demo' = 'local',
+    options: ImportPathsOptions = {},
   ): Promise<ImportSummary> {
     const rejected: ImportRejection[] = [];
     const validPaths: string[] = [];
@@ -71,10 +78,22 @@ export class LibraryService {
 
     let scan: ScanResult;
     try {
-      scan = await scanPaths(validPaths, { platform: process.platform });
+      scan = await scanPaths(validPaths, {
+        platform: process.platform,
+        signal: options.signal,
+        maxConcurrency: options.maxConcurrency,
+        onProgress: (progress) =>
+          options.onProgress?.({
+            phase: 'scanning',
+            scanned: progress.scanned,
+            total: progress.total,
+            imported: 0,
+            currentPath: progress.path,
+          }),
+      });
     } catch (error) {
       this.options.logger.error('library.scan.failed', { error });
-      return this.emptySummary(false, [
+      return this.emptySummary(options.signal?.aborted ?? false, [
         ...rejected,
         { path: validPaths[0], code: 'IMPORT_FAILED', message: 'The import scan failed' },
       ]);
@@ -92,8 +111,10 @@ export class LibraryService {
     const imported: Track[] = [];
     let duplicates = 0;
     let missing = 0;
+    const total = scan.tracks.length;
 
     for (const scanned of scan.tracks) {
+      if (options.signal?.aborted) break;
       try {
         const existing = await this.database.findTrackByPathKey(scanned.pathKey);
         const id = existing?.id ?? randomUUID();
@@ -147,14 +168,23 @@ export class LibraryService {
           message: 'The track could not be written to the catalog',
         });
       }
+      options.onProgress?.({
+        phase: 'importing',
+        scanned: total,
+        total,
+        imported: imported.length,
+        currentPath: scanned.path,
+      });
     }
 
+    const cancelled = options.signal?.aborted ?? false;
     this.options.logger.info('library.import.completed', {
       kind,
       sourceId: source.id,
       imported: imported.length,
       duplicates,
       rejected: rejected.length,
+      cancelled,
     });
     this.options.onChanged?.('import');
 
@@ -166,7 +196,7 @@ export class LibraryService {
       missing,
       rejected,
       tracks: imported,
-      cancelled: false,
+      cancelled,
     };
   }
 
@@ -208,6 +238,9 @@ export class LibraryService {
     const tracks = await this.database.listTracks();
     let changed = 0;
     for (const track of tracks) {
+      // Jellyfin items are not local files: their path is a remote item id, so
+      // they are never "missing" on the local filesystem.
+      if (track.sourceKind === 'jellyfin') continue;
       try {
         await access(track.path);
         if (track.missing) {

@@ -1,0 +1,21 @@
+# Evidence report: S016
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Android emulator `Medium_Phone_API_36.1` (API 36), Android SDK 36, JDK 21. Real upstream `https://jelly.christopherrutherford.net` (Jellyfin 12.1.0).
+- **Files changed:**
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/jellyfin/JellyfinClient.kt` — Android HTTP client (discover, authenticate, listAudioItems).
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/plugin/StatocystPlugin.kt` — `discoverServer`, `login`, `syncCatalog` plugin methods.
+- **Acceptance criteria and actual observations:**
+  - **Discover:** `JellyfinClient.discover()` against the real upstream returns `name=Totally Legit Streaming Service`, `version=12.1.0`, `id=d7b77fc9ffef4746832229552b6e7852`. Verified on emulator via DebugTestActivity.
+  - **Authentication:** Not yet verified against the real upstream on Android (direct auth requires username/password; Quick Connect not yet wired into the Android UI). The client's `authenticate()` method mirrors the verified desktop flow.
+  - **Browse + play:** Room DB + Media3 service verified on emulator. Jellyfin sync (`syncCatalog`) stores items in Room DB. Remote stream resolution not yet tested on Android.
+  - **No secrets in WebView storage:** tokens would be stored via Android `EncryptedSharedPreferences` (dependency added). Not yet exercised.
+- **Commands run with exit codes:**
+  - `./gradlew assembleDebug` — 0 (BUILD SUCCESSFUL)
+  - `adb install -r app-debug.apk` — Success
+  - DebugTestActivity on emulator: discover OK, Room DB OK, Media3 OK
+- **Tests not run (why):** Full Jellyfin sign-in + sync + playback on Android requires the native bridge to be exercised from the WebView (not yet wired). Authenticated upstream verification is pending.
+- **Known limitations and deferred follow-up:** JellyfinClient uses `HttpURLConnection` (no external deps). Quick Connect not yet implemented on Android. EncryptedSharedPreferences storage not yet exercised (no auth test on device).
+- **Milestone gate affected:** **MVP-3 — S016: IMPLEMENTED (native code wired), gate not fully demonstrated.**
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

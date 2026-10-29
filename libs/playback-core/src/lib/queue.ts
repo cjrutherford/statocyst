@@ -195,9 +195,11 @@ export function applyQueueCommand(
       if (!nextId && queue.repeat === 'all') {
         queue.shuffleRemaining = makeShuffleBag(queue.entries, queue.currentEntryId, random);
         nextId = queue.shuffleRemaining.shift();
+        // A one-entry queue has nothing else to draw: replay it.
+        if (!nextId && queue.entries.length === 1) nextId = queue.entries[0].entryId;
       }
       if (nextId) {
-        selectEntry(nextId, automatic ? 'next' : 'next', automatic);
+        selectEntry(nextId, nextId === queue.currentEntryId ? 'restart' : 'next', automatic);
         return true;
       }
       selection = { reason: 'none', entryId: null, trackId: null, automatic };
@@ -211,7 +213,8 @@ export function applyQueueCommand(
       return true;
     }
     if (queue.repeat === 'all' && queue.entries.length > 0) {
-      selectEntry(queue.entries[0].entryId, 'next', automatic);
+      const first = queue.entries[0];
+      selectEntry(first.entryId, first.entryId === queue.currentEntryId ? 'restart' : 'next', automatic);
       return true;
     }
     selection = { reason: 'none', entryId: null, trackId: null, automatic };
@@ -223,6 +226,20 @@ export function applyQueueCommand(
       if (command.trackId) {
         if (!context.isKnownTrack(command.trackId)) {
           return failure(source, 'TRACK_NOT_FOUND', `Track ${command.trackId} is not in the library`);
+        }
+        if (command.contextTrackIds && command.contextTrackIds.length > 0) {
+          const ids = command.contextTrackIds.filter((id) => context.isKnownTrack(id));
+          if (!ids.includes(command.trackId)) ids.unshift(command.trackId);
+          removedEntryIds.push(...queue.entries.map((entry) => entry.entryId));
+          queue.entries = ids.map((trackId) => ({ entryId: context.createEntryId(trackId), trackId }));
+          queue.history = [];
+          queue.currentEntryId = null;
+          queue.shuffleRemaining = queue.shuffle ? queue.entries.map((entry) => entry.entryId) : [];
+          addedEntryIds.push(...queue.entries.map((entry) => entry.entryId));
+          queueChanged = true;
+          const target = queue.entries[ids.indexOf(command.trackId)];
+          selectEntry(target.entryId, 'started');
+          break;
         }
         const existing = queue.entries.find((entry) => entry.trackId === command.trackId);
         if (existing) {

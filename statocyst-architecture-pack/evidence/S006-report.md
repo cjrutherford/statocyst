@@ -1,0 +1,32 @@
+# Evidence report: S006
+
+- **Status:** VERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Node v24.22.1, pnpm 10.18.3, Docker 29.1.2. Stock fixtures: `jellyfin/jellyfin:12.1` (`@sha256:78d3ea1207d1322471fcac39a614f004f2ccf7e878f95ab2977d752f07e4dd7e`) and `jellyfin/jellyfin:12.4` (`@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771`). Upstream target: `https://jelly.christopherrutherford.net` (Jellyfin 12.1.0 behind Cloudflare).
+- **Files changed:**
+  - `tools/jellyfin-spike.mjs` — reproducible spike harness: boots a disposable stock container, completes the first-run wizard, seeds a 4-track music library, and records every request/response (tokens/passwords redacted) plus pass/fail checks.
+- **Acceptance criteria and actual observations:**
+  - **Discovery / manual URL:** `GET /System/Info/Public` returns `ProductName=Jellyfin Server`, `Version`, `Id`, `ServerName`, `StartupWizardCompleted`. `GET /health` returns 200. `Id` is stable across calls (identity pinning anchor).
+  - **Auth semantics:** `POST /Users/AuthenticateByName` with body `{Username, Pw}` and header `Authorization: MediaBrowser Client=…, Device=…, DeviceId=…, Version=…` returns 200 with `AccessToken` (32-char), `User.Id`, `ServerId`. `GET /Users/Me` validates the token; an invalid token returns 401. **Important:** Jellyfin 12 rejects the legacy `X-Emby-Authorization` header with `request.App` null (HTTP 400); the `Authorization` header is required. A non-existent user on stock returns 401; on the upstream (custom auth) it returns 500 "Error processing request." — both must be treated as "rejected", never assumed to be a fixed 401.
+  - **Wizard:** first-run sequence is `GET /Startup/Configuration` → `POST /Startup/Configuration` → `GET /Startup/User` (required before set) → `POST /Startup/User {Name, Password}` → `POST /Startup/Complete`.
+  - **Library provisioning:** `POST /Library/VirtualFolders?name=Music&collectionType=music&paths=/media/music` (paths unencoded; `%2F`-encoded slashes fail to bind) then `POST /Library/Refresh`. `refreshLibrary=true` on creation is unreliable; an explicit refresh is required.
+  - **Pagination:** `GET /Users/{uid}/Items?Recursive=true&IncludeItemTypes=Audio&SortBy=SortName&SortOrder=Ascending&StartIndex=…&Limit=2` returns `TotalRecordCount=4`, honours `Limit`, empty trailing page, no duplicate ids across pages.
+  - **Browse semantics (Jellyfin 12 change):** `IncludeItemTypes=MusicArtist` returns artist rollups (2 for the fixture), but `IncludeItemTypes=MusicAlbum` returns 0 — albums are **not itemised** in 12.x; they are string metadata (`Album`, `AlbumArtist`) on Audio items. The music view lists Audio items flat.
+  - **Metadata:** `Fields=MediaSources` returns `MediaSources[0].Container` for direct-play planning.
+  - **Search:** `searchTerm` is case-insensitive.
+  - **Artwork:** `GET /Items/{id}/Images/Primary?maxHeight=300&quality=90` returns an image with auth.
+  - **Streaming:** `GET /Audio/{id}/stream?static=true` honours `Range` (206, `Content-Range`, `Accept-Ranges`, `audio/mpeg`); invalid range returns 416. `GET /Audio/{id}/universal?...` resolves (200/206/302). `GET /Items/{id}/Download` streams the original.
+  - **Playback reporting:** `POST /Sessions/Playing` and `/Sessions/Playing/Stopped` return 204.
+  - **Favourites:** `POST`/`DELETE /Users/{uid}/FavoriteItems/{id}` and `Filters=IsFavorite` round-trip (200).
+- **Commands run with exit codes:**
+  - `node tools/jellyfin-spike.mjs --versions 12.1` — 0 (39/39 checks)
+  - `node tools/jellyfin-spike.mjs --versions 12.4 --upstream https://jelly.christopherrutherford.net` — 0 (12.4: 39/39; upstream public: 4/4)
+- **Tests not run (why):** No authenticated upstream browse/stream (no credentials; upstream requires a real user token which is not stored or requested in chat). Docker-in-Docker and multi-node setups are out of scope.
+- **Artifacts (logs, screenshots, traces, test report paths):**
+  - `evidence/artifacts/S006/fixture-12.1.json` (39 checks + full redacted request log)
+  - `evidence/artifacts/S006/fixture-12.4.json`
+  - `evidence/artifacts/S006/upstream-public.json`
+- **Safety/security considerations:** Passwords/tokens are generated per-run in memory and never persisted or logged; request logs redact `Authorization`, `Token`, `Password`, `api_key`. No credentials are sent to the upstream host. Containers are disposable and torn down after each run.
+- **Known limitations and deferred follow-up:** The MusicAlbum rollup absence in Jellyfin 12 must drive the S008/S009 data model (derive albums/artists from Audio item fields). The upstream 500-vs-401 auth response must be handled as a general rejection. Authenticated upstream streaming will be verified in S007 when a real user token is supplied by the user.
+- **Milestone gate affected:** **MVP-2 — Jellyfin Connected Desktop: S006 compatibility spike demonstrated** against stock 12.1 and 12.4 fixtures plus the upstream public surface. No code changed; this gates the S007 adapter work.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

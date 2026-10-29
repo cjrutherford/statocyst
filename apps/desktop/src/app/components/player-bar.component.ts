@@ -11,10 +11,12 @@ import { formatDuration } from '../core/format';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="player">
+      <div class="player__hairline" aria-hidden="true">
+        <span [style.width.%]="progressPercent()"></span>
+      </div>
       <button
         type="button"
         class="player__track"
-        [disabled]="!playback.track()"
         (click)="openNow.emit()"
         [attr.aria-label]="
           playback.track()
@@ -35,13 +37,14 @@ import { formatDuration } from '../core/format';
         @if (playback.snapshot().state === 'error') {
           <span class="player__state player__state--error">Audio error</span>
         }
+        <sc-icon name="up" class="player__expand" />
       </button>
 
       <div class="player__transport">
         <div class="player__controls">
           <button
             type="button"
-            class="icon-btn"
+            class="icon-btn player__aux"
             [class.is-active]="playback.snapshot().shuffle"
             [attr.aria-pressed]="playback.snapshot().shuffle"
             aria-label="Shuffle queue"
@@ -62,6 +65,7 @@ import { formatDuration } from '../core/format';
           <button
             type="button"
             class="player__play"
+            [class.is-live]="playback.isPlaying()"
             [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
             title="Play or pause (Space)"
             (click)="playback.toggle()"
@@ -79,7 +83,7 @@ import { formatDuration } from '../core/format';
           </button>
           <button
             type="button"
-            class="icon-btn"
+            class="icon-btn player__aux"
             [class.is-active]="playback.snapshot().repeat !== 'off'"
             [attr.aria-label]="'Repeat ' + playback.snapshot().repeat"
             [title]="'Repeat (R): ' + playback.snapshot().repeat"
@@ -209,6 +213,12 @@ import { formatDuration } from '../core/format';
       .player__state--error {
         color: var(--danger);
       }
+      .player__expand {
+        margin-left: auto;
+        color: var(--muted);
+        opacity: 0.7;
+        font-size: 0.9em;
+      }
       .player__transport {
         display: grid;
         gap: 6px;
@@ -239,10 +249,22 @@ import { formatDuration } from '../core/format';
       }
       .player__play:hover {
         transform: translateY(-1px) scale(1.03);
-        box-shadow: 0 0 30px rgba(56, 225, 255, 0.46);
+        box-shadow: 0 0 34px rgba(56, 225, 255, 0.52);
       }
       .player__play:active {
-        transform: scale(0.97);
+        transform: scale(0.96);
+      }
+      .player__play.is-live {
+        animation: play-pulse 2.8s ease-in-out infinite;
+      }
+      @keyframes play-pulse {
+        0%,
+        100% {
+          box-shadow: 0 0 22px rgba(56, 225, 255, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+        50% {
+          box-shadow: 0 0 38px rgba(56, 225, 255, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
       }
       .player__seek {
         display: flex;
@@ -313,12 +335,19 @@ import { formatDuration } from '../core/format';
           display: none;
         }
       }
+      .player {
+        position: relative;
+      }
+      .player__hairline {
+        display: none;
+      }
       @media (max-width: 760px) {
+        /* Phone mini-player: one compact row. Shuffle/repeat/seek/volume live in Now Playing and Queue. */
         .player {
-          grid-template-columns: 1fr auto;
-          grid-template-areas:
-            'track extras'
-            'transport transport';
+          grid-template-columns: minmax(0, 1fr) auto;
+          grid-template-areas: 'track transport';
+          gap: 8px;
+          padding: 8px 12px;
         }
         .player__track {
           grid-area: track;
@@ -326,8 +355,25 @@ import { formatDuration } from '../core/format';
         .player__transport {
           grid-area: transport;
         }
-        .player__extras {
-          grid-area: extras;
+        .player__extras,
+        .player__seek,
+        .player__aux,
+        .player__expand {
+          display: none;
+        }
+        .player__hairline {
+          display: block;
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 2px;
+          background: var(--line);
+        }
+        .player__hairline span {
+          display: block;
+          height: 100%;
+          background: var(--cyan-deep, #1b9fd0);
         }
       }
     `,

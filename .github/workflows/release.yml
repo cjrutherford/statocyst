@@ -1,0 +1,128 @@
+name: Release
+
+# Push a tag like v1.4.0 (it must match versionName in android/app/build.gradle).
+# The signed APK and its checksum are attached to a GitHub Release for that tag.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Public fingerprint of the release signing certificate; a build signed with any other key is refused.
+  EXPECTED_CERT_SHA256: 7d850daeb5e087ff221cc8ae9c590c2d2b381c7c911c069ee148fda8ee7be416
+
+jobs:
+  apk:
+    name: Build, sign and publish the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the app version
+        id: version
+        run: |
+          name=$(sed -n 's/^ *versionName "\(.*\)"$/\1/p' android/app/build.gradle)
+          code=$(sed -n 's/^ *versionCode \([0-9][0-9]*\)$/\1/p' android/app/build.gradle)
+          tag="${GITHUB_REF_NAME}"
+          if [[ -z "$name" || -z "$code" ]]; then echo "::error::could not read versionName/versionCode"; exit 1; fi
+          if [[ "$tag" != "v$name" ]]; then
+            echo "::error::tag $tag does not match versionName $name in android/app/build.gradle"; exit 1
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Check signing secrets are configured
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!v}" ]]; then echo "::error::missing repository secret for $v (see android/RELEASING.md, 'CI release')"; exit 1; fi
+          done
+
+      - uses: ./.github/actions/setup-web
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Generate audio fixtures (needs ffmpeg)
+        run: |
+          command -v ffmpeg >/dev/null || { sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg; }
+          pnpm run fixtures
+      - name: Typecheck and test
+        run: >
+          pnpm exec nx run-many -t typecheck test
+          -p contracts playback-core persistence media-library jellyfin-client desktop desktop-electron
+
+      - name: Build web assets and sync them into the Android project
+        run: |
+          pnpm exec nx build desktop --skip-nx-cache
+          pnpm exec cap sync android
+
+      - name: Install the signing key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/keystore.properties
+
+      - name: Unit tests and signed release APK
+        working-directory: android
+        run: ./gradlew --console=plain testDebugUnitTest assembleRelease
+
+      - name: Verify the signature
+        id: apk
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs" | head -3
+          actual=$(echo "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [[ "$actual" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::APK is signed with an unexpected certificate ($actual)"; exit 1
+          fi
+          out="statocyst-${{ steps.version.outputs.name }}.apk"
+          mkdir -p dist-release
+          cp "$apk" "dist-release/$out"
+          (cd dist-release && sha256sum "$out" > SHA256SUMS && cat SHA256SUMS)
+
+      - name: Remove the signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks" android/keystore.properties
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: statocyst-release-apk
+          path: dist-release/*
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--verify-tag --generate-notes --title "Statocyst ${{ steps.version.outputs.name }}")
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "${GITHUB_REF_NAME}" dist-release/* "${flags[@]}"

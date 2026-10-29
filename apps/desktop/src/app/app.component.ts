@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   HostListener,
   inject,
   signal,
@@ -9,17 +10,22 @@ import type { AppInfo } from '@statocyst/contracts';
 import { IconComponent, type IconName } from './components/icon.component';
 import { PlayerBarComponent } from './components/player-bar.component';
 import { AudioEngineService } from './core/audio-engine.service';
-import { bridge, bridgeAvailable } from './core/bridge';
+import { bridge, bridgeAvailable, isNativePlatform } from './core/bridge';
 import { LibraryStore } from './core/library.store';
+import { DownloadsStore } from './core/downloads.store';
+import { DownloadStatusComponent } from './components/download-status.component';
+import { PlaylistsStore } from './core/playlists.store';
+import { JellyfinStore } from './core/jellyfin.store';
+import { NavigationStore, type View } from './core/navigation.store';
 import { PlaybackStore } from './core/playback.store';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
 import { LibraryViewComponent } from './views/library-view.component';
 import { NowPlayingViewComponent } from './views/now-playing.component';
+import { OfflineViewComponent } from './views/offline-view.component';
+import { PlaylistsViewComponent } from './views/playlists-view.component';
 import { QueueViewComponent } from './views/queue-view.component';
 import { SettingsViewComponent } from './views/settings-view.component';
-
-type View = 'library' | 'now' | 'queue' | 'settings';
 
 interface NavItem {
   id: View;
@@ -31,16 +37,19 @@ interface NavItem {
   selector: 'sc-root',
   standalone: true,
   imports: [
+    DownloadStatusComponent,
     IconComponent,
     PlayerBarComponent,
     LibraryViewComponent,
     NowPlayingViewComponent,
+    OfflineViewComponent,
+    PlaylistsViewComponent,
     QueueViewComponent,
     SettingsViewComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <a class="skip-link" href="#main-content">Skip to content</a>
+    <a class="skip-link" href="#main-content" (click)="skipToContent($event)">Skip to content</a>
 
     @if (!bridgeAvailable()) {
       <div class="fatal">
@@ -67,14 +76,19 @@ interface NavItem {
               <button
                 type="button"
                 class="nav__item"
-                [class.is-active]="view() === item.id"
-                [attr.aria-current]="view() === item.id ? 'page' : null"
-                (click)="view.set(item.id)"
+                [class.is-active]="navigation.view() === item.id"
+                [attr.aria-current]="navigation.view() === item.id ? 'page' : null"
+                [attr.aria-label]="item.label"
+                [attr.title]="item.label"
+                (click)="navigate(item.id)"
               >
                 <sc-icon [name]="item.icon" />
                 <span class="nav__label">{{ item.label }}</span>
                 @if (item.id === 'library' && library.tracks().length > 0) {
                   <span class="nav__badge">{{ library.tracks().length }}</span>
+                }
+                @if (item.id === 'offline') {
+                  <span class="nav__badge">{{ offlineCount() }}</span>
                 }
                 @if (item.id === 'queue' && playback.queue().entries.length > 0) {
                   <span class="nav__badge">{{ playback.queue().entries.length }}</span>
@@ -99,15 +113,20 @@ interface NavItem {
         </aside>
 
         <main id="main-content" class="main" tabindex="-1">
-          @switch (view()) {
-            @case ('library') {
+          @switch (navigation.view()) {            @case ('library') {
               <sc-library-view />
             }
+            @case ('offline') {
+              <sc-offline-view />
+            }
+            @case ('playlists') {
+              <sc-playlists-view />
+            }
             @case ('now') {
-              <sc-now-playing (openQueue)="view.set('queue')" />
+              <sc-now-playing (openQueue)="navigation.navigate('queue')" />
             }
             @case ('queue') {
-              <sc-queue-view (openLibrary)="view.set('library')" />
+              <sc-queue-view (openLibrary)="navigation.navigate('library')" />
             }
             @case ('settings') {
               <sc-settings-view />
@@ -117,9 +136,16 @@ interface NavItem {
 
         <sc-player-bar
           class="player-slot"
-          (openNow)="view.set('now')"
-          (openQueue)="view.set('queue')"
+          [class.player-slot--hidden-phone]="navigation.view() === 'now'"
+          (openNow)="navigation.navigate('now')"
+          (openQueue)="navigation.navigate('queue')"
         />
+      </div>
+
+      <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        @if (playback.track(); as track) {
+          {{ playback.isPlaying() ? 'Playing' : 'Paused' }}: {{ track.title }} by {{ track.artist }}
+        }
       </div>
 
       @if (!ready()) {
@@ -129,6 +155,8 @@ interface NavItem {
         </div>
       }
     }
+
+    <sc-download-status />
 
     <div class="toasts" aria-live="polite" aria-atomic="false">
       @for (toast of toasts.toasts(); track toast.id) {
@@ -163,6 +191,9 @@ interface NavItem {
         grid-template-rows: minmax(0, 1fr) auto;
         height: 100vh;
         height: 100dvh;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        box-sizing: border-box;
       }
       .sidebar {
         grid-row: 1;
@@ -409,7 +440,7 @@ interface NavItem {
         padding: 8px 14px;
         border-radius: 8px;
         background: var(--cyan);
-        color: #03121f;
+        color: var(--on-accent);
         font-size: 0.8rem;
         font-weight: 600;
         text-decoration: none;
@@ -471,28 +502,70 @@ interface NavItem {
       @media (max-width: 720px) {
         .app {
           grid-template-columns: 1fr;
+          grid-template-rows: minmax(0, 1fr) auto auto;
         }
         .sidebar {
-          grid-row: auto;
+          grid-column: 1;
+          grid-row: 3;
           flex-direction: row;
-          align-items: center;
-          padding: 10px 12px;
+          align-items: stretch;
+          gap: 4px;
+          padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
           border-right: 0;
-          border-bottom: 1px solid var(--line);
+          border-top: 1px solid var(--line);
         }
-        .brand__mark {
-          width: 32px;
-          height: 32px;
+        .brand,
+        .sidebar__foot {
+          display: none;
         }
         .nav {
           display: flex;
-          margin-left: auto;
+          width: 100%;
+          margin-left: 0;
+          gap: 4px;
+        }
+        .nav__item {
+          flex: 1;
+          flex-direction: column;
+          justify-content: center;
+          gap: 3px;
+          padding: 7px 2px;
+          min-height: 56px;
+          font-size: 1.25rem;
+        }
+        .nav__label {
+          display: block;
+          flex: none;
+          font-size: 0.6rem;
+          letter-spacing: 0.02em;
         }
         .main {
           grid-column: 1;
+          grid-row: 1;
         }
         .player-slot {
           grid-column: 1;
+          grid-row: 2;
+        }
+      }
+      /* Now Playing already carries full transport; don't stack a mini-player over it. On a short
+         screen its controls fall below the fold, so keep the mini-player there instead. */
+      @media (max-width: 720px) and (min-height: 761px) {
+        .player-slot--hidden-phone {
+          display: none;
+        }
+      }
+      /* Touch devices: never present a control smaller than 44×44 CSS pixels. */
+      @media (pointer: coarse) {
+        .nav__item {
+          min-height: 44px;
+        }
+        :host ::ng-deep .icon-btn {
+          min-width: 44px;
+          min-height: 44px;
+        }
+        :host ::ng-deep .segmented button {
+          min-height: 44px;
         }
       }
     `,
@@ -500,25 +573,66 @@ interface NavItem {
 })
 export class AppComponent {
   protected readonly library = inject(LibraryStore);
+  protected readonly jellyfin = inject(JellyfinStore);
+  protected readonly downloads = inject(DownloadsStore);
+  protected readonly playlistsStore = inject(PlaylistsStore);
   protected readonly playback = inject(PlaybackStore);
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly toasts = inject(ToastStore);
+  protected readonly navigation = inject(NavigationStore);
   protected readonly bridgeAvailable = bridgeAvailable;
   private readonly audio = inject(AudioEngineService);
 
-  readonly view = signal<View>('library');
   readonly ready = signal(false);
   readonly info = signal<AppInfo | null>(null);
+  protected readonly offlineCount = computed(() =>
+    this.library.tracks().filter((track) => track.sourceId === 'local' || this.downloads.isDownloaded()(track.id)).length,
+  );
 
   protected readonly nav: NavItem[] = [
     { id: 'library', label: 'Library', icon: 'library' },
-    { id: 'now', label: 'Now playing', icon: 'now' },
+    { id: 'playlists', label: 'Playlists', icon: 'sparkles' },
+    { id: 'offline', label: 'Offline', icon: 'offline' },
     { id: 'queue', label: 'Queue', icon: 'queue' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 
   constructor() {
+    this.setupBackButton();
     void this.bootstrap();
+  }
+
+  /**
+   * Switches views and moves focus to the main landmark so keyboard and screen
+   * reader users land in the new content instead of staying on the nav button.
+   */
+  protected navigate(view: View): void {
+    this.navigation.navigate(view);
+    queueMicrotask(() => {
+      document.getElementById('main-content')?.focus();
+    });
+  }
+
+  /**
+   * Moves focus without a fragment navigation: `#main-content` on a `file://`
+   * URL would be treated as a document navigation by Electron and unload the
+   * app shell.
+   */
+  protected skipToContent(event: Event): void {
+    event.preventDefault();
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    main.focus();
+    main.scrollIntoView({ block: 'start' });
+  }
+
+  private setupBackButton(): void {
+    if (!isNativePlatform()) return;
+    void import('@capacitor/app').then(({ App }) => {
+      App.addListener('backButton', () => {
+        if (!this.navigation.back()) void App.exitApp();
+      });
+    });
   }
 
   private async bootstrap(): Promise<void> {
@@ -531,6 +645,10 @@ export class AppComponent {
     this.audio.start();
     await this.playback.init();
     await this.library.init();
+    await this.downloads.init();
+    // Server health is a network probe. It updates the badge when it answers,
+    // but the app has to be usable offline, so it never blocks the shell.
+    void this.jellyfin.init();
     try {
       this.info.set(await bridge().app.info());
     } catch {
@@ -601,7 +719,7 @@ export class AppComponent {
         break;
       case '/':
         event.preventDefault();
-        this.view.set('library');
+        this.navigation.navigate('library');
         setTimeout(() => document.getElementById('library-search')?.focus(), 0);
         break;
     }

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rename, rm, stat as fileStat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createClient, type Client, type InStatement, type Row } from '@libsql/client';
 import type { RepeatMode, Track } from '@statocyst/contracts';
@@ -33,6 +33,7 @@ export interface StoredTrack extends Track {
   lastPlayedAt: string | null;
   playCount: number;
   sourceKind: 'local' | 'demo' | 'jellyfin';
+  jellyfinImageTag: string | null;
 }
 
 export interface TrackUpsert {
@@ -59,6 +60,8 @@ export interface TrackUpsert {
   codec?: string | null;
   format?: string | null;
   artworkPath?: string | null;
+  /** Remote primary-image tag for Jellyfin items; null for local/demo sources. */
+  jellyfinImageTag?: string | null;
 }
 
 export interface TrackUpsertResult {
@@ -71,11 +74,47 @@ export interface StoredQueueEntry {
   trackId: string;
 }
 
+export interface StoredDownload {
+  trackId: string;
+  localPath: string;
+  sizeBytes: number;
+  sha256: string;
+  container: string | null;
+  verified: boolean;
+  createdAt: string;
+}
+
+export interface StoredCacheEntry {
+  trackId: string;
+  localPath: string;
+  sizeBytes: number;
+  lastAccessAt: string;
+}
+
 export interface StoredPlaybackState {
   currentEntryId: string | null;
   positionMs: number;
   shuffle: boolean;
   repeat: RepeatMode;
+}
+
+export interface StoredJellyfinServer {
+  id: string;
+  url: string;
+  name: string;
+  jellyfinId: string;
+  version: string | null;
+  createdAt: string;
+  lastConnectedAt: string | null;
+}
+
+export interface StoredJellyfinAccount {
+  serverId: string;
+  userId: string;
+  userName: string;
+  tokenCiphertext: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface LibraryStatsRecord {
@@ -90,6 +129,8 @@ export interface OpenDatabaseOptions {
   path: string;
   migrations?: readonly Migration[];
   idFactory?: () => string;
+  /** Take a `VACUUM INTO` backup before applying pending migrations (default true). */
+  backupBeforeMigrate?: boolean;
 }
 
 export interface MigrationResult {
@@ -115,6 +156,24 @@ export class MigrationIntegrityError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'MigrationIntegrityError';
+  }
+}
+
+/**
+ * Raised when a migration run fails after a pre-migration backup was taken.
+ * The database file has already been restored to the backup and the next
+ * launch can proceed on the previous schema.
+ */
+export class MigrationRecoveryError extends Error {
+  constructor(
+    readonly originalError: unknown,
+    readonly backupPath: string,
+  ) {
+    super(
+      `Migration failed and the database was restored from ${backupPath}. ` +
+        `Original error: ${originalError instanceof Error ? originalError.message : String(originalError)}`,
+    );
+    this.name = 'MigrationRecoveryError';
   }
 }
 
@@ -154,6 +213,7 @@ function bool(row: Row, key: string): boolean {
 function toTrack(row: Row): StoredTrack {
   const id = text(row, 'id');
   const artworkPath = nullableText(row, 'artwork_path');
+  const jellyfinImageTag = nullableText(row, 'jellyfin_image_tag');
   return {
     id,
     path: text(row, 'path'),
@@ -177,7 +237,7 @@ function toTrack(row: Row): StoredTrack {
     codec: nullableText(row, 'codec'),
     format: nullableText(row, 'format'),
     artworkPath,
-    artworkUrl: artworkPath ? `statocyst-art://track/${id}` : null,
+    artworkUrl: artworkPath || jellyfinImageTag ? `statocyst-art://track/${id}` : null,
     addedAt: text(row, 'added_at'),
     updatedAt: text(row, 'updated_at'),
     lastPlayedAt: nullableText(row, 'last_played_at'),
@@ -186,6 +246,7 @@ function toTrack(row: Row): StoredTrack {
     sourceId: text(row, 'source_id'),
     sourceLabel: text(row, 'source_label'),
     sourceKind: text(row, 'source_kind') as StoredTrack['sourceKind'],
+    jellyfinImageTag,
   };
 }
 
@@ -261,6 +322,55 @@ export async function runMigrations(
   };
 }
 
+async function backupBeforeMigrations(
+  client: Client,
+  path: string,
+  migrations: readonly Migration[],
+): Promise<string | null> {
+  try {
+    const info = await fileStat(path);
+    if (!info.size) return null;
+  } catch {
+    return null; // First run: nothing to protect.
+  }
+
+  let current = 0;
+  try {
+    const result = await client.execute('SELECT MAX(version) AS version FROM schema_migrations');
+    current = result.rows[0] ? integer(result.rows[0], 'version') : 0;
+  } catch {
+    current = 0;
+  }
+  // A file that has no applied migrations is a first run (or a crash before the
+  // first migration committed); there is no user schema to protect yet.
+  if (current === 0) return null;
+  if (!migrations.some((migration) => migration.version > current)) return null;
+
+  const backupPath = `${path}.backup-v${current}`;
+  await rm(backupPath, { force: true });
+  // VACUUM INTO uses the live connection, so uncommitted WAL pages are included.
+  await client.execute(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+  return backupPath;
+}
+
+async function restoreFromBackup(path: string, backupPath: string): Promise<void> {
+  // Stale WAL/SHM files from the failed run must not be replayed over the copy.
+  await rm(`${path}-wal`, { force: true });
+  await rm(`${path}-shm`, { force: true });
+  // libsql can keep the failed connection's file handles open after close().
+  // Copy into a sibling file and replace the directory entry atomically, so the
+  // fresh database gets a new inode instead of being written through an inode
+  // that SQLite may still hold locked (observed as SQLITE_BUSY on reopen).
+  const staging = `${path}.restore`;
+  await copyFile(backupPath, staging);
+  try {
+    await rename(staging, path);
+  } catch (error) {
+    await rm(staging, { force: true });
+    throw error;
+  }
+}
+
 export class StatocystDatabase {
   private constructor(
     private readonly client: Client,
@@ -269,13 +379,32 @@ export class StatocystDatabase {
 
   static async open(options: OpenDatabaseOptions): Promise<StatocystDatabase> {
     await mkdir(dirname(options.path), { recursive: true });
+    const migrations = options.migrations ?? MIGRATIONS;
     const client = createClient({ url: `file:${options.path}` });
     await client.execute('PRAGMA foreign_keys = ON');
     await client.execute('PRAGMA busy_timeout = 5000');
     await client.execute('PRAGMA journal_mode = WAL');
     await client.execute('PRAGMA synchronous = NORMAL');
     const database = new StatocystDatabase(client, options.idFactory ?? randomUUID);
-    await runMigrations(client, options.migrations ?? MIGRATIONS);
+    const backupPath =
+      options.backupBeforeMigrate === false
+        ? null
+        : await backupBeforeMigrations(client, options.path, migrations);
+    try {
+      await runMigrations(client, migrations);
+    } catch (error) {
+      client.close();
+      if (backupPath) {
+        try {
+          await restoreFromBackup(options.path, backupPath);
+        } catch {
+          // Keep the original failure visible; the backup path lets the user
+          // recover the file manually.
+        }
+        throw new MigrationRecoveryError(error, backupPath);
+      }
+      throw error;
+    }
     return database;
   }
 
@@ -335,6 +464,20 @@ export class StatocystDatabase {
     return { id, kind: input.kind, label: input.label, rootPath: input.rootPath, createdAt };
   }
 
+  async getSource(id: string): Promise<StoredMediaSource | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM media_source WHERE id = ?', args: [id] })
+    ).rows[0];
+    if (!row) return null;
+    return {
+      id: text(row, 'id'),
+      kind: text(row, 'kind') as StoredMediaSource['kind'],
+      label: text(row, 'label'),
+      rootPath: nullableText(row, 'root_path'),
+      createdAt: text(row, 'created_at'),
+    };
+  }
+
   async upsertTrack(input: TrackUpsert): Promise<TrackUpsertResult> {
     const existing = (
       await this.client.execute({
@@ -350,7 +493,7 @@ export class StatocystDatabase {
           source_id = ?, path = ?, file_name = ?, ext = ?, size_bytes = ?, mtime_ms = ?,
           title = ?, artist = ?, album = ?, album_artist = ?, track_no = ?, disc_no = ?,
           year = ?, genre = ?, duration_ms = ?, bitrate = ?, sample_rate = ?, channels = ?,
-          codec = ?, format = ?, artwork_path = ?, updated_at = ?, missing = 0
+          codec = ?, format = ?, artwork_path = ?, jellyfin_image_tag = ?, updated_at = ?, missing = 0
           WHERE id = ?`,
         args: [
           input.sourceId,
@@ -374,6 +517,7 @@ export class StatocystDatabase {
           input.codec ?? null,
           input.format ?? null,
           input.artworkPath ?? null,
+          input.jellyfinImageTag ?? null,
           now,
           id,
         ],
@@ -387,8 +531,8 @@ export class StatocystDatabase {
         id, source_id, path, path_key, file_name, ext, size_bytes, mtime_ms,
         title, artist, album, album_artist, track_no, disc_no, year, genre,
         duration_ms, bitrate, sample_rate, channels, codec, format, artwork_path,
-        added_at, updated_at, missing
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        jellyfin_image_tag, added_at, updated_at, missing
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       args: [
         id,
         input.sourceId,
@@ -413,6 +557,7 @@ export class StatocystDatabase {
         input.codec ?? null,
         input.format ?? null,
         input.artworkPath ?? null,
+        input.jellyfinImageTag ?? null,
         now,
         now,
       ],
@@ -579,5 +724,229 @@ export class StatocystDatabase {
   async tableColumns(table: string): Promise<string[]> {
     const result = await this.client.execute(`PRAGMA table_info(${table})`);
     return result.rows.map((row) => text(row, 'name'));
+  }
+
+  async saveDownload(input: {
+    trackId: string;
+    localPath: string;
+    sizeBytes: number;
+    sha256: string;
+    container: string | null;
+    verified: boolean;
+  }): Promise<void> {
+    await this.client.execute({
+      sql: `INSERT INTO download (track_id, local_path, size_bytes, sha256, container, verified, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(track_id) DO UPDATE SET
+              local_path = excluded.local_path,
+              size_bytes = excluded.size_bytes,
+              sha256 = excluded.sha256,
+              container = excluded.container,
+              verified = excluded.verified`,
+      args: [
+        input.trackId,
+        input.localPath,
+        input.sizeBytes,
+        input.sha256,
+        input.container,
+        input.verified ? 1 : 0,
+        new Date().toISOString(),
+      ],
+    });
+  }
+
+  async getDownload(trackId: string): Promise<StoredDownload | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM download WHERE track_id = ?', args: [trackId] })
+    ).rows[0];
+    return row ? this.toDownload(row) : null;
+  }
+
+  async listDownloads(): Promise<StoredDownload[]> {
+    const result = await this.client.execute('SELECT * FROM download ORDER BY created_at ASC');
+    return result.rows.map((row) => this.toDownload(row));
+  }
+
+  async removeDownload(trackId: string): Promise<boolean> {
+    const result = await this.client.execute({
+      sql: 'DELETE FROM download WHERE track_id = ?',
+      args: [trackId],
+    });
+    return (result.rowsAffected ?? 0) > 0;
+  }
+
+  private toDownload(row: Row): StoredDownload {
+    return {
+      trackId: text(row, 'track_id'),
+      localPath: text(row, 'local_path'),
+      sizeBytes: integer(row, 'size_bytes'),
+      sha256: text(row, 'sha256'),
+      container: nullableText(row, 'container'),
+      verified: bool(row, 'verified'),
+      createdAt: text(row, 'created_at'),
+    };
+  }
+
+  async saveCacheEntry(input: {
+    trackId: string;
+    localPath: string;
+    sizeBytes: number;
+  }): Promise<void> {
+    await this.client.execute({
+      sql: `INSERT INTO cache_entry (track_id, local_path, size_bytes, last_access_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(track_id) DO UPDATE SET
+              local_path = excluded.local_path,
+              size_bytes = excluded.size_bytes,
+              last_access_at = excluded.last_access_at`,
+      args: [input.trackId, input.localPath, input.sizeBytes, new Date().toISOString()],
+    });
+  }
+
+  async touchCacheEntry(trackId: string): Promise<void> {
+    await this.client.execute({
+      sql: 'UPDATE cache_entry SET last_access_at = ? WHERE track_id = ?',
+      args: [new Date().toISOString(), trackId],
+    });
+  }
+
+  async listCacheEntries(): Promise<StoredCacheEntry[]> {
+    const result = await this.client.execute(
+      'SELECT * FROM cache_entry ORDER BY last_access_at ASC',
+    );
+    return result.rows.map((row) => ({
+      trackId: text(row, 'track_id'),
+      localPath: text(row, 'local_path'),
+      sizeBytes: integer(row, 'size_bytes'),
+      lastAccessAt: text(row, 'last_access_at'),
+    }));
+  }
+
+  async removeCacheEntry(trackId: string): Promise<boolean> {
+    const result = await this.client.execute({
+      sql: 'DELETE FROM cache_entry WHERE track_id = ?',
+      args: [trackId],
+    });
+    return (result.rowsAffected ?? 0) > 0;
+  }
+
+  async upsertJellyfinServer(input: {
+    url: string;
+    name: string;
+    jellyfinId: string;
+    version: string | null;
+  }): Promise<StoredJellyfinServer> {
+    const existing = (
+      await this.client.execute({ sql: 'SELECT * FROM jellyfin_server WHERE url = ?', args: [input.url] })
+    ).rows[0];
+    const now = new Date().toISOString();
+    if (existing) {
+      const id = text(existing, 'id');
+      await this.client.execute({
+        sql: `UPDATE jellyfin_server SET name = ?, jellyfin_id = ?, version = ? WHERE id = ?`,
+        args: [input.name, input.jellyfinId, input.version, id],
+      });
+      return {
+        id,
+        url: input.url,
+        name: input.name,
+        jellyfinId: input.jellyfinId,
+        version: input.version,
+        createdAt: text(existing, 'created_at'),
+        lastConnectedAt: nullableText(existing, 'last_connected_at'),
+      };
+    }
+    const id = this.idFactory();
+    await this.client.execute({
+      sql: `INSERT INTO jellyfin_server (id, url, name, jellyfin_id, version, created_at, last_connected_at)
+            VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+      args: [id, input.url, input.name, input.jellyfinId, input.version, now],
+    });
+    return {
+      id,
+      url: input.url,
+      name: input.name,
+      jellyfinId: input.jellyfinId,
+      version: input.version,
+      createdAt: now,
+      lastConnectedAt: null,
+    };
+  }
+
+  async listJellyfinServers(): Promise<StoredJellyfinServer[]> {
+    const result = await this.client.execute('SELECT * FROM jellyfin_server ORDER BY created_at ASC');
+    return result.rows.map((row) => this.toJellyfinServer(row));
+  }
+
+  async getJellyfinServer(id: string): Promise<StoredJellyfinServer | null> {
+    const row = (
+      await this.client.execute({ sql: 'SELECT * FROM jellyfin_server WHERE id = ?', args: [id] })
+    ).rows[0];
+    return row ? this.toJellyfinServer(row) : null;
+  }
+
+  async touchJellyfinServer(id: string): Promise<void> {
+    await this.client.execute({
+      sql: 'UPDATE jellyfin_server SET last_connected_at = ? WHERE id = ?',
+      args: [new Date().toISOString(), id],
+    });
+  }
+
+  async removeJellyfinServer(id: string): Promise<boolean> {
+    const result = await this.client.execute({ sql: 'DELETE FROM jellyfin_server WHERE id = ?', args: [id] });
+    return (result.rowsAffected ?? 0) > 0;
+  }
+
+  async saveJellyfinAccount(input: {
+    serverId: string;
+    userId: string;
+    userName: string;
+    tokenCiphertext: string;
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    await this.client.execute({
+      sql: `INSERT INTO jellyfin_account (server_id, user_id, user_name, token_ciphertext, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(server_id) DO UPDATE SET
+              user_id = excluded.user_id,
+              user_name = excluded.user_name,
+              token_ciphertext = excluded.token_ciphertext,
+              updated_at = excluded.updated_at`,
+      args: [input.serverId, input.userId, input.userName, input.tokenCiphertext, now, now],
+    });
+  }
+
+  async getJellyfinAccount(serverId: string): Promise<StoredJellyfinAccount | null> {
+    const row = (
+      await this.client.execute({
+        sql: 'SELECT * FROM jellyfin_account WHERE server_id = ?',
+        args: [serverId],
+      })
+    ).rows[0];
+    if (!row) return null;
+    return {
+      serverId: text(row, 'server_id'),
+      userId: text(row, 'user_id'),
+      userName: text(row, 'user_name'),
+      tokenCiphertext: text(row, 'token_ciphertext'),
+      createdAt: text(row, 'created_at'),
+      updatedAt: text(row, 'updated_at'),
+    };
+  }
+
+  async removeJellyfinAccount(serverId: string): Promise<void> {
+    await this.client.execute({ sql: 'DELETE FROM jellyfin_account WHERE server_id = ?', args: [serverId] });
+  }
+
+  private toJellyfinServer(row: Row): StoredJellyfinServer {
+    return {
+      id: text(row, 'id'),
+      url: text(row, 'url'),
+      name: text(row, 'name'),
+      jellyfinId: text(row, 'jellyfin_id'),
+      version: nullableText(row, 'version'),
+      createdAt: text(row, 'created_at'),
+      lastConnectedAt: nullableText(row, 'last_connected_at'),
+    };
   }
 }

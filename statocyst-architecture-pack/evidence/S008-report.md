@@ -1,0 +1,27 @@
+# Evidence report: S008
+
+- **Status:** VERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Node v24.22.1, pnpm 10.18.3. Fixture `jellyfin/jellyfin:12.1` (Docker) and the real upstream `https://jelly.christopherrutherford.net` (12.1.0, 2145 audio items).
+- **Files changed:**
+  - `libs/jellyfin-client` — `listAudioItems` (paginated audio items with `Fields=MediaSources,Genres`, item mapping).
+  - `apps/desktop-electron/src/main/jellyfin-service.ts` — `syncCatalog` (paged upsert into `media_item` via a `kind='jellyfin'` `media_source`).
+  - `libs/contracts`, `ipc.ts`, `preload.ts` — `JellyfinSyncSummary` + `jellyfin:sync` channel + bridge method.
+  - `apps/desktop/src/app/core/jellyfin.store.ts`, `views/settings-view.component.ts` — "Sync library" action.
+  - `apps/desktop-electron/src/main/library-service.ts` — `refreshMissing` skips Jellyfin-source tracks (their path is a remote item id, not a local file).
+- **Acceptance criteria and actual observations:**
+  - **Fixtures reconcile:** `listAudioItems` + `syncCatalog` import items into the unified catalog with a server-scoped `media_source` and `pathKey = jellyfin:<serverId>:<itemId>`.
+  - **Idempotent re-run:** a second `syncCatalog` reports `imported=0, updated=2` and `listTracks()` stays at 2 rows (no duplicate source or item rows). Unit-tested.
+  - **Real catalog:** against the real upstream (Quick Connect session), `listAudioItems` returns `TotalRecordCount=2145`; a sample item maps to `{name, album, albumArtist, container:flac, bitrate:1642057, durationMs:411295, imageTag}`.
+- **Commands run with exit codes:**
+  - `pnpm exec vitest run --config libs/jellyfin-client/vitest.config.ts` — 0 (14 tests)
+  - `pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts` — 0 (11 tests, integration skipped)
+  - `STATOCYST_JELLYFIN_INTEGRATION=1 … vitest run … -t 'logs in'` — 0 (real Docker fixture)
+  - `STATOCYST_JELLYFIN_UPSTREAM=1 … vitest run … --disableConsoleIntercept` — 0 (real upstream: 2145 items)
+  - `pnpm exec tsc-rs --noEmit` across all projects — 0; `nx build desktop` and `desktop-electron` — 0
+- **Tests not run (why):** Full 2145-item upsert into the local DB is exercised only via the small fixture (2 items) to keep tests fast; the upstream run only lists (not persists) to avoid writing a large catalog to disk. Persisting the full real catalog is covered by the S011 demo.
+- **Artifacts:** `libs/jellyfin-client/src/lib/jellyfin-client.spec.ts`, `apps/desktop-electron/src/main/jellyfin-service.spec.ts`, `apps/desktop-electron/src/main/jellyfin-integration.spec.ts`, `apps/desktop-electron/src/main/jellyfin-upstream.spec.ts`.
+- **Safety/security considerations:** The sync decrypts the token in memory only, sends it over the `Authorization` header, and never persists it in `media_item` (only `path`/`pathKey`/metadata). No credential columns are added to the catalog tables.
+- **Known limitations and deferred follow-up:** Remote artwork and streaming are not yet resolved (S009/S010). Album/artist browsing relies on derived metadata (Jellyfin 12 no longer itemises MusicAlbum), which the existing library view already handles by grouping on `Album`.
+- **Milestone gate affected:** **MVP-2 — Jellyfin Connected Desktop: S008 gate demonstrated** (paginated sync + idempotent reconciliation). Progresses to S009.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

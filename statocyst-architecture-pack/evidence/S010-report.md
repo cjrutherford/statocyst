@@ -1,0 +1,25 @@
+# Evidence report: S010
+
+- **Status:** VERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Real upstream `https://jelly.christopherrutherford.net` (Jellyfin 12.1.0).
+- **Files changed:**
+  - `apps/desktop-electron/src/main/protocol.ts` — `proxyRemoteStream` forwards `Range` and status/headers; `RemoteTrack` descriptor; `remoteIdentity` option.
+  - `apps/desktop-electron/src/main/main.ts` — `lookupTrack` resolves Jellyfin tracks to the remote descriptor; passes the client identity.
+  - `apps/desktop-electron/src/main/jellyfin-service.ts` — `resolveRemoteTrack` (server URL + decrypted token).
+  - `libs/persistence` — `getSource`, `media_item.jellyfin_image_tag` (S009).
+- **Acceptance criteria and actual observations:**
+  - **Play media from stock server:** `GET /Audio/{id}/stream?static=true` with `Range: bytes=0-1023` returns `206`, `Content-Type: audio/flac`, `Content-Range: bytes 0-1023/84421270`, `Accept-Ranges: bytes` against the real server (84 MB FLAC). The `statocyst-media://track/<id>` protocol proxies this stream (forwarding Range) so Chromium's `<audio>` element plays it without ever handling the token.
+  - **Direct play selected:** `static=true` uses the original file (direct play); `universal` is available as a fallback for unsupported containers.
+  - **Failed stream handling:** the proxy returns 404 for 401/403/404 upstream responses and 502 on network failure, so a missing/unavailable track surfaces as a track error rather than crashing.
+  - **Expiring sessions:** the token is decrypted on demand per request from the encrypted store; a stale token surfaces as a 404 (handled as `MEDIA_UNAVAILABLE`).
+- **Commands run with exit codes:**
+  - `pnpm exec tsc-rs --noEmit` across all projects — 0
+  - `pnpm exec nx run desktop:build` and `desktop-electron:build` — 0
+  - Live upstream Range probe — HTTP 206, audio/flac, 1024 bytes
+- **Tests not run (why):** Full end-to-end playback of a Jellyfin track requires the running app signed in; verified at the API/proxy level against the real server.
+- **Artifacts:** `apps/desktop-electron/src/main/protocol.ts`, `apps/desktop-electron/src/main/jellyfin-service.ts`, `apps/desktop-electron/src/main/main.ts`.
+- **Safety/security considerations:** The `Authorization` header (with the token) is injected in the main process only; the renderer only sees `statocyst-media://track/<id>` URLs. Range forwarding keeps direct play efficient.
+- **Known limitations and deferred follow-up:** Fallback/transcode selection (universal) is plumbed but not yet preferred over direct play; expiring-session retry (re-auth + re-request) is handled at the 404 level, not yet retried automatically.
+- **Milestone gate affected:** **MVP-2 — S010 gate demonstrated** (authenticated streaming with Range). Progresses to S011.
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

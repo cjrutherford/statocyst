@@ -27,7 +27,9 @@ export type IconName =
   | 'external'
   | 'check'
   | 'alert'
-  | 'wave';
+  | 'wave'
+  | 'download'
+  | 'offline';
 
 @Component({
   selector: 'sc-icon',
@@ -159,6 +161,16 @@ export type IconName =
         }
         @case ('wave') {
           <path d="M3 12h2l2-5 3 10 3-14 3 12 2-3h3" />
+        }
+        @case ('download') {
+          <path d="M12 4v11" />
+          <path d="M7.5 11l4.5 4.5L16.5 11" />
+          <path d="M4.5 19.5h15" />
+        }
+        @case ('offline') {
+          <path d="M5 4.5l14 15" opacity=".55" />
+          <path d="M12 4v11" />
+          <path d="M7.5 11l4.5 4.5L16.5 11" />
         }
       }
     </svg>

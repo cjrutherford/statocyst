@@ -125,6 +125,50 @@ describe('local media import', () => {
     expect(result.tracks).toHaveLength(0);
   });
 
+  it('honours maxConcurrency and reports total progress', async () => {
+    let inflight = 0;
+    let maxInflight = 0;
+    const { parseFile } = await import('music-metadata');
+    const progress: Array<{ scanned: number; total: number | null }> = [];
+    const result = await scanPaths([fixtures], {
+      maxConcurrency: 3,
+      parser: async (path) => {
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
+        try {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 15));
+          return await parseFile(path, { duration: true });
+        } finally {
+          inflight -= 1;
+        }
+      },
+      onProgress: (entry) => progress.push({ scanned: entry.scanned, total: entry.total }),
+    });
+    expect(result.tracks).toHaveLength(4);
+    expect(maxInflight).toBeLessThanOrEqual(3);
+    expect(maxInflight).toBeGreaterThan(1);
+    expect(progress.at(-1)).toEqual({ scanned: 4, total: 4 });
+  });
+
+  it('aborts mid-scan without hanging and returns partial results', async () => {
+    const controller = new AbortController();
+    const { parseFile } = await import('music-metadata');
+    let parsed = 0;
+    const result = await scanPaths([fixtures], {
+      maxConcurrency: 1,
+      signal: controller.signal,
+      parser: async (path) => {
+        parsed += 1;
+        if (parsed === 1) {
+          setTimeout(() => controller.abort(), 0);
+        }
+        return parseFile(path, { duration: true });
+      },
+    });
+    expect(result.tracks.length).toBeLessThan(4);
+    expect(result.rejected.some((item) => item.code === 'ABORTED')).toBe(true);
+  });
+
   it('continues when one parser call fails', async () => {
     let calls = 0;
     const result = await scanPaths([fixtures], {

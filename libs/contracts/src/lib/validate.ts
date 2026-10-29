@@ -40,13 +40,24 @@ export function validatePlaybackCommand(value: unknown): Result<PlaybackCommand>
 
   switch (type) {
     case 'play':
-      if (!hasOnlyKeys(value, ['type', 'trackId'])) {
+      if (!hasOnlyKeys(value, ['type', 'trackId', 'contextTrackIds'])) {
         return fail('INVALID_ARGUMENT', 'Unexpected field on play command');
       }
       if (value['trackId'] !== undefined && !isNonEmptyString(value['trackId'])) {
         return fail('INVALID_ARGUMENT', 'trackId must be a non-empty string');
       }
-      return ok({ type: 'play', ...(value['trackId'] ? { trackId: value['trackId'] } : {}) });
+      if (
+        value['contextTrackIds'] !== undefined &&
+        (!Array.isArray(value['contextTrackIds']) ||
+          !value['contextTrackIds'].every((id) => isNonEmptyString(id)))
+      ) {
+        return fail('INVALID_ARGUMENT', 'contextTrackIds must be an array of non-empty strings');
+      }
+      return ok({
+        type: 'play',
+        ...(value['trackId'] ? { trackId: value['trackId'] } : {}),
+        ...(value['contextTrackIds'] ? { contextTrackIds: value['contextTrackIds'] as string[] } : {}),
+      });
 
     case 'playEntry':
       if (!hasOnlyKeys(value, ['type', 'entryId']) || !isNonEmptyString(value['entryId'])) {

@@ -16,7 +16,7 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
           <p class="eyebrow">Session queue</p>
           <h1 id="queue-heading">Queue</h1>
           <p class="lede">
-            One authoritative queue, owned by the desktop host and restored after restart.
+            One authoritative queue per player, restored after a restart.
           </p>
         </div>
         <div class="actions">
@@ -318,7 +318,7 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
       @keyframes rise {
         from {
           opacity: 0;
-          transform: translateY(8px);
+          transform: translateY(10px) scale(0.995);
         }
         to {
           opacity: 1;

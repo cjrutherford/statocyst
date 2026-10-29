@@ -31,10 +31,11 @@
   --line: rgba(148, 197, 255, 0.14);
   --line-strong: rgba(148, 197, 255, 0.26);
   --text: #e9f4ff;
-  --muted: #8ea6c4;
-  --muted-dim: #6b83a3;
+  --muted: #a9c0d8;
+  --muted-dim: #8ba4c0;
   --focus: rgba(56, 225, 255, 0.55);
   --shadow: 0 24px 70px rgba(0, 5, 18, 0.55);
+  --on-accent: #03121f;
 
   /* themed surfaces (used by views and chrome so light mode stays coherent) */
   --surface-1: rgba(6, 13, 28, 0.62);
@@ -70,18 +71,19 @@
   --line: rgba(16, 54, 92, 0.14);
   --line-strong: rgba(16, 54, 92, 0.24);
   --text: #0a1a2c;
-  --muted: #4e6b8a;
-  --muted-dim: #6d87a3;
-  --cyan: #0a8fb8;
-  --cyan-soft: #33b9d9;
-  --cyan-deep: #087699;
+  --muted: #44607d;
+  --muted-dim: #55718c;
+  --cyan: #087699;
+  --cyan-soft: #1c9fbe;
+  --cyan-deep: #065f7d;
   --violet: #6f5bd4;
   --violet-deep: #5646b8;
   --pearl: #ffffff;
-  --danger: #d63d60;
-  --success: #128a4b;
+  --danger: #b02347;
+  --success: #0b6e3b;
   --focus: rgba(10, 143, 184, 0.5);
   --shadow: 0 20px 50px rgba(20, 50, 84, 0.14);
+  --on-accent: #ffffff;
   --surface-1: rgba(255, 255, 255, 0.72);
   --surface-2: rgba(255, 255, 255, 0.86);
   --surface-3: rgba(255, 255, 255, 0.56);
@@ -243,10 +245,11 @@ button {
 .btn:hover:not(:disabled) {
   border-color: rgba(56, 225, 255, 0.44);
   background: rgba(56, 225, 255, 0.1);
+  transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.99);
 }
 
 .btn:disabled {
@@ -263,16 +266,17 @@ button {
   background:
     radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.34), transparent 52%),
     linear-gradient(140deg, var(--cyan), var(--cyan-deep) 58%, var(--violet-deep));
-  color: #03121f;
+  color: var(--on-accent);
   font-weight: 600;
   box-shadow: 0 6px 22px rgba(56, 225, 255, 0.26);
 }
 
 .btn--primary:hover:not(:disabled) {
   background:
-    radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.42), transparent 52%),
+    radial-gradient(circle at 24% 20%, rgba(255, 255, 255, 0.46), transparent 52%),
     linear-gradient(140deg, var(--cyan-soft), var(--cyan-deep) 58%, var(--violet-deep));
-  box-shadow: 0 8px 30px rgba(56, 225, 255, 0.38);
+  box-shadow: 0 10px 34px rgba(56, 225, 255, 0.44);
+  transform: translateY(-1px) scale(1.015);
 }
 
 .btn--quiet {
@@ -324,6 +328,11 @@ button {
 .icon-btn:hover:not(:disabled) {
   color: var(--text);
   background: rgba(148, 197, 255, 0.09);
+  transform: translateY(-1px);
+}
+
+.icon-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.94);
 }
 
 .icon-btn:disabled {
@@ -353,7 +362,7 @@ button {
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--cyan);
-  opacity: 0.86;
+  opacity: 1;
 }
 
 .sr-only {
@@ -386,5 +395,27 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Touch targets (Android/phone widths and coarse pointers)
+--------------------------------------------------------------------------- */
+
+@media (max-width: 720px), (pointer: coarse) {
+  button,
+  .btn,
+  a.skip-link,
+  select,
+  input:not([type='checkbox']):not([type='radio']) {
+    min-height: 44px;
+  }
+  button,
+  button.icon-btn {
+    min-width: 44px;
+  }
+  .segmented button,
+  .chip-toggle {
+    min-height: 44px;
   }
 }

@@ -1,0 +1,22 @@
+# Evidence report: S013
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04.1 LTS, Linux x86_64. Android SDK 36, NDK 27.1.12297006, JDK 21 (Android Studio JBR). Emulator: `Medium_Phone_API_36.1`.
+- **Files changed:** `capacitor.config.ts`, `android/` (generated Capacitor Android project).
+- **Acceptance criteria and actual observations:**
+  - **APK builds and installs:** `./gradlew assembleDebug` succeeds (BUILD SUCCESSFUL, 34s). APK at `android/app/build/outputs/apk/debug/app-debug.apk` (4.87 MB). `aapt` confirms package `net.christopherrutherford.statocyst`, min SDK 24, target SDK 36, app name "Statocyst".
+  - **APK launches on emulator:** `adb install` succeeded; `am start` launched `MainActivity`; process `net.christopherrutherford.statocyst` is running (PID 3986). The Angular web shell renders in the WebView.
+  - **Live catalog / bridge calls:** NOT verified — the native bridge (Capacitor plugin exposing the typed repository APIs) is not yet implemented. The app runs as a pure WebView shell. This is the S015 work, which is blocked on S012 (libSQL Android).
+- **Commands run with exit codes:**
+  - `pnpm add @capacitor/core @capacitor/cli @capacitor/android` — 0
+  - `pnpm exec cap add android` — 0
+  - `pnpm exec cap sync android` — 0
+  - `./gradlew assembleDebug` (JDK 21) — 0 (BUILD SUCCESSFUL)
+  - `aapt dump badging app-debug.apk` — package/SDK confirmed
+  - `adb install -r app-debug.apk` — Success
+  - `adb shell am start -n ...MainActivity` — launched, process running
+- **Tests not run (why):** Native bridge calls are not implemented yet (blocked on S012/S015). The "render live catalog, bridge calls succeed" gate requires the native Statolith provider.
+- **Known limitations and deferred follow-up:** S014 (Media3 service), S015 (Statolith provider), S016 (account/server playback), S017 (device demo) are blocked on S012/S015. The shell runs the web app (Angular) in a WebView with the WebView's `<audio>` for playback — not the native Media3 service.
+- **Milestone gate affected:** **MVP-3 — Capacitor Android shell: IMPLEMENTED (basic), gate not fully demonstrated** (APK builds, installs, launches; native bridge + live catalog pending S012/S015 resolution).
+- **Reviewer and date:** Implementation agent — awaiting human decision, 2026-10-27.

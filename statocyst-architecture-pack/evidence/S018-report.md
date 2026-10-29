@@ -1,0 +1,25 @@
+# Evidence report: S018
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** main (uncommitted working tree; evidence captured 2026-10-27)
+- **Environment:** Ubuntu 26.04 LTS, Android SDK 36, JDK 21 (Android Studio JBR), Media3 1.4.1, Room 2.6.1, Kotlin 1.9.25. Unit tests on host JVM; instrumented gate targeted at emulator `Medium_Phone_API_36.1` (API 36).
+- **Files changed:**
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/media/BrowseTree.kt` (new) — pure browse-tree builder + stable IDs (`BrowseIds`, `BrowseNode`, `BrowseTree`).
+  - `android/app/src/main/java/net/christopherrutherford/statocyst/media/PlaybackService.kt` — converted from `MediaSessionService` to `MediaLibraryService`, serving the browse tree from Room via `MediaLibrarySession.Callback` (`onGetLibraryRoot`/`onGetItem`/`onGetChildren`).
+  - `android/app/src/main/AndroidManifest.xml` — service intent-filter action changed to `androidx.media3.session.MediaLibraryService`.
+  - `android/app/src/test/java/net/christopherrutherford/statocyst/media/BrowseTreeTest.kt` (new) — JVM unit tests.
+  - `android/app/src/androidTest/java/net/christopherrutherford/statocyst/media/MediaLibraryServiceBrowseTest.kt` (new) — instrumented cold-start gate.
+  - `android/app/build.gradle` — added `configurations.all` exclusion of legacy `kotlin-stdlib-jdk7`/`jdk8` (partial mitigation, see limitations).
+- **Acceptance criteria and actual observations:**
+  - **Deterministic tree and stable IDs (unit):** `BrowseTreeTest` — 12/12 tests pass. Root id `statocyst`; fixed category ids `albums`/`artists`/`tracks`/`queue`; album id `album::{albumArtist}::{album}`, artist id `artist::{artist}`, track id `track::{id}`; albums/artists distinct + sorted; album children ordered by disc/track; repeated calls yield identical IDs.
+  - **Cold start via MediaBrowser without UI:** NOT demonstrated. The instrumented `MediaLibraryServiceBrowseTest` (Media3 `MediaBrowser` connect → `getLibraryRoot`/`getChildren`) is written but fails to dex due to a pre-existing Capacitor/Cordova Kotlin-stdlib version conflict (see below).
+- **Commands run with exit codes:**
+  - `./gradlew testDebugUnitTest` — 0 (12 tests, 0 failures, 0 errors).
+  - `./gradlew assembleDebug` — 0 (BUILD SUCCESSFUL).
+  - `./gradlew connectedDebugAndroidTest` — FAILED: `Duplicate class ... found in kotlin-stdlib-1.8.22.jar and kotlin-stdlib-jdk7/jdk8-1.6.21.jar` during androidTest dexing.
+- **Tests not run (why):** Instrumented cold-start test blocked by the Kotlin stdlib conflict. The androidTest classpath resolves `kotlin-stdlib` to `2.0.21` (a `strictly` constraint from `androidx.test`/espresso 3.7.0) while the app compiles against Kotlin 1.9.25, and `org.apache.cordova:framework:14.0.1` (via `capacitor-cordova-android-plugins`) pulls `kotlin-stdlib-jdk7`/`jdk8:1.6.21`. Excluding the jdk7/jdk8 stubs removes them from the runtime classpath but the 1.8.22-vs-2.0.21 stdlib mismatch remains.
+- **Artifacts:** `android/app/build/test-results/testDebugUnitTest/TEST-net.christopherrutherford.statocyst.media.BrowseTreeTest.xml` (12/0/0).
+- **Safety/security considerations:** Browse tree exposes only catalog metadata (title/artist/album/track number) and stable ids — no tokens, URLs, or paths. Tokens and stream/artwork URIs are deliberately absent (source resolution is S020).
+- **Known limitations and deferred follow-up:** `queue` category returns empty (native queue is S021). Artwork URIs are null (source/artwork resolution is S020/S022). The androidTest Kotlin-stdlib build conflict must be resolved (align Kotlin plugin and androidx.test versions, or pin stdlib) before the cold-start gate can be demonstrated.
+- **Milestone gate affected:** **MVP-4 — S018: browse tree + stable IDs implemented and unit-verified; cold-start-via-MediaBrowser gate NOT yet demonstrated** (instrumented run blocked by build config).
+- **Reviewer and date:** Implementation agent — awaiting human review, 2026-10-27.

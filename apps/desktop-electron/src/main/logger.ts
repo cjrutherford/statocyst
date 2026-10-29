@@ -5,6 +5,31 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 const SECRET_KEY = /(token|password|secret|authorization|cookie|credential|api[_-]?key)/i;
 
+/**
+ * Value-level scrubbing for secrets that appear inside otherwise harmless text
+ * (log tails, error messages, URLs, upstream headers). Key-based redaction is
+ * not enough because upstream responses and proxy errors can embed credentials
+ * in a message body.
+ */
+const SECRET_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/(\bBearer\s+)[A-Za-z0-9\-._~+/]+=*/gi, '$1[redacted]'],
+  [/(\bBasic\s+)[A-Za-z0-9+/]+=*/gi, '$1[redacted]'],
+  [/([?&](?:api[_-]?key|token|access[_-]?token|password|secret)=)[^&\s"'<>]+/gi, '$1[redacted]'],
+  [
+    /((?:token|password|secret|authorization|cookie|credential|api[_-]?key)\s*[:=]\s*"?)[^"\s,;}&\]]+/gi,
+    '$1[redacted]',
+  ],
+  [/(\/\/)[^/@\s:]+:[^/@\s]+@/g, '$1[redacted]@'],
+];
+
+export function sanitizeText(value: string): string {
+  let output = value;
+  for (const [pattern, replacement] of SECRET_PATTERNS) {
+    output = output.replace(pattern, replacement);
+  }
+  return output;
+}
+
 export interface LogRecord {
   timestamp: string;
   level: LogLevel;
@@ -20,7 +45,11 @@ function truncate(value: string, max = 2000): string {
 export function redactValue(value: unknown, depth = 0): unknown {
   if (depth > 6) return '[depth-limit]';
   if (value instanceof Error) {
-    return { name: value.name, message: truncate(value.message), stack: truncate(value.stack ?? '') };
+    return {
+      name: value.name,
+      message: sanitizeText(truncate(value.message)),
+      stack: sanitizeText(truncate(value.stack ?? '')),
+    };
   }
   if (Array.isArray(value)) return value.slice(0, 200).map((item) => redactValue(item, depth + 1));
   if (value && typeof value === 'object') {
@@ -30,7 +59,7 @@ export function redactValue(value: unknown, depth = 0): unknown {
     }
     return output;
   }
-  if (typeof value === 'string') return truncate(value);
+  if (typeof value === 'string') return sanitizeText(truncate(value));
   return value;
 }
 

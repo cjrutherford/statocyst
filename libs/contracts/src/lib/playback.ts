@@ -31,6 +31,8 @@ export const ERROR_CODES = [
   'ENGINE_UNAVAILABLE',
   'DATABASE_ERROR',
   'IMPORT_FAILED',
+  'UNAUTHORIZED',
+  'INSUFFICIENT_SPACE',
   'INTERNAL_ERROR',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -51,10 +53,13 @@ export interface Track {
   albumArtist?: string;
   durationMs: number;
   artworkUrl: string | null;
+  /** Artist photo (Android, only when online artwork is enabled). */
+  artistArtworkUrl?: string | null;
   sourceId: string;
   sourceLabel: string;
   trackNo?: number | null;
   year?: number | null;
+  genre?: string | null;
   format?: string | null;
   missing: boolean;
 }
@@ -88,7 +93,12 @@ export interface PlaybackSnapshot {
 }
 
 export type PlaybackCommand =
-  | { type: 'play'; trackId?: string }
+  /**
+   * `contextTrackIds` is the list the track was picked from (album, search
+   * result, playlist). When given, it replaces the queue so next/previous and
+   * shuffle operate on that context instead of on stale queue leftovers.
+   */
+  | { type: 'play'; trackId?: string; contextTrackIds?: string[] }
   | { type: 'playEntry'; entryId: string }
   | { type: 'pause' }
   | { type: 'seek'; positionMs: number }
