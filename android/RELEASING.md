@@ -143,7 +143,7 @@ search. For a sideloaded build the phone needs Android Auto developer settings
 
 ## 9. CI and the GitHub release pipeline
 
-- `.github/workflows/ci.yml` runs on every push: typecheck + tests for the web
+- `.github/workflows/ci.yml` runs on pull requests and pushes to `main`: typecheck + tests for the web
   libs and apps, the Angular build, then Android unit tests and a debug APK
   (uploaded as an artifact). The emulator-based instrumented tests run for pull
   requests into `main` and on demand (Actions -> CI -> Run workflow).

@@ -2,8 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ['**']
-    tags-ignore: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -109,7 +108,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           working-directory: android
-          script: ./gradlew --console=plain connectedDebugAndroidTest
+          script: ./gradlew --console=plain :app:connectedDebugAndroidTest
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
