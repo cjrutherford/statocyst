@@ -96,16 +96,16 @@ class NowPlayingWidgetTest {
         assertEquals("ZZ Artist", root.findViewById<TextView>(R.id.widget_artist).text.toString())
         assertEquals("Pause", root.findViewById<View>(R.id.widget_play_pause).contentDescription.toString())
         assertEquals(View.VISIBLE, root.findViewById<View>(R.id.widget_fav_4).visibility)
-        assertEquals("Widget Song 4 \u2013 ZZ Artist", root.findViewById<TextView>(R.id.widget_fav_4).text.toString())
+        assertEquals("4  Widget Song 4 \u2013 ZZ Artist", root.findViewById<TextView>(R.id.widget_fav_4).text.toString())
         assertEquals(View.GONE, root.findViewById<View>(R.id.widget_fav_empty).visibility)
-        snapshot(root, "widget-playing.png", 300, 190)
+        snapshot(root, "widget-playing.png", 300, 200)
 
         val idle = inflate(NowPlayingWidget.render(context, WidgetData(WidgetState())))
         assertEquals(context.getString(R.string.widget_nothing_playing), idle.findViewById<TextView>(R.id.widget_title).text.toString())
         assertEquals("Play", idle.findViewById<View>(R.id.widget_play_pause).contentDescription.toString())
         assertEquals(View.GONE, idle.findViewById<View>(R.id.widget_fav_1).visibility)
         assertEquals(View.VISIBLE, idle.findViewById<View>(R.id.widget_fav_empty).visibility)
-        snapshot(idle, "widget-idle.png", 300, 190)
+        snapshot(idle, "widget-idle.png", 300, 200)
     }
 
     @Test
@@ -144,6 +144,26 @@ class NowPlayingWidgetTest {
         val empty = inflate(QuickPicksWidget.render(context, WidgetData(WidgetState())))
         assertEquals(View.VISIBLE, empty.findViewById<View>(R.id.picks_empty).visibility)
         assertEquals(View.GONE, empty.findViewById<View>(R.id.picks_row_2).visibility)
+    }
+
+    @Test
+    fun speedDialShowsTheCurrentSongAndRecentsExceptIt() {
+        val state = WidgetState(trackId = ids[0], title = "Widget Song 1", artist = "ZZ Artist", playing = true)
+        val data = WidgetData(state, recents = tiles(BrowseIds.RECENTS))
+        val recents = SpeedDialWidget.recents(data)
+        assertEquals(ids.subList(1, 5), recents.map { it.trackId })
+
+        val root = inflate(SpeedDialWidget.render(context, data))
+        assertEquals("Widget Song 1", root.findViewById<TextView>(R.id.widget_title).text.toString())
+        assertEquals("Now playing", root.findViewById<TextView>(R.id.widget_eyebrow).text.toString())
+        assertEquals("Widget Song 2", root.findViewById<TextView>(R.id.dial_1_title).text.toString())
+        assertEquals(View.VISIBLE, root.findViewById<View>(R.id.dial_4).visibility)
+        assertEquals(View.GONE, root.findViewById<View>(R.id.dial_empty).visibility)
+        snapshot(root, "widget-dial.png", 300, 190)
+
+        val idle = inflate(SpeedDialWidget.render(context, WidgetData(WidgetState())))
+        assertEquals(View.VISIBLE, idle.findViewById<View>(R.id.dial_empty).visibility)
+        assertEquals(View.GONE, idle.findViewById<View>(R.id.dial_row).visibility)
     }
 
     @Test

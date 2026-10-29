@@ -21,4 +21,9 @@
     <string name="widget_large_description">Big player with artwork and controls</string>
     <string name="widget_compact_description">Slim player with controls</string>
     <string name="widget_picks_description">Tap a cover to play from your recent listening</string>
+    <string name="widget_eyebrow_playing">Now playing</string>
+    <string name="widget_eyebrow_paused">Paused</string>
+    <string name="widget_eyebrow_idle">Statocyst</string>
+    <string name="widget_recent">Recent</string>
+    <string name="widget_speed_dial_description">Now playing with your recent songs one tap away</string>
 </resources>

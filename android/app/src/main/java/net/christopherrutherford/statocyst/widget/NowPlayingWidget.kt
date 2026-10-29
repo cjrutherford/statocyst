@@ -9,7 +9,7 @@ import android.widget.RemoteViews
 import net.christopherrutherford.statocyst.R
 
 /** Shared by the three now-playing layouts: title, artist, artwork and the play/pause icon. */
-internal fun bindNowPlaying(context: Context, views: RemoteViews, state: WidgetState, artPx: Int) {
+internal fun bindNowPlaying(context: Context, views: RemoteViews, state: WidgetState, artPx: Int, withEyebrow: Boolean = true) {
     views.setTextViewText(
         R.id.widget_title,
         state.title?.takeIf { state.hasTrack } ?: context.getString(R.string.widget_nothing_playing),
@@ -20,6 +20,22 @@ internal fun bindNowPlaying(context: Context, views: RemoteViews, state: WidgetS
         R.id.widget_art,
         WidgetArt.tile(context, state.artworkUri.takeIf { state.hasTrack }, state.title, artPx),
     )
+    views.setImageViewResource(
+        R.id.widget_play_pause,
+        if (state.playing) R.drawable.ic_widget_pause_dark else R.drawable.ic_widget_play_dark,
+    )
+    if (withEyebrow) {
+        views.setTextViewText(
+            R.id.widget_eyebrow,
+            context.getString(
+                when {
+                    !state.hasTrack -> R.string.widget_eyebrow_idle
+                    state.playing -> R.string.widget_eyebrow_playing
+                    else -> R.string.widget_eyebrow_paused
+                },
+            ),
+        )
+    }
     views.setContentDescription(
         R.id.widget_play_pause,
         context.getString(if (state.playing) R.string.widget_pause else R.string.widget_play),
@@ -28,6 +44,21 @@ internal fun bindNowPlaying(context: Context, views: RemoteViews, state: WidgetS
     views.setOnClickPendingIntent(R.id.widget_play_pause, Widgets.mediaKey(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
     views.setOnClickPendingIntent(R.id.widget_next, Widgets.mediaKey(context, KeyEvent.KEYCODE_MEDIA_NEXT))
     views.setOnClickPendingIntent(R.id.widget_header, Widgets.openApp(context))
+}
+
+/** "1  Title \u2013 Artist": the rank in cyan, then the artist in the muted tone. */
+internal fun rowText(rank: Int, row: Tile): CharSequence {
+    val lead = "$rank  "
+    val title = lead + row.title
+    val text = android.text.SpannableString(if (row.artist.isEmpty()) title else "$title \u2013 ${row.artist}")
+    text.setSpan(android.text.style.ForegroundColorSpan(0xFF38E1FF.toInt()), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    if (row.artist.isNotEmpty()) {
+        text.setSpan(
+            android.text.style.ForegroundColorSpan(0xFFA9C0D8.toInt()),
+            title.length, text.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+    }
+    return text
 }
 
 private fun refreshOnUpdate(context: Context) = Widgets.refresh(context)
@@ -46,10 +77,6 @@ class NowPlayingWidget : AppWidgetProvider() {
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing)
             bindNowPlaying(context, views, data.state, ART_PX)
-            views.setImageViewResource(
-                R.id.widget_play_pause,
-                if (data.state.playing) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
-            )
             val favorites = data.favorites.take(Widgets.LIST_ROWS)
             views.setViewVisibility(R.id.widget_fav_header, if (favorites.isEmpty()) View.GONE else View.VISIBLE)
             views.setViewVisibility(R.id.widget_fav_empty, if (favorites.isEmpty()) View.VISIBLE else View.GONE)
@@ -59,7 +86,7 @@ class NowPlayingWidget : AppWidgetProvider() {
                     views.setViewVisibility(id, View.GONE)
                 } else {
                     views.setViewVisibility(id, View.VISIBLE)
-                    views.setTextViewText(id, listOf(row.title, row.artist).filter { it.isNotEmpty() }.joinToString(" – "))
+                    views.setTextViewText(id, rowText(i + 1, row))
                     views.setOnClickPendingIntent(id, Widgets.playTile(context, "list", i, row))
                 }
             }
@@ -79,10 +106,6 @@ class NowPlayingLargeWidget : AppWidgetProvider() {
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing_large)
             bindNowPlaying(context, views, data.state, ART_PX)
-            views.setImageViewResource(
-                R.id.widget_play_pause,
-                if (data.state.playing) R.drawable.ic_widget_pause_dark else R.drawable.ic_widget_play_dark,
-            )
             views.setImageViewResource(
                 R.id.widget_favorite,
                 if (data.currentIsFavorite) R.drawable.ic_widget_heart else R.drawable.ic_widget_heart_outline,
@@ -105,11 +128,7 @@ class NowPlayingCompactWidget : AppWidgetProvider() {
     companion object {
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing_compact)
-            bindNowPlaying(context, views, data.state, ART_PX)
-            views.setImageViewResource(
-                R.id.widget_play_pause,
-                if (data.state.playing) R.drawable.ic_widget_pause else R.drawable.ic_widget_play,
-            )
+            bindNowPlaying(context, views, data.state, ART_PX, withEyebrow = false)
             return views
         }
 
@@ -163,5 +182,47 @@ class QuickPicksWidget : AppWidgetProvider() {
         }
 
         private const val ART_PX = 200
+    }
+}
+
+/**
+ * Speed dial: the current song with its controls on top and the last few songs played below,
+ * one tap each.
+ */
+class SpeedDialWidget : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
+    override fun onEnabled(context: Context) = refreshOnUpdate(context)
+
+    companion object {
+        private val cells = listOf(
+            Triple(R.id.dial_1, R.id.dial_1_art, R.id.dial_1_title),
+            Triple(R.id.dial_2, R.id.dial_2_art, R.id.dial_2_title),
+            Triple(R.id.dial_3, R.id.dial_3_art, R.id.dial_3_title),
+            Triple(R.id.dial_4, R.id.dial_4_art, R.id.dial_4_title),
+        )
+
+        /** Recent songs other than the one already shown above. */
+        internal fun recents(data: WidgetData): List<Tile> =
+            data.recents.filter { it.trackId != data.state.trackId }.take(cells.size)
+
+        internal fun render(context: Context, data: WidgetData): RemoteViews {
+            val views = RemoteViews(context.packageName, R.layout.widget_speed_dial)
+            bindNowPlaying(context, views, data.state, 160)
+            val recents = recents(data)
+            views.setViewVisibility(R.id.dial_empty, if (recents.isEmpty()) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.dial_row, if (recents.isEmpty()) View.GONE else View.VISIBLE)
+            cells.forEachIndexed { i, (cell, art, title) ->
+                val tile = recents.getOrNull(i)
+                if (tile == null) {
+                    views.setViewVisibility(cell, View.INVISIBLE)
+                } else {
+                    views.setViewVisibility(cell, View.VISIBLE)
+                    views.setImageViewBitmap(art, WidgetArt.tile(context, tile.artUri, tile.title, 160))
+                    views.setTextViewText(title, tile.title)
+                    views.setOnClickPendingIntent(cell, Widgets.playTile(context, "dial", i, tile))
+                }
+            }
+            return views
+        }
     }
 }

@@ -47,6 +47,7 @@ object Widgets {
         NowPlayingLargeWidget::class.java to NowPlayingLargeWidget::render,
         NowPlayingCompactWidget::class.java to NowPlayingCompactWidget::render,
         QuickPicksWidget::class.java to QuickPicksWidget::render,
+        SpeedDialWidget::class.java to SpeedDialWidget::render,
     )
 
     /** Re-renders every placed widget on a worker thread (database and artwork reads). */
