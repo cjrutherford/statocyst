@@ -1,5 +1,6 @@
 package net.christopherrutherford.statocyst.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -35,4 +36,6 @@ data class MediaItemEntity(
     val updatedAt: String,
     val missing: Boolean = false,
     val albumId: String? = null,
+    /** Jellyfin server the track came from; empty for local files and pre-multi-server rows. */
+    @ColumnInfo(defaultValue = "") val serverId: String = "",
 )

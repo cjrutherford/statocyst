@@ -1,0 +1,1 @@
+First release on Google Play: local and Jellyfin playback, offline downloads, widgets and Android Auto.

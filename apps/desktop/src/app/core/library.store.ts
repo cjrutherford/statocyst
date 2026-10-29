@@ -27,6 +27,28 @@ export class LibraryStore {
 
   private importProgressUnsubscribe: (() => void) | null = null;
 
+  /** Hidden duplicate id -> id of the row shown in its place. */
+  private readonly keeperByAlias = computed(() => {
+    const map = new Map<string, string>();
+    for (const track of this.tracks()) for (const alias of track.aliases ?? []) map.set(alias, track.id);
+    return map;
+  });
+
+  /** The visible row for an id: itself, or the row standing in for a hidden duplicate. */
+  canonicalId(trackId: string): string {
+    return this.keeperByAlias().get(trackId) ?? trackId;
+  }
+
+  private readonly aliasesById = computed(() => {
+    const map = new Map<string, string[]>();
+    for (const track of this.tracks()) if (track.aliases?.length) map.set(track.id, track.aliases);
+    return map;
+  });
+
+  aliasesOf(trackId: string): string[] {
+    return this.aliasesById().get(trackId) ?? [];
+  }
+
   readonly isEmpty = computed(() => this.loaded() && this.tracks().length === 0);
   readonly albums = computed(() => {
     const map = new Map<string, { album: string; artist: string; artwork: string | null; tracks: number }>();

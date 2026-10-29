@@ -57,6 +57,10 @@ jobs:
       - name: Unit tests and debug APK
         working-directory: android
         run: ./gradlew --console=plain testDebugUnitTest assembleDebug
+      # Unsigned: proves R8 shrinking, release lint and the Play AAB build keep working without secrets.
+      - name: Release build checks (R8, lint, AAB)
+        working-directory: android
+        run: ./gradlew --console=plain lintVitalRelease assembleRelease bundleRelease
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4

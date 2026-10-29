@@ -1,0 +1,1 @@
+A local-first music player for your own files and your own Jellyfin server.

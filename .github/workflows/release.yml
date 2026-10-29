@@ -1,7 +1,9 @@
 name: Release
 
 # Push a tag like v1.4.0 (it must match versionName in android/app/build.gradle).
-# The signed APK and its checksum are attached to a GitHub Release for that tag.
+# The signed APK, the signed Play AAB, the R8 mapping file and checksums are attached to a GitHub
+# Release for that tag. If PLAY_SERVICE_ACCOUNT_JSON is set, the AAB is also uploaded to the Play
+# internal testing track.
 on:
   push:
     tags: ['v*']
@@ -15,13 +17,17 @@ concurrency:
 
 env:
   # Public fingerprint of the release signing certificate; a build signed with any other key is refused.
-  EXPECTED_CERT_SHA256: 7d850daeb5e087ff221cc8ae9c590c2d2b381c7c911c069ee148fda8ee7be416
+  # Override with the repository variable EXPECTED_CERT_SHA256 (Settings > Variables) if the signing
+  # key changes, for example when an upload key different from the sideload key is used for Play.
+  EXPECTED_CERT_SHA256: ${{ vars.EXPECTED_CERT_SHA256 || '7d850daeb5e087ff221cc8ae9c590c2d2b381c7c911c069ee148fda8ee7be416' }}
 
 jobs:
   apk:
-    name: Build, sign and publish the APK
+    name: Build, sign and publish the APK and AAB
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      name: ${{ steps.version.outputs.name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,14 +96,15 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > android/keystore.properties
 
-      - name: Unit tests and signed release APK
+      - name: Unit tests, release lint, signed release APK and AAB
         working-directory: android
-        run: ./gradlew --console=plain testDebugUnitTest assembleRelease
+        run: ./gradlew --console=plain testDebugUnitTest lintVitalRelease assembleRelease bundleRelease
 
-      - name: Verify the signature
+      - name: Verify the signatures
         id: apk
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
+          aab=android/app/build/outputs/bundle/release/app-release.aab
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           certs=$("$apksigner" verify --print-certs "$apk")
           echo "$certs" | head -3
@@ -105,10 +112,18 @@ jobs:
           if [[ "$actual" != "$EXPECTED_CERT_SHA256" ]]; then
             echo "::error::APK is signed with an unexpected certificate ($actual)"; exit 1
           fi
-          out="statocyst-${{ steps.version.outputs.name }}.apk"
+          # The AAB carries a JAR signature; compare its certificate fingerprint too.
+          aab_actual=$(keytool -printcert -jarfile "$aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          if [[ "$aab_actual" != "$EXPECTED_CERT_SHA256" ]]; then
+            echo "::error::AAB is signed with an unexpected certificate ($aab_actual)"; exit 1
+          fi
+          name="${{ steps.version.outputs.name }}"
           mkdir -p dist-release
-          cp "$apk" "dist-release/$out"
-          (cd dist-release && sha256sum "$out" > SHA256SUMS && cat SHA256SUMS)
+          cp "$apk" "dist-release/statocyst-$name.apk"
+          cp "$aab" "dist-release/statocyst-$name.aab"
+          # R8 mapping: upload to Play Console (App bundle explorer) to de-obfuscate crash reports.
+          cp android/app/build/outputs/mapping/release/mapping.txt "dist-release/statocyst-$name-mapping.txt"
+          (cd dist-release && sha256sum "statocyst-$name.apk" "statocyst-$name.aab" > SHA256SUMS && cat SHA256SUMS)
 
       - name: Remove the signing key
         if: always()
@@ -116,7 +131,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: statocyst-release-apk
+          name: statocyst-release
           path: dist-release/*
 
       - name: Create the GitHub Release
@@ -126,3 +141,29 @@ jobs:
           flags=(--verify-tag --generate-notes --title "Statocyst ${{ steps.version.outputs.name }}")
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "${GITHUB_REF_NAME}" dist-release/* "${flags[@]}"
+
+  play-internal:
+    name: Upload the AAB to the Play internal track
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Skip when Play credentials are not configured
+        if: env.PLAY_SERVICE_ACCOUNT_JSON == ''
+        run: echo "PLAY_SERVICE_ACCOUNT_JSON is not set; skipping the Play upload."
+      - uses: actions/download-artifact@v4
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
+        with:
+          name: statocyst-release
+          path: dist-release
+      - uses: r0adkll/upload-google-play@v1
+        if: env.PLAY_SERVICE_ACCOUNT_JSON != ''
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.hopefulaspirationsindustries.statocyst
+          releaseFiles: dist-release/*.aab
+          mappingFile: dist-release/statocyst-${{ needs.apk.outputs.name }}-mapping.txt
+          track: internal
+          status: draft

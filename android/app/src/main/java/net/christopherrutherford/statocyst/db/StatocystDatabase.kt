@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistTrackEntity::class,
         RecentEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class StatocystDatabase : RoomDatabase() {
@@ -73,10 +73,21 @@ abstract class StatocystDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5 records which Jellyfin server a track came from, so several servers
+         * can share one library. Existing rows get an empty id and keep working: they
+         * resolve to the single session that existed before.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `media_item` ADD COLUMN `serverId` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getInstance(context: Context): StatocystDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, StatocystDatabase::class.java, "statocyst.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { INSTANCE = it }
             }

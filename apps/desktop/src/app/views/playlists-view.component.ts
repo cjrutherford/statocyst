@@ -159,13 +159,14 @@ import { formatDuration } from '../core/format';
     `
       .view { display: grid; gap: clamp(16px, 2vw, 26px); padding: clamp(20px, 3vw, 38px); max-width: 1480px; margin: 0 auto; animation: rise 380ms ease both; }
       .view__head { display: flex; flex-direction: column; gap: 4px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       h1 { font-size: clamp(2rem, 3.4vw, 3rem); letter-spacing: -0.03em; margin: 4px 0 6px; }
       .lede { color: var(--muted); max-width: 58ch; margin: 0; font-size: 0.92rem; }
       .smart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
       .smart-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 16px; border-radius: 14px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); }
       .smart-card__play { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; border: none; background: transparent; color: var(--text); cursor: pointer; text-align: left; padding: 0; width: 100%; }
       .smart-card__play:disabled { opacity: 0.5; cursor: not-allowed; }
-      .smart-card--play { cursor: pointer; }
+      .smart-card--play { cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left; color: var(--text); }
       .smart-card sc-icon { width: 22px; height: 22px; color: var(--cyan); }
       .smart-card__name { font-weight: 600; }
       .smart-card__count { color: var(--muted); font-size: 0.78rem; }

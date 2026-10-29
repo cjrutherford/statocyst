@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import java.security.MessageDigest
 import java.time.Instant
 
@@ -148,11 +149,10 @@ class DownloadManager(private val context: Context) {
     }
 
     private fun copyRemote(track: MediaItemEntity, target: File, events: DownloadEvents) {
-        val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
-        val serverUrl = prefs.getString("jellyfin_url", null)
+        val session = JellyfinSessions.forTrack(context, track)
             ?: throw IllegalStateException("The server is not signed in")
-        val token = prefs.getString("jellyfin_token", null)
-            ?: throw IllegalStateException("The server is not signed in")
+        val serverUrl = session.url
+        val token = session.token
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
         val url = JellyfinAuth.streamUrl(serverUrl, itemId)
         ResumableDownload.fetch(

@@ -78,7 +78,7 @@ class ArtworkProvider : ContentProvider() {
             }
             else -> {
                 val (id, tag) = request(uri) ?: return null
-                JellyfinArtwork.fetch(ctx, id, tag)
+                JellyfinArtwork.fetch(ctx, id, tag, serverId = serverOf(uri))
             }
         }
     }
@@ -87,8 +87,12 @@ class ArtworkProvider : ContentProvider() {
     private fun fallback(ctx: Context, uri: Uri): File? {
         val id = uri.getQueryParameter("id")?.takeIf { JellyfinArtwork.isValidId(it) } ?: return null
         val tag = uri.getQueryParameter("tag")?.takeIf { JellyfinArtwork.isValidTag(it) } ?: ""
-        return JellyfinArtwork.fetch(ctx, id, tag)
+        return JellyfinArtwork.fetch(ctx, id, tag, serverId = serverOf(uri))
     }
+
+    /** The optional `server` hint naming which signed-in server owns the image. */
+    private fun serverOf(uri: Uri): String? =
+        uri.getQueryParameter("server")?.takeIf { JellyfinArtwork.isValidId(it) }
 
     companion object {
         /** `/art/<itemId>` plus optional tag, validated; null for anything else. */
@@ -102,10 +106,13 @@ class ArtworkProvider : ContentProvider() {
         fun authority(context: Context) = "${context.packageName}.artwork"
 
         /** Token-free content URI for a Jellyfin item's primary image, or null for an invalid id. */
-        fun uri(context: Context, itemId: String, tag: String?): String? {
+        fun uri(context: Context, itemId: String, tag: String?, serverId: String? = null): String? {
             if (!JellyfinArtwork.isValidId(itemId)) return null
             val t = tag?.takeIf { it.isNotEmpty() && JellyfinArtwork.isValidTag(it) }
-            return "content://${authority(context)}/art/$itemId" + (t?.let { "?tag=$it" } ?: "")
+            val s = serverId?.takeIf { JellyfinArtwork.isValidId(it) }
+            val query = listOfNotNull(t?.let { "tag=$it" }, s?.let { "server=$it" })
+            return "content://${authority(context)}/art/$itemId" +
+                (if (query.isEmpty()) "" else "?" + query.joinToString("&"))
         }
     }
 }

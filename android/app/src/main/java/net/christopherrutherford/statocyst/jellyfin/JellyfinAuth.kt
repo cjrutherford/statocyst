@@ -33,6 +33,15 @@ object JellyfinAuth {
     fun streamUrl(serverUrl: String, itemId: String): String =
         "${serverUrl.trimEnd('/')}/Audio/$itemId/stream?static=true"
 
+    /**
+     * A progressive MP3 transcode at [bitsPerSecond]. The server cannot seek inside one, so a
+     * transcode is only for playing a track from its start.
+     */
+    fun transcodeUrl(serverUrl: String, itemId: String, bitsPerSecond: Long): String =
+        "${serverUrl.trimEnd('/')}/Audio/$itemId/stream.mp3?audioCodec=mp3&audioBitRate=$bitsPerSecond"
+
+    fun isTranscodeUrl(uri: String?): Boolean = uri != null && uri.contains("/stream.mp3?")
+
     fun imageUrl(serverUrl: String, itemId: String, tag: String?): String {
         val suffix = if (!tag.isNullOrEmpty()) "?tag=$tag" else ""
         return "${serverUrl.trimEnd('/')}/Items/$itemId/Images/Primary$suffix"
@@ -62,19 +71,18 @@ object JellyfinAuth {
 
     /**
      * Data source for ExoPlayer and the artwork loader: adds the session header to
-     * requests for the signed-in server only, so the token is never sent to any
-     * other host (redirect targets, CDN, local media server).
+     * requests for a signed-in server only, using that server's own token, so a
+     * token is never sent to any other host (another server, redirect targets, CDN,
+     * local media server).
      */
     fun dataSourceFactory(context: Context): DataSource.Factory {
         val app = context.applicationContext
-        val prefs = app.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
         val http = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(false)
         return ResolvingDataSource.Factory(DefaultDataSource.Factory(app, http)) { spec ->
-            val server = prefs.getString("jellyfin_url", null)
-            val token = prefs.getString("jellyfin_token", null)
-            if (!token.isNullOrEmpty() && isServerUri(server, spec.uri.toString())) {
-                spec.withAdditionalHeaders(mapOf("Authorization" to header(token)))
+            val session = JellyfinSessions.forUri(app, spec.uri.toString())
+            if (session != null) {
+                spec.withAdditionalHeaders(mapOf("Authorization" to header(session.token)))
             } else {
                 spec
             }

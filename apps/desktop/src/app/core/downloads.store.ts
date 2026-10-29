@@ -66,7 +66,9 @@ export class DownloadsStore {
 
   readonly isDownloaded = computed(() => {
     const ids = this.downloadedIds();
-    return (trackId: string) => ids.has(trackId);
+    const library = this.library;
+    return (trackId: string) =>
+      ids.has(trackId) || library.aliasesOf(library.canonicalId(trackId)).some((alias) => ids.has(alias));
   });
 
   private readonly entryById = computed(() => {

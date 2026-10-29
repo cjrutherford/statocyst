@@ -164,13 +164,16 @@ object Diagnostics {
             )
         }
 
-        val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
-        val token = prefs.getString("jellyfin_token", null)
+        val sessionCount = net.christopherrutherford.statocyst.jellyfin.JellyfinSessions.all(context).size
         checks += HealthCheck(
             id = "session",
             label = "Jellyfin session",
-            status = if (token.isNullOrEmpty()) "warn" else "ok",
-            detail = if (token.isNullOrEmpty()) "No stored Jellyfin session" else "Stored session present (not printed)",
+            status = if (sessionCount == 0) "warn" else "ok",
+            detail = when (sessionCount) {
+                0 -> "No stored Jellyfin session"
+                1 -> "Stored session present (not printed)"
+                else -> "$sessionCount stored sessions present (not printed)"
+            },
         )
 
         return checks

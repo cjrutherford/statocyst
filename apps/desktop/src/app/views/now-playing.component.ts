@@ -237,6 +237,7 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         position: relative;
         z-index: 2;
         display: block;
+        border-radius: 26px;
         box-shadow:
           0 40px 120px rgba(0, 8, 26, 0.75),
           0 0 0 1px rgba(56, 225, 255, 0.12);

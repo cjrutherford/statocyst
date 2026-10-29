@@ -29,7 +29,10 @@ export class PlaylistsStore {
     const playlist = this.playlists().find((p) => p.id === id);
     if (!playlist) return [];
     const byId = new Map(this.library.tracks().map((track) => [track.id, track]));
-    return playlist.trackIds.map((trackId) => byId.get(trackId)).filter((t): t is Track => !!t);
+    const seen = new Set<string>();
+    return playlist.trackIds
+      .map((trackId) => byId.get(this.library.canonicalId(trackId)))
+      .filter((t): t is Track => !!t && !seen.has(t.id) && !!seen.add(t.id));
   }
 
   create(name: string, trackIds: string[]): string {

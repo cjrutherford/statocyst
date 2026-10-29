@@ -61,6 +61,7 @@ export class JellyfinStore {
       await bridge().jellyfin.removeServer(serverId);
       this.toasts.push('Server removed');
       await this.refresh();
+      await this.library.refresh();
     });
   }
 

@@ -15,7 +15,7 @@ import type {
   Settings,
   ThemePreference,
 } from '@statocyst/contracts';
-import { IconComponent } from '../components/icon.component';
+import { IconComponent, type IconName } from '../components/icon.component';
 import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
 import { bridge, isNativePlatform } from '../core/bridge';
 import { SettingsStore } from '../core/settings.store';
@@ -23,6 +23,8 @@ import { DownloadsStore } from '../core/downloads.store';
 import { LibraryStore } from '../core/library.store';
 import { ToastStore } from '../core/toast.store';
 import { formatBytes } from '../core/format';
+
+type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 'about';
 
 @Component({
   selector: 'sc-settings-view',
@@ -35,14 +37,41 @@ import { formatBytes } from '../core/format';
         <div>
           <p class="eyebrow">Preferences</p>
           <h1 id="settings-heading">Settings</h1>
-          <p class="lede">Appearance, diagnostics and the local data boundary.</p>
+          <p class="lede">Appearance, Jellyfin, storage, Android Auto and on-device data.</p>
         </div>
-        <button type="button" class="btn btn--quiet" (click)="refresh()">
-          <sc-icon name="refresh" /> Refresh diagnostics
-        </button>
+        @if (tab() === 'diagnostics') {
+          <button type="button" class="btn btn--quiet" (click)="refresh()">
+            <sc-icon name="refresh" /> Refresh diagnostics
+          </button>
+        }
       </header>
 
-      <div class="grid">
+      <div class="tabs" role="tablist" aria-label="Settings sections">
+        @for (item of tabs(); track item.id) {
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            [id]="'settings-tab-' + item.id"
+            [class.is-active]="tab() === item.id"
+            [attr.aria-selected]="tab() === item.id"
+            [attr.aria-controls]="'settings-panel'"
+            [attr.tabindex]="tab() === item.id ? 0 : -1"
+            (click)="selectTab(item.id)"
+            (keydown)="onTabKey($event)"
+          >
+            <sc-icon [name]="item.icon" /> {{ item.label }}
+          </button>
+        }
+      </div>
+
+      <div
+        class="grid"
+        id="settings-panel"
+        role="tabpanel"
+        [attr.aria-labelledby]="'settings-tab-' + tab()"
+      >
+        @if (tab() === 'general') {
         <section class="card" aria-labelledby="appearance-heading">
           <h2 id="appearance-heading">Appearance</h2>
           <p class="card__hint">
@@ -104,13 +133,14 @@ import { formatBytes } from '../core/format';
             </div>
             <p class="card__hint">
               {{ settings.settings().quality === 'lossless'
-                ? 'Direct play whenever the device and network allow it.'
-                : 'Allow policy-driven transcoding when throughput drops.' }}
+                ? 'Always plays the original file.'
+                : 'Plays the original while the connection can carry it, and falls back to a 192 kbps stream when it cannot. Songs already downloaded or cached always play as the original.' }}
             </p>
           </div>
         </section>
+        }
 
-        @if (isNative()) {
+        @if (isNative() && tab() === 'car') {
         <section class="card" aria-labelledby="car-heading">
           <h2 id="car-heading">Car and Android Auto</h2>
           <p class="card__hint">
@@ -118,10 +148,12 @@ import { formatBytes } from '../core/format';
             Radio, Albums, Artists and Tracks from the head unit, or ask Assistant to play something.
           </p>
           <ol class="car-steps">
-            <li>Open your phone's Android Auto settings and tap the version number ten times to enable developer settings.</li>
-            <li>In the developer settings, turn on <strong>Unknown sources</strong> (this build is installed outside Google Play).</li>
-            <li>Back in Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
-            <li>Reconnect to the car. Statocyst appears in the media app list.</li>
+            <li>Connect your phone to the car. Statocyst appears in the media app list.</li>
+            <li>If it is missing, open Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
+            <li>
+              Still missing, and installed outside Google Play? Tap the Android Auto version number ten
+              times to enable developer settings, then turn on <strong>Unknown sources</strong>.
+            </li>
           </ol>
           @if (browseAccess(); as access) {
             <h3 class="section-label">Head units and controllers</h3>
@@ -154,7 +186,7 @@ import { formatBytes } from '../core/format';
         </section>
         }
 
-        @if (!isNative()) {
+        @if (!isNative() && tab() === 'general') {
         <section class="card" aria-labelledby="shortcuts-heading">
           <h2 id="shortcuts-heading">Keyboard</h2>
           <p class="card__hint">Shortcuts stay inside the player, never the system.</p>
@@ -170,6 +202,7 @@ import { formatBytes } from '../core/format';
         </section>
         }
 
+        @if (tab() === 'diagnostics') {
         <section class="card card--wide" aria-labelledby="diagnostics-heading">
           <div class="card__head">
             <div>
@@ -260,7 +293,9 @@ import { formatBytes } from '../core/format';
             }
           </div>
         </section>
+        }
 
+        @if (tab() === 'general') {
         <section class="card card--wide" aria-labelledby="privacy-heading">
           <div class="card__head">
             <div>
@@ -311,7 +346,9 @@ import { formatBytes } from '../core/format';
             local database until you delete it.
           </p>
         </section>
+        }
 
+        @if (tab() === 'storage') {
         <section class="card card--wide" aria-labelledby="cache-heading">
           <div class="card__head">
             <div>
@@ -368,7 +405,9 @@ import { formatBytes } from '../core/format';
             </button>
           </div>
         </section>
+        }
 
+        @if (tab() === 'storage') {
         <section class="card card--wide" aria-labelledby="downloads-heading">
           <div class="card__head">
             <div>
@@ -433,20 +472,24 @@ import { formatBytes } from '../core/format';
             </p>
           }
         </section>
+        }
 
+        @if (tab() === 'jellyfin') {
         <section class="card card--wide" aria-labelledby="server-heading">
           <div class="card__head">
             <div>
-              <h2 id="server-heading">Jellyfin server</h2>
+              <h2 id="server-heading">Jellyfin servers</h2>
               <p class="card__hint">
-                Connect to a Jellyfin server to browse and stream its music library.
+                Connect as many Jellyfin servers as you like. Their libraries appear together as one.
               </p>
             </div>
           </div>
 
           <sc-jellyfin-panel />
         </section>
+        }
 
+        @if (tab() === 'about') {
         <section class="card card--about" aria-labelledby="about-heading">
           <img src="branding/statocyst-icon.png" alt="" class="about__icon" />
           <div>
@@ -470,6 +513,7 @@ import { formatBytes } from '../core/format';
             </p>
           </div>
         </section>
+        }
       </div>
     </section>
   `,
@@ -578,6 +622,41 @@ import { formatBytes } from '../core/format';
         letter-spacing: 0.12em;
         text-transform: uppercase;
         color: var(--muted);
+      }
+      .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: var(--surface-1);
+        flex-wrap: wrap;
+      }
+      .tab {
+        flex: 1 1 auto;
+        justify-content: center;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 0.84rem;
+        font-weight: 500;
+        padding: 8px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 140ms ease, color 140ms ease;
+      }
+      .tab:hover {
+        color: var(--text);
+      }
+      .tab.is-active {
+        background: linear-gradient(140deg, rgba(56, 225, 255, 0.24), rgba(167, 139, 250, 0.24));
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px rgba(56, 225, 255, 0.3);
       }
       .segmented {
         display: inline-flex;
@@ -866,6 +945,38 @@ export class SettingsViewComponent {
     return { trackId: current.trackId, percent };
   });
   private readonly toasts = inject(ToastStore);
+
+  protected readonly tab = signal<SettingsTab>('general');
+  protected readonly tabs = computed<Array<{ id: SettingsTab; label: string; icon: IconName }>>(() => {
+    const all: Array<{ id: SettingsTab; label: string; icon: IconName }> = [
+      { id: 'general', label: 'General', icon: 'settings' },
+      { id: 'jellyfin', label: 'Jellyfin', icon: 'wave' },
+      { id: 'storage', label: 'Storage', icon: 'download' },
+      { id: 'car', label: 'Car', icon: 'volume' },
+      { id: 'diagnostics', label: 'Diagnostics', icon: 'check' },
+      { id: 'about', label: 'About', icon: 'sparkles' },
+    ];
+    return this.isNative() ? all : all.filter((item) => item.id !== 'car');
+  });
+
+  protected selectTab(id: SettingsTab): void {
+    this.tab.set(id);
+  }
+
+  /** Arrow/Home/End move between tabs, as a tablist is expected to. */
+  protected onTabKey(event: KeyboardEvent): void {
+    const ids = this.tabs().map((item) => item.id);
+    const index = ids.indexOf(this.tab());
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % ids.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + ids.length) % ids.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = ids.length - 1;
+    else return;
+    event.preventDefault();
+    this.tab.set(ids[next]);
+    document.getElementById(`settings-tab-${ids[next]}`)?.focus();
+  }
 
   protected readonly info = signal<AppInfo | null>(null);
   protected readonly diagnostics = signal<DiagnosticsInfo | null>(null);

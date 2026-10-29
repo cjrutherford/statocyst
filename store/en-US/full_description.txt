@@ -1,0 +1,26 @@
+Statocyst is a music player for the library you already own. Play audio files stored on your device or stream from your own Jellyfin server. There are no ads, no accounts with us, and no tracking.
+
+PLAY YOUR MUSIC
+• Import individual files or whole folders from your device
+• Connect to your own Jellyfin server and browse your library
+• A queue that survives restarts so you can pick up where you left off
+• Background playback with lock-screen and notification controls
+
+MADE FOR LISTENING
+• Favorites, listening history and a speed-dial grid for quick access
+• Radio-style queue building from what you already listen to
+• Optional artwork lookup for albums and artists
+• Light, dark and system themes
+
+TAKE IT WITH YOU
+• Download tracks for offline listening
+• A rolling cache that prefetches upcoming tracks
+• Home-screen widgets: now playing, quick picks and speed dial
+• Android Auto support for your car display
+
+YOUR DATA STAYS YOURS
+• Your Jellyfin address, sign-in and library live on your device and talk only to the server you choose
+• Artwork lookup is optional and sends only album and artist names to MusicBrainz and the Cover Art Archive
+• No analytics, no advertising, no data sold
+
+Statocyst does not provide or host any music. You bring the files or the server.
