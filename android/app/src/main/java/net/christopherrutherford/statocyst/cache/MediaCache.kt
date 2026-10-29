@@ -9,6 +9,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.runBlocking
@@ -70,9 +71,9 @@ class MediaCache(private val context: Context) {
         val finalFile = File(directory, "$trackId.$ext")
         val partFile = File(directory, "$trackId.$ext.part")
 
-        val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
-        val serverUrl = prefs.getString("jellyfin_url", null) ?: return null
-        val token = prefs.getString("jellyfin_token", null) ?: return null
+        val session = JellyfinSessions.forTrack(context, track) ?: return null
+        val serverUrl = session.url
+        val token = session.token
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
 
         val budget = budget(requestedBudget)

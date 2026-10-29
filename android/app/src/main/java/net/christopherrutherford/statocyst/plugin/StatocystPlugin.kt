@@ -26,6 +26,8 @@ import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.downloads.DownloadCenter
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSession
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.downloads.QueueSnapshot
 import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.LibraryImporter
@@ -721,27 +723,50 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         val userId = call.getString("userId") ?: ""
         val token = call.getString("token") ?: ""
+        val serverId = call.getString("serverId")?.takeIf { it.isNotEmpty() } ?: url
+        if (url.isEmpty() || token.isEmpty()) {
+            call.reject("url and token required")
+            return
+        }
+        JellyfinSessions.save(context, JellyfinSession(serverId, url, userId, token))
+        call.resolve()
+    }
+
+    /** Forgets one server's session; its tracks stay so the user can sign back in. */
+    @PluginMethod
+    fun removeSession(call: PluginCall) {
         val serverId = call.getString("serverId") ?: ""
-        context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
-            .edit()
-            .putString("jellyfin_url", url)
-            .putString("jellyfin_user_id", userId)
-            .putString("jellyfin_token", token)
-            .putString("jellyfin_server_id", serverId)
-            .apply()
+        if (serverId.isNotEmpty()) JellyfinSessions.remove(context, serverId)
         call.resolve()
     }
 
     @PluginMethod
     fun clearSession(call: PluginCall) {
-        context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
-            .edit()
-            .remove("jellyfin_url")
-            .remove("jellyfin_user_id")
-            .remove("jellyfin_token")
-            .remove("jellyfin_server_id")
-            .apply()
+        JellyfinSessions.clear(context)
         call.resolve()
+    }
+
+    /**
+     * Removes a server for good: its session, its tracks and any downloads of them.
+     * Tracks synced before multi-server carry no server id; once no session is left
+     * they can only have come from the server being removed, so they go too.
+     */
+    @PluginMethod
+    fun removeServerData(call: PluginCall) {
+        val serverId = call.getString("serverId") ?: ""
+        if (serverId.isEmpty()) {
+            call.reject("serverId required")
+            return
+        }
+        io(call) {
+            JellyfinSessions.remove(context, serverId)
+            val ids = dao.idsByServer(serverId).toMutableList()
+            if (!JellyfinSessions.any(context)) ids += dao.unattributedRemoteIds()
+            ids.forEach { runCatching { downloads.remove(it) } }
+            ids.chunked(500).forEach { dao.deleteByIds(it) }
+            PlaybackService.onCatalogChanged()
+            call.resolve(JSObject().put("removed", ids.size))
+        }
     }
 
     // ------------------------------------------------------------- Jellyfin
@@ -782,6 +807,8 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         val userId = call.getString("userId") ?: ""
         val token = call.getString("token") ?: ""
+        val serverId = call.getString("serverId")?.takeIf { it.isNotEmpty() } ?: url
+        val serverName = call.getString("serverName")?.takeIf { it.isNotBlank() } ?: "Jellyfin"
         if (url.isEmpty() || userId.isEmpty() || token.isEmpty()) {
             call.reject("url, userId, and token required")
             return
@@ -795,7 +822,7 @@ class StatocystPlugin : Plugin() {
                 val (items, totalCount) = JellyfinClient.listAudioItems(url, userId, token, startIndex, pageSize)
                 total = totalCount
                 for (item in items) {
-                    dao.upsert(jellyfinEntity(item))
+                    dao.upsert(scopedToServer(jellyfinEntity(item, serverId, serverName)))
                     imported++
                 }
                 startIndex += items.size
@@ -887,8 +914,14 @@ class StatocystPlugin : Plugin() {
             return
         }
         io(call) {
+            // Probe a track that lives on this server; another server's item would 404
+            // here and wrongly mark a working session as signed out.
+            val serverId = call.getString("serverId").orEmpty()
             val itemId = call.getString("itemId")
-                ?: dao.getAll().firstOrNull { it.id.startsWith("jf-") }?.id?.removePrefix("jf-")
+                ?: dao.getAll().filter { it.sourceKind == "jellyfin" }.let { remote ->
+                    remote.firstOrNull { serverId.isNotEmpty() && it.serverId == serverId }
+                        ?: remote.firstOrNull { it.serverId.isEmpty() }
+                }?.let { it.path.ifEmpty { it.id.removePrefix("jf-") } }
             if (itemId == null) {
                 call.resolve(JSObject().put("valid", null as Any?))
                 return@io
@@ -1073,11 +1106,9 @@ class StatocystPlugin : Plugin() {
     }
 
     private fun remoteStreamUrl(track: MediaItemEntity): String? {
-        val prefs = context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
-        val serverUrl = prefs.getString("jellyfin_url", null) ?: return null
-        if (prefs.getString("jellyfin_token", null).isNullOrEmpty()) return null
+        val session = net.christopherrutherford.statocyst.jellyfin.JellyfinSessions.forTrack(context, track) ?: return null
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        return net.christopherrutherford.statocyst.jellyfin.JellyfinAuth.streamUrl(serverUrl, itemId)
+        return net.christopherrutherford.statocyst.jellyfin.JellyfinAuth.streamUrl(session.url, itemId)
     }
 
     private fun trackJson(t: MediaItemEntity): JSObject = JSObject()
@@ -1163,7 +1194,22 @@ class StatocystPlugin : Plugin() {
         .put("tracks", JSArray())
         .put("cancelled", cancelled)
 
-    private fun jellyfinEntity(item: org.json.JSONObject): MediaItemEntity {
+    /**
+     * Jellyfin item ids come from the file path, so two servers that index the same
+     * path (or a cloned server) hand out identical ids. The first server keeps the
+     * plain `jf-<id>` row; a second server's copy gets its own server-scoped id so
+     * it adds a track instead of overwriting the first server's.
+     */
+    private suspend fun scopedToServer(entity: MediaItemEntity): MediaItemEntity {
+        val itemId = entity.path
+        val tag = Integer.toHexString(entity.serverId.hashCode())
+        val scoped = entity.copy(id = "jf-$tag-$itemId", pathKey = "jellyfin:$tag:$itemId")
+        val plain = dao.getById(entity.id)
+        val ownedByOther = plain != null && plain.serverId.isNotEmpty() && plain.serverId != entity.serverId
+        return if (ownedByOther || dao.getById(scoped.id) != null) scoped else entity
+    }
+
+    private fun jellyfinEntity(item: org.json.JSONObject, serverId: String, serverName: String): MediaItemEntity {
         val source = item.optJSONArray("MediaSources")?.optJSONObject(0)
         val now = java.time.Instant.now().toString()
         return MediaItemEntity(
@@ -1196,9 +1242,10 @@ class StatocystPlugin : Plugin() {
                 ?: item.optJSONObject("ImageTags")?.optString("Primary")?.takeIf { it.isNotEmpty() },
             albumId = item.optString("AlbumId").takeIf { it.isNotEmpty() },
             sourceKind = "jellyfin",
-            sourceLabel = "Jellyfin",
+            sourceLabel = serverName,
             addedAt = now,
             updatedAt = now,
+            serverId = serverId,
         )
     }
 }

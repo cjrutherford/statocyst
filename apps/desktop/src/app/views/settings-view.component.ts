@@ -478,9 +478,9 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
         <section class="card card--wide" aria-labelledby="server-heading">
           <div class="card__head">
             <div>
-              <h2 id="server-heading">Jellyfin server</h2>
+              <h2 id="server-heading">Jellyfin servers</h2>
               <p class="card__hint">
-                Connect to a Jellyfin server to browse and stream its music library.
+                Connect as many Jellyfin servers as you like. Their libraries appear together as one.
               </p>
             </div>
           </div>

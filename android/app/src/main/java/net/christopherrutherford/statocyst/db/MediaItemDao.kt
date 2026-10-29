@@ -22,6 +22,15 @@ interface MediaItemDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: MediaItemEntity): Long
 
+    @Query("SELECT id FROM media_item WHERE serverId = :serverId")
+    suspend fun idsByServer(serverId: String): List<String>
+
+    @Query("SELECT id FROM media_item WHERE serverId = '' AND sourceKind LIKE 'jellyfin%'")
+    suspend fun unattributedRemoteIds(): List<String>
+
+    @Query("DELETE FROM media_item WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>): Int
+
     @Query("DELETE FROM media_item WHERE id = :id")
     suspend fun deleteById(id: String): Int
 }

@@ -33,12 +33,30 @@ object JellyfinArtwork {
             .digest("${serverUrl.trimEnd('/')}|$itemId|$tag|$height".toByteArray())
             .joinToString("") { "%02x".format(it) }
 
-    /** The cached or freshly downloaded image for the signed-in session, or null. */
-    fun fetch(context: Context, itemId: String, tag: String, height: Int = 300): File? {
-        val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
-        val server = prefs.getString("jellyfin_url", null)?.takeIf { it.isNotEmpty() } ?: return null
-        val token = prefs.getString("jellyfin_token", null)?.takeIf { it.isNotEmpty() } ?: return null
-        return download(server, token, itemId, tag, height, File(context.cacheDir, "jf-art"))
+    /**
+     * The cached or freshly downloaded image for [itemId], or null. [serverId] names
+     * the owning server when the caller knows it; otherwise every signed-in server is
+     * tried, cached copies first so a known image never costs a wrong-server request.
+     */
+    @JvmOverloads
+    fun fetch(context: Context, itemId: String, tag: String, height: Int = 300, serverId: String? = null): File? {
+        val dir = File(context.cacheDir, "jf-art")
+        val sessions = JellyfinSessions.all(context)
+        val hinted = sessions.firstOrNull { it.serverId == serverId }
+        val order = if (hinted != null) listOf(hinted) else sessions
+        if (isValidId(itemId) && isValidTag(tag)) {
+            for (session in order) {
+                val cached = File(dir, cacheKey(session.url, itemId, tag, height))
+                if (cached.isFile && cached.length() > 0) {
+                    cached.setLastModified(System.currentTimeMillis())
+                    return cached
+                }
+            }
+        }
+        for (session in order) {
+            download(session.url, session.token, itemId, tag, height, dir)?.let { return it }
+        }
+        return null
     }
 
     fun download(serverUrl: String, token: String, itemId: String, tag: String, height: Int, dir: File): File? {

@@ -12,6 +12,7 @@ import net.christopherrutherford.statocyst.downloads.DownloadManager
 import net.christopherrutherford.statocyst.artwork.ExternalArt
 import net.christopherrutherford.statocyst.jellyfin.ArtworkProvider
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 
 data class StreamResolution(
     val uri: String,
@@ -59,11 +60,10 @@ class SourceResolver(private val context: Context) {
         LocalMediaServer.localUri(context.applicationContext, file)
 
     private fun remoteStreamUrl(track: MediaItemEntity): String? {
-        val serverUrl = prefs.getString("jellyfin_url", null)?.takeIf { it.isNotEmpty() } ?: return null
-        prefs.getString("jellyfin_token", null)?.takeIf { it.isNotEmpty() } ?: return null
+        val session = JellyfinSessions.forTrack(context, track) ?: return null
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
         // The session token is added by the player's data source, not put in the URL.
-        return JellyfinAuth.streamUrl(serverUrl, itemId)
+        return JellyfinAuth.streamUrl(session.url, itemId)
     }
 
     /**
@@ -71,19 +71,18 @@ class SourceResolver(private val context: Context) {
      * by [ArtworkProvider], so the head unit and system UI can load it without
      * Jellyfin credentials. Null when there is no session or no album id.
      */
-    fun artworkUrl(albumId: String?, imageTag: String?): String? {
+    fun artworkUrl(albumId: String?, imageTag: String?, serverId: String? = null): String? {
         if (albumId.isNullOrEmpty()) return null
-        if (prefs.getString("jellyfin_url", null).isNullOrEmpty()) return null
-        if (prefs.getString("jellyfin_token", null).isNullOrEmpty()) return null
-        return ArtworkProvider.uri(context, albumId, imageTag)
+        if (!JellyfinSessions.any(context)) return null
+        return ArtworkProvider.uri(context, albumId, imageTag, serverId)
     }
 
     /**
      * Opt-in MusicBrainz artwork overrides the server's; the Jellyfin image is the fallback
      * when nothing is found online or the setting is off.
      */
-    fun artwork(albumId: String?, imageTag: String?, art: ArtKey?): String? {
-        val jellyfin = artworkUrl(albumId, imageTag)
+    fun artwork(albumId: String?, imageTag: String?, art: ArtKey?, serverId: String? = null): String? {
+        val jellyfin = artworkUrl(albumId, imageTag, serverId)
         val fallback = albumId?.takeIf { jellyfin != null }?.let { it to imageTag }
         val external = art?.let {
             if (it.album != null) ExternalArt.coverUri(context, it.artist, it.album, fallback)

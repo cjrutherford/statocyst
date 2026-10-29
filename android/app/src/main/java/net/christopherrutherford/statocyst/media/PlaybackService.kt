@@ -19,6 +19,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
+import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.radio.RadioBuilder
 import net.christopherrutherford.statocyst.radio.RadioScorer
 import net.christopherrutherford.statocyst.widget.NowPlayingWidget
@@ -347,7 +348,7 @@ class PlaybackService : MediaLibraryService() {
         }
         val (favorites, recents, playlistRows) = user
         val hasRemote = catalog.any { it.sourceKind.startsWith("jellyfin") }
-        val signedIn = !getSharedPreferences("statocyst", MODE_PRIVATE).getString("jellyfin_token", null).isNullOrEmpty()
+        val signedIn = JellyfinSessions.any(this)
         val notice = when {
             catalog.isEmpty() -> BrowseNotice.EMPTY_LIBRARY
             hasRemote && !signedIn -> BrowseNotice.SIGNED_OUT

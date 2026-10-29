@@ -1,17 +1,20 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   OnDestroy,
   signal,
 } from '@angular/core';
 import { IconComponent } from './icon.component';
+import type { JellyfinServerView } from '@statocyst/contracts';
 import { JellyfinStore } from '../core/jellyfin.store';
 import { ToastStore } from '../core/toast.store';
 
 /**
- * Single home for all Jellyfin management (add server, sign in, Quick Connect,
- * sync, sign out, remove). Shared by the library empty state and Settings so the
+ * Single home for all Jellyfin management (add servers, sign in, Quick Connect,
+ * sync, sign out, remove). Any number of servers can be connected; their
+ * libraries merge into one. Shared by the library empty state and Settings so the
  * two surfaces can never drift.
  */
 @Component({
@@ -25,27 +28,6 @@ import { ToastStore } from '../core/toast.store';
         <sc-icon name="alert" />
         Secure credential storage is unavailable, so sign-in is disabled.
       </div>
-    }
-
-    @if (jellyfin.servers().length === 0) {
-      <form class="server-form" (submit)="addServer($event)">
-        <label class="field server-form__url">
-          <span class="field__label">Server URL</span>
-          <input
-            type="url"
-            placeholder="https://jellyfin.example.com"
-            [value]="serverUrl()"
-            (input)="serverUrl.set($any($event.target).value)"
-          />
-        </label>
-        <button
-          type="submit"
-          class="btn btn--primary"
-          [disabled]="jellyfin.busy() || serverUrl().trim().length === 0"
-        >
-          <sc-icon name="external" /> Connect
-        </button>
-      </form>
     }
 
     @for (server of jellyfin.servers(); track server.id) {
@@ -85,14 +67,14 @@ import { ToastStore } from '../core/toast.store';
             </button>
           </div>
         } @else {
-          <form class="server-form" (submit)="login(server.url, $event)">
+          <form class="server-form" (submit)="login(server, $event)">
             <label class="field">
               <span class="field__label">Username</span>
               <input
                 type="text"
                 autocomplete="username"
-                [value]="username()"
-                (input)="username.set($any($event.target).value)"
+                [value]="draft(server.id).username"
+                (input)="setDraft(server.id, 'username', $any($event.target).value)"
               />
             </label>
             <label class="field">
@@ -100,8 +82,8 @@ import { ToastStore } from '../core/toast.store';
               <input
                 type="password"
                 autocomplete="current-password"
-                [value]="password()"
-                (input)="password.set($any($event.target).value)"
+                [value]="draft(server.id).password"
+                (input)="setDraft(server.id, 'password', $any($event.target).value)"
               />
             </label>
             <button
@@ -110,7 +92,7 @@ import { ToastStore } from '../core/toast.store';
               [disabled]="
                 jellyfin.busy() ||
                 !jellyfin.encryptionAvailable() ||
-                username().trim().length === 0
+                draft(server.id).username.trim().length === 0
               "
             >
               <sc-icon name="check" /> Sign in
@@ -120,7 +102,7 @@ import { ToastStore } from '../core/toast.store';
             </button>
           </form>
 
-          @if (quickConnectCode()) {
+          @if (quickConnectCode() && quickConnectUrl() === server.url) {
             <div class="quick-connect" role="status" aria-live="polite">
               <span class="quick-connect__label">Enter this code in your Jellyfin web UI:</span>
               <span class="quick-connect__code">{{ quickConnectCode() }}</span>
@@ -142,6 +124,35 @@ import { ToastStore } from '../core/toast.store';
         }
       </div>
     }
+
+    @if (jellyfinSyncable() > 1) {
+      <div class="server__actions">
+        <button type="button" class="btn" [disabled]="jellyfin.busy()" (click)="syncAll()">
+          <sc-icon name="refresh" /> Sync all servers
+        </button>
+      </div>
+    }
+
+    <form class="server-form server-form--add" (submit)="addServer($event)">
+      <label class="field server-form__url">
+        <span class="field__label">
+          {{ jellyfin.servers().length === 0 ? 'Server URL' : 'Add another server' }}
+        </span>
+        <input
+          type="url"
+          placeholder="https://jellyfin.example.com"
+          [value]="serverUrl()"
+          (input)="serverUrl.set($any($event.target).value)"
+        />
+      </label>
+      <button
+        type="submit"
+        class="btn btn--primary"
+        [disabled]="jellyfin.busy() || serverUrl().trim().length === 0"
+      >
+        <sc-icon name="plus" /> {{ jellyfin.servers().length === 0 ? 'Connect' : 'Add server' }}
+      </button>
+    </form>
 
     @if (jellyfin.busy()) {
       <p class="panel__hint">Contacting server…</p>
@@ -308,8 +319,12 @@ export class JellyfinPanelComponent implements OnDestroy {
   private readonly toasts = inject(ToastStore);
 
   protected readonly serverUrl = signal('');
-  protected readonly username = signal('');
-  protected readonly password = signal('');
+  /** Sign-in fields per server, so typing in one card never fills another. */
+  private readonly drafts = signal<Record<string, { username: string; password: string }>>({});
+  protected readonly quickConnectUrl = signal<string | null>(null);
+  protected readonly jellyfinSyncable = computed(
+    () => this.jellyfin.servers().filter((server) => server.connected).length,
+  );
   protected readonly quickConnectCode = signal<string | null>(null);
   protected readonly quickConnectSecret = signal<string | null>(null);
   private quickConnectTimer: ReturnType<typeof setInterval> | null = null;
@@ -322,11 +337,25 @@ export class JellyfinPanelComponent implements OnDestroy {
     this.serverUrl.set('');
   }
 
-  protected async login(url: string, event: Event): Promise<void> {
+  protected draft(serverId: string): { username: string; password: string } {
+    return this.drafts()[serverId] ?? { username: '', password: '' };
+  }
+
+  protected setDraft(serverId: string, field: 'username' | 'password', value: string): void {
+    this.drafts.update((all) => ({ ...all, [serverId]: { ...this.draft(serverId), [field]: value } }));
+  }
+
+  protected async login(server: JellyfinServerView, event: Event): Promise<void> {
     event.preventDefault();
-    await this.jellyfin.login(url, this.username().trim(), this.password());
-    this.username.set('');
-    this.password.set('');
+    const { username, password } = this.draft(server.id);
+    await this.jellyfin.login(server.url, username.trim(), password);
+    this.drafts.update((all) => ({ ...all, [server.id]: { username: '', password: '' } }));
+  }
+
+  protected async syncAll(): Promise<void> {
+    for (const server of this.jellyfin.servers().filter((entry) => entry.connected)) {
+      await this.jellyfin.sync(server.id);
+    }
   }
 
   protected async sync(serverId: string): Promise<void> {
@@ -349,6 +378,7 @@ export class JellyfinPanelComponent implements OnDestroy {
         return;
       }
       this.quickConnectSecret.set(result.value.secret);
+      this.quickConnectUrl.set(url);
       this.quickConnectCode.set(result.value.code);
       this.startQuickConnectPolling(url, result.value.secret);
     } catch (error) {
@@ -378,6 +408,7 @@ export class JellyfinPanelComponent implements OnDestroy {
       this.quickConnectTimer = null;
     }
     this.quickConnectCode.set(null);
+    this.quickConnectUrl.set(null);
     this.quickConnectSecret.set(null);
   }
 

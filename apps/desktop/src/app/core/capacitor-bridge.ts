@@ -133,40 +133,42 @@ export class CapacitorBridge {
     });
   }
 
+  /** The id native storage knows a server by: its Jellyfin id, or the entry id when discovery failed. */
+  private nativeServerId(server: JellyfinServerView): string {
+    return server.jellyfinId || server.id;
+  }
+
   /**
-   * Mirrors the stored Jellyfin session into native storage, which the download
-   * manager, rolling cache and stream resolver read. Picks a connected server
-   * that actually has a token, so a stale entry cannot blank a live session.
+   * Mirrors every stored Jellyfin session into native storage, which the download
+   * manager, rolling cache and stream resolver read. All signed-in servers are
+   * mirrored, so tracks from any of them stream, download and show artwork. A
+   * server with no token has its native session dropped, so a stale entry cannot
+   * keep a signed-out server alive.
    */
   private async mirrorSessionToNative(): Promise<void> {
     const plugin = this.plugin();
     if (!plugin?.saveSession) return;
-    const servers = this.loadServers();
-    const ordered = [
-      ...servers.filter((candidate) => candidate.connected),
-      ...servers.filter((candidate) => !candidate.connected),
-    ];
-    const withToken = ordered
-      .map((server) => ({
-        server,
-        token: localStorage.getItem(`statocyst.jellyfin.token.${server.id}`),
-        userId: localStorage.getItem(`statocyst.jellyfin.userId.${server.id}`),
-      }))
-      .find((candidate) => candidate.token && candidate.userId);
-    if (!withToken) return;
-    try {
-      await plugin.saveSession({
-        url: withToken.server.url,
-        userId: withToken.userId,
-        token: withToken.token,
-        serverId: withToken.server.jellyfinId || withToken.server.id,
-      });
-    } catch {
-      // The renderer still holds the session; a later login retries the mirror.
+    for (const server of this.loadServers()) {
+      const token = localStorage.getItem(`statocyst.jellyfin.token.${server.id}`);
+      const userId = localStorage.getItem(`statocyst.jellyfin.userId.${server.id}`);
+      try {
+        if (token && userId) {
+          await plugin.saveSession({
+            url: server.url,
+            userId,
+            token,
+            serverId: this.nativeServerId(server),
+          });
+        } else {
+          await plugin.removeSession?.({ serverId: this.nativeServerId(server) });
+        }
+      } catch {
+        // The renderer still holds the session; a later login retries the mirror.
+      }
     }
   }
 
-  /** Re-mirrors the best remaining session, or clears native storage when none. */
+  /** Re-mirrors the remaining sessions, or clears native storage when none are left. */
   private async refreshNativeSession(): Promise<void> {
     const servers = this.loadServers();
     const hasSession = servers.some(
@@ -1049,6 +1051,15 @@ export class CapacitorBridge {
             };
         const servers = this.loadServers();
         const existing = servers.findIndex((x) => x.url === server.url);
+        // Cloned servers (VM copies, the Jellyfin demo instances) report the same
+        // id. Sessions, tokens and track ownership are keyed by it, so give the
+        // newcomer its own id rather than letting it inherit another server's login.
+        if (servers.some((x, index) => index !== existing && x.id === server.id)) {
+          let hash = 0;
+          for (const ch of server.url) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+          server.id = `${server.id}-${hash.toString(36)}`;
+          if (server.jellyfinId) server.jellyfinId = server.id;
+        }
         if (existing >= 0) servers[existing] = server;
         else servers.push(server);
         this.saveServers(servers);
@@ -1097,10 +1108,21 @@ export class CapacitorBridge {
       return { ok: true, value: { removed: true } };
     },
     removeServer: async (serverId: string) => {
-      const servers = this.loadServers().filter((s) => s.id !== serverId);
+      const all = this.loadServers();
+      const removed = all.find((s) => s.id === serverId);
+      const servers = all.filter((s) => s.id !== serverId);
       this.saveServers(servers);
       localStorage.removeItem(`statocyst.jellyfin.token.${serverId}`);
       localStorage.removeItem(`statocyst.jellyfin.userId.${serverId}`);
+      // Drop the server's tracks and downloads along with its session, so the merged
+      // library never keeps tracks it can no longer play.
+      if (removed) {
+        try {
+          await this.plugin()?.removeServerData?.({ serverId: this.nativeServerId(removed) });
+        } catch {
+          // Native cleanup failing must not leave the server half-removed in the UI.
+        }
+      }
       await this.refreshNativeSession();
       return { ok: true, value: { removed: true } };
     },
@@ -1116,7 +1138,13 @@ export class CapacitorBridge {
           return { ok: false, error: { code: 'UNAUTHORIZED' as const, message: 'Not signed in' } };
         }
         const plugin = (window as any).Capacitor?.Plugins?.['Statocyst'];
-        const result = await plugin?.syncCatalog?.({ url: server.url, userId, token });
+        const result = await plugin?.syncCatalog?.({
+          url: server.url,
+          userId,
+          token,
+          serverId: this.nativeServerId(server),
+          serverName: server.name,
+        });
         // A successful sync is proof the session works, so heal a stale badge.
         if (!server.connected) {
           server.connected = true;
@@ -1351,7 +1379,7 @@ export class CapacitorBridge {
         // The probe is advisory and must never hold up the UI: while offline a
         // DNS lookup can hang well past any connection timeout.
         const probe = await Promise.race([
-          plugin?.validateSession?.({ url: server.url, token }),
+          plugin?.validateSession?.({ url: server.url, token, serverId: this.nativeServerId(server) }),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_500)),
         ]);
         if (probe?.valid === true && !server.connected) {

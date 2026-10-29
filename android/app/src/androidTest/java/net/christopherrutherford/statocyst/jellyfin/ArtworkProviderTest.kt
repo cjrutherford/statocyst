@@ -17,23 +17,22 @@ import java.io.FileNotFoundException
 
 class ArtworkProviderTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
-    private val prefs = context.getSharedPreferences("statocyst", Context.MODE_PRIVATE)
     private val server = "https://jf.invalid"
     private val png = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4, 5, 6, 7, 8)
-    private var savedUrl: String? = null
-    private var savedToken: String? = null
+    private var savedSessions: List<JellyfinSession> = emptyList()
     private val cached = mutableListOf<File>()
 
     @Before
     fun setUp() {
-        savedUrl = prefs.getString("jellyfin_url", null)
-        savedToken = prefs.getString("jellyfin_token", null)
-        prefs.edit().putString("jellyfin_url", server).putString("jellyfin_token", "tok").commit()
+        savedSessions = JellyfinSessions.all(context)
+        JellyfinSessions.clear(context)
+        JellyfinSessions.save(context, JellyfinSession("test-server", server, "user", "tok"))
     }
 
     @After
     fun tearDown() {
-        prefs.edit().putString("jellyfin_url", savedUrl).putString("jellyfin_token", savedToken).commit()
+        JellyfinSessions.clear(context)
+        savedSessions.forEach { JellyfinSessions.save(context, it) }
         cached.forEach { it.delete() }
     }
 
