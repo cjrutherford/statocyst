@@ -110,8 +110,7 @@ import { ToastStore } from '../core/toast.store';
               [disabled]="
                 jellyfin.busy() ||
                 !jellyfin.encryptionAvailable() ||
-                username().trim().length === 0 ||
-                password().length === 0
+                username().trim().length === 0
               "
             >
               <sc-icon name="check" /> Sign in

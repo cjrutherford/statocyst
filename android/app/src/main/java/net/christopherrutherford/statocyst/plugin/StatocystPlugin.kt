@@ -767,8 +767,8 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         val username = call.getString("username") ?: ""
         val password = call.getString("password") ?: ""
-        if (url.isEmpty() || username.isEmpty() || password.isEmpty()) {
-            call.reject("url, username, and password required")
+        if (url.isEmpty() || username.isEmpty()) {
+            call.reject("url and username required")
             return
         }
         io(call) {
