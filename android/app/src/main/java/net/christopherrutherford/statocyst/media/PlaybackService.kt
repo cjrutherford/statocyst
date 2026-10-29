@@ -21,6 +21,9 @@ import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import net.christopherrutherford.statocyst.radio.RadioBuilder
 import net.christopherrutherford.statocyst.radio.RadioScorer
+import net.christopherrutherford.statocyst.widget.NowPlayingWidget
+import net.christopherrutherford.statocyst.widget.WidgetState
+import net.christopherrutherford.statocyst.widget.WidgetStateStore
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
@@ -80,6 +83,7 @@ class PlaybackService : MediaLibraryService() {
             setWakeMode(C.WAKE_MODE_NETWORK)
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    publishWidget()
                     persistQueue()
                     extendContext()
                     prefetchCurrent(mediaItem)
@@ -99,6 +103,9 @@ class PlaybackService : MediaLibraryService() {
                     persistQueue()
                     refreshButtons()
                 }
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publishWidget()
+                override fun onPlaybackStateChanged(playbackState: Int) = publishWidget()
+                override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = publishWidget()
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) {
                         consecutiveErrors = 0
@@ -205,6 +212,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         try {
             persistQueue()
+            publishWidget(playing = false)
         } catch (e: Exception) {
             android.util.Log.w(TAG, "final persist failed", e)
         }
@@ -249,6 +257,29 @@ class PlaybackService : MediaLibraryService() {
         return GuavaList.of(shuffle, repeat, heart)
     }
 
+    /** Mirrors the current song into the home-screen widget. */
+    private fun publishWidget(playing: Boolean = isActivelyPlaying()) {
+        try {
+            val item = if (player.mediaItemCount == 0) null else player.currentMediaItem
+            val meta = item?.mediaMetadata
+            WidgetStateStore(this).save(
+                WidgetState(
+                    trackId = item?.let(QueueItems::trackIdOf),
+                    title = meta?.title?.toString(),
+                    artist = meta?.artist?.toString(),
+                    artworkUri = meta?.artworkUri?.toString(),
+                    playing = playing && item != null,
+                ),
+            )
+            NowPlayingWidget.refresh(this)
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "publishWidget failed", e)
+        }
+    }
+
+    private fun isActivelyPlaying(): Boolean =
+        player.playWhenReady && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)
+
     private fun refreshButtons() {
         if (!::librarySession.isInitialized) return
         librarySession.setMediaButtonPreferences(buttons())
@@ -259,6 +290,7 @@ class PlaybackService : MediaLibraryService() {
             try {
                 favoriteIds = withContext(Dispatchers.IO) { userDao.favorites().map { it.trackId }.toSet() }
                 refreshButtons()
+                NowPlayingWidget.refresh(this@PlaybackService)
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "loadFavorites failed", e)
             }
@@ -273,6 +305,7 @@ class PlaybackService : MediaLibraryService() {
                 val all = withContext(Dispatchers.IO) { userDao.favorites().map { it.trackId } }
                 favoriteIds = all.toSet()
                 refreshButtons()
+                NowPlayingWidget.refresh(this@PlaybackService)
                 notifyBrowseChanged(BrowseIds.FAVORITES)
                 favoritesListener?.invoke(all)
             } catch (e: Exception) {

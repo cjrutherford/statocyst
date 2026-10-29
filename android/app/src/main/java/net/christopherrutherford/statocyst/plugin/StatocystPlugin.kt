@@ -870,6 +870,7 @@ class StatocystPlugin : Plugin() {
                 context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
                     .edit().putBoolean("user_state_seeded", true).apply()
                 PlaybackService.onUserStateChanged()
+                net.christopherrutherford.statocyst.widget.NowPlayingWidget.refresh(context)
                 call.resolve(JSObject().put("favorites", favoriteRows.size).put("playlists", playlistRows.size))
             } catch (error: Exception) {
                 call.reject(error.message ?: "syncUserState failed", error)

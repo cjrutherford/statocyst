@@ -148,10 +148,8 @@ export class PlaybackStore {
     if (snapshot.state === 'ended' && snapshot.currentEntryId) {
       await this.command({ type: 'seek', positionMs: 0 });
     }
-    if (snapshot.currentEntryId) {
-      await this.command({ type: 'playEntry', entryId: snapshot.currentEntryId });
-      return;
-    }
+    // Resume in place: `play` without a track continues the current entry from its
+    // position, whereas `playEntry` re-selects it and starts from the beginning.
     await this.command({ type: 'play' });
   }
 

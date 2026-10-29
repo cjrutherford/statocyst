@@ -167,3 +167,5 @@ gh secret set ANDROID_KEY_PASSWORD        # keyPassword
 The release job reads them only to write a temporary `keystore.properties`,
 which is deleted at the end of the job. The Funnel publish in section 5 remains
 the way to ship to the tailnet; bump `versionCode`/`versionName` before tagging.
+
+For publishing through Google Play (AAB, Play App Signing, store listing, declarations, testing tracks) see [`PLAY_STORE.md`](PLAY_STORE.md).
