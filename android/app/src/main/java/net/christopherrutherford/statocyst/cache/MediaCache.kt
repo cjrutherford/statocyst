@@ -6,12 +6,13 @@ import net.christopherrutherford.statocyst.db.CacheEntryEntity
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
+import java.io.IOException
+import net.christopherrutherford.statocyst.downloads.DownloadCancelled
+import net.christopherrutherford.statocyst.downloads.DownloadCenter
+import net.christopherrutherford.statocyst.downloads.DownloadEvents
+import net.christopherrutherford.statocyst.downloads.ResumableDownload
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
-import java.net.URL
-import java.net.URLEncoder
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -29,6 +30,12 @@ class MediaCache(private val context: Context) {
     private val dao = database.cacheDao()
     private val mediaDao = database.mediaItemDao()
     private val directory = File(context.filesDir, "cache")
+
+    private companion object {
+        val inFlight: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+        /** Each wait is two seconds, so a prefetch gives up after about forty seconds offline. */
+        const val MAX_OFFLINE_WAITS = 20
+    }
 
     data class Stats(val bytes: Long, val entries: Int, val budgetBytes: Long, val pressure: Boolean)
 
@@ -63,6 +70,20 @@ class MediaCache(private val context: Context) {
         onProgress: (received: Long, total: Long?) -> Unit = { _, _ -> },
     ): File? {
         lookup(trackId)?.let { return it }
+        // Two callers asking for the same track would write the same .part file.
+        if (!inFlight.add(trackId)) return null
+        try {
+            return fetchIntoCache(trackId, requestedBudget, onProgress)
+        } finally {
+            inFlight.remove(trackId)
+        }
+    }
+
+    private fun fetchIntoCache(
+        trackId: String,
+        requestedBudget: Long,
+        onProgress: (received: Long, total: Long?) -> Unit,
+    ): File? {
         val track = runBlocking { mediaDao.getById(trackId) } ?: return null
         if (!track.sourceKind.startsWith("jellyfin")) return null
 
@@ -79,39 +100,37 @@ class MediaCache(private val context: Context) {
         val budget = budget(requestedBudget)
         if (budget <= 0) return null
 
-        try {
-            val connection = JellyfinAuth.open(JellyfinAuth.streamUrl(serverUrl, itemId), token)
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 30_000
-            connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Accept", "*/*")
-            try {
-                val code = connection.responseCode
-                if (code !in 200..299) return null
-                val total = connection.contentLengthLong.takeIf { it > 0 }
-                val buffer = ByteArray(64 * 1024)
-                var received = 0L
-                connection.inputStream.use { input ->
-                    FileOutputStream(partFile).use { output ->
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            received += read
-                            // Stop early rather than blow the budget on one track.
-                            if (received > budget) {
-                                output.flush()
-                                partFile.delete()
-                                return null
-                            }
-                            output.write(buffer, 0, read)
-                            onProgress(received, total)
-                        }
-                        output.flush()
-                    }
-                }
-            } finally {
-                connection.disconnect()
+        var overBudget = false
+        var giveUp = false
+        var waits = 0
+        val events = object : DownloadEvents {
+            override fun cancelled() = overBudget || giveUp
+            override fun online() = DownloadCenter.isOnline(context)
+            override fun waiting() { if (++waits > MAX_OFFLINE_WAITS) giveUp = true }
+            override fun progress(received: Long, total: Long?) {
+                // Stop early rather than blow the budget on one track.
+                if (received > budget || (total != null && total > budget)) overBudget = true
+                onProgress(received, total)
             }
+        }
+        val url = JellyfinAuth.streamUrl(serverUrl, itemId)
+        try {
+            // Resumes from the .part on a dropped connection, and keeps it when the
+            // network stays down so the next prefetch carries on instead of restarting.
+            ResumableDownload.fetch(
+                open = { rangeStart ->
+                    JellyfinAuth.open(url, token).also {
+                        it.connectTimeout = 15_000
+                        it.readTimeout = 30_000
+                        it.instanceFollowRedirects = false
+                        it.setRequestProperty("Accept", "*/*")
+                        if (rangeStart > 0) it.setRequestProperty("Range", "bytes=$rangeStart-")
+                    }
+                },
+                target = partFile,
+                events = events,
+                maxAttempts = 3,
+            )
             if (partFile.length() <= 0) {
                 partFile.delete()
                 return null
@@ -136,6 +155,11 @@ class MediaCache(private val context: Context) {
             }
             trimToBudget(budget)
             return if (finalFile.isFile) finalFile else null
+        } catch (error: DownloadCancelled) {
+            if (overBudget) partFile.delete()
+            return null
+        } catch (error: IOException) {
+            return null
         } catch (error: Exception) {
             partFile.delete()
             return null

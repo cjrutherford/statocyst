@@ -30,6 +30,11 @@ class SourceResolver(private val context: Context) {
     private val dao by lazy { StatocystDatabase.getInstance(context).mediaItemDao() }
     private val downloads by lazy { DownloadManager(context) }
     private val cache by lazy { MediaCache(context) }
+    private companion object {
+        val prefetchExecutor: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val queued = mutableListOf<java.util.concurrent.Future<*>>()
+    }
+
     private val prefs by lazy { context.getSharedPreferences("statocyst", Context.MODE_PRIVATE) }
 
     suspend fun prepare(trackId: String): PreparedTrack? = withContext(Dispatchers.IO) {
@@ -49,12 +54,24 @@ class SourceResolver(private val context: Context) {
     suspend fun resolve(trackId: String): StreamResolution? =
         prepare(trackId)?.let { StreamResolution(it.uri) }
 
-    /** Starts the rolling-cache prefetch for a remote track on a worker thread. */
-    fun prefetch(trackId: String) {
+    /**
+     * Fetches the given tracks into the rolling cache, one after another and in the given order.
+     * A new call drops whatever the previous one still had queued, so skipping through a queue
+     * does not leave a backlog of downloads nobody wants any more.
+     */
+    fun prefetch(trackIds: List<String>) {
         val budget = prefs.getLong("cache_budget_bytes", 0L)
         if (budget <= 0) return
-        Thread { runCatching { cache.prefetch(trackId, budget) } }.start()
+        synchronized(queued) {
+            queued.forEach { it.cancel(false) }
+            queued.clear()
+            trackIds.forEach { id ->
+                queued.add(prefetchExecutor.submit { runCatching { cache.prefetch(id, budget) } })
+            }
+        }
     }
+
+    fun prefetch(trackId: String) = prefetch(listOf(trackId))
 
     private fun localUri(file: File): String? =
         LocalMediaServer.localUri(context.applicationContext, file)

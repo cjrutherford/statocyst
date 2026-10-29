@@ -12,9 +12,11 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
@@ -42,7 +44,12 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,6 +80,14 @@ class PlaybackService : MediaLibraryService() {
     private val player: ExoPlayer by lazy {
         ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(JellyfinAuth.dataSourceFactory(this)))
+            // Audio is small, so hold minutes of it rather than the default fifty seconds:
+            // a tunnel or a dead spot then passes without the music stopping.
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(60_000, 180_000, 2_000, 5_000)
+                    .setTargetBufferBytes(48 * 1024 * 1024)
+                    .build(),
+            )
             .build().apply {
             setAudioAttributes(
                 AudioAttributes.Builder()
@@ -106,7 +121,10 @@ class PlaybackService : MediaLibraryService() {
                     refreshButtons()
                 }
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = publishWidget()
-                override fun onPlaybackStateChanged(playbackState: Int) = publishWidget()
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) endRecovery()
+                    publishWidget()
+                }
                 override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = publishWidget()
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     if (isPlaying) {
@@ -130,6 +148,11 @@ class PlaybackService : MediaLibraryService() {
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     android.util.Log.w(TAG, "player error: ${error.errorCodeName}", error)
+                    val http = (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode
+                    if (PlaybackFailures.isNetworkLoss(error.errorCode, http)) {
+                        recoverFromNetworkLoss(error)
+                        return
+                    }
                     reportFailure(error)
                     // Skip an unplayable item (offline, expired token, deleted file) instead
                     // of stalling, but stop once every remaining item has failed in a row.
@@ -143,6 +166,67 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var consecutiveErrors = 0
+
+    private val networkSignal = Channel<Unit>(Channel.CONFLATED)
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var recovery: Job? = null
+    private var recoveryAttempts = 0
+
+    /** Wakes a waiting recovery the moment a network appears instead of sleeping out the backoff. */
+    private fun watchNetwork() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                networkSignal.trySend(Unit)
+            }
+        }
+        if (runCatching { cm.registerDefaultNetworkCallback(callback) }.isSuccess) networkCallback = callback
+    }
+
+    private fun endRecovery() {
+        recovery?.cancel()
+        recovery = null
+        recoveryAttempts = 0
+    }
+
+    /**
+     * The stream died because the connection or the server did. Keep the song and its position,
+     * and re-resolve it every so often: a server that just failed is skipped so a duplicate on
+     * another server takes over, a finished cache copy is used, and a returning network resumes
+     * playback where it stopped. After the last attempt playback pauses in place, not skips on.
+     */
+    private fun recoverFromNetworkLoss(error: PlaybackException) {
+        if (recovery?.isActive == true) return
+        recovery = scope.launch {
+            while (isActive) {
+                if (recoveryAttempts >= PlaybackFailures.RECOVERY_BACKOFF_MS.size) {
+                    endRecovery()
+                    reportFailure(error)
+                    player.pause()
+                    return@launch
+                }
+                val wait = PlaybackFailures.RECOVERY_BACKOFF_MS[recoveryAttempts++]
+                withTimeoutOrNull(wait) { networkSignal.receive() }
+                if (!isOnline()) continue
+                val current = player.currentMediaItem ?: return@launch
+                val index = player.currentMediaItemIndex
+                val position = player.currentPosition
+                current.localConfiguration?.uri?.toString()
+                    ?.let { JellyfinSessions.forUri(this@PlaybackService, it) }
+                    ?.let { StreamFailover.markFailed(it.serverId) }
+                val fresh = resolveItem(current) ?: continue
+                player.replaceMediaItem(index, fresh.buildUpon().setMediaId(current.mediaId).build())
+                player.seekTo(index, position)
+                player.prepare()
+                // Give the new source time to buffer before judging it failed.
+                var waited = 0
+                while (waited < 15_000 && player.playerError == null && player.playbackState != Player.STATE_READY) {
+                    delay(500)
+                    waited += 500
+                }
+            }
+        }
+    }
 
     /** Tells the car and notification why a song failed instead of just skipping it. */
     private fun reportFailure(error: PlaybackException) {
@@ -161,6 +245,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        watchNetwork()
         // Create notification channel
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
@@ -219,6 +304,7 @@ class PlaybackService : MediaLibraryService() {
             android.util.Log.w(TAG, "final persist failed", e)
         }
         if (instance === this) instance = null
+        networkCallback?.let { runCatching { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(it) } }
         scope.cancel()
         librarySession.release()
         player.release()
@@ -410,10 +496,24 @@ class PlaybackService : MediaLibraryService() {
     private fun prefetchCurrent(item: MediaItem?) {
         item ?: return
         val trackId = QueueItems.trackIdOf(item)
-        if (item.localConfiguration?.uri?.host?.let { it != "127.0.0.1" } == true) {
-            resolver.prefetch(trackId)
+        val upcoming = mutableListOf<String>()
+        if (isRemote(item)) upcoming.add(trackId)
+        // The songs about to play, in the order they will play (shuffle included), so a
+        // dropped connection between songs finds the next one already on the device.
+        val current = player.currentMediaItemIndex
+        var index = current
+        for (step in 0 until PREFETCH_AHEAD) {
+            index = player.currentTimeline.getNextWindowIndex(index, player.repeatMode, player.shuffleModeEnabled)
+            // The end of the queue, or repeat-one looping back to the song that is playing.
+            if (index == C.INDEX_UNSET || index == current) break
+            val next = player.getMediaItemAt(index)
+            if (isRemote(next)) upcoming.add(QueueItems.trackIdOf(next))
         }
+        if (upcoming.isNotEmpty()) resolver.prefetch(upcoming)
     }
+
+    private fun isRemote(item: MediaItem): Boolean =
+        item.localConfiguration?.uri?.host?.let { it != "127.0.0.1" } == true
 
     /** Resolves a queue slot placeholder into a playable item with full metadata. */
     private suspend fun resolveItem(item: MediaItem): MediaItem? {
@@ -878,6 +978,8 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "PlaybackService"
+        /** How many upcoming songs are fetched onto the device while the current one plays. */
+        private const val PREFETCH_AHEAD = 2
         private const val POSITION_SAVE_MS = 5_000L
         private const val CHANNEL_ID = "statocyst_media"
         private const val RECENT_LIMIT = 100

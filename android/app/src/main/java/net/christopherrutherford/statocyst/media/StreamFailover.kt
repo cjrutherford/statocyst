@@ -34,6 +34,11 @@ object StreamFailover {
 
     private val health = ConcurrentHashMap<String, Pair<Boolean, Long>>()
 
+    /** Records that [serverId] just failed mid-stream, so the next pick looks at its alternates. */
+    fun markFailed(serverId: String, now: Long = System.currentTimeMillis()) {
+        health[serverId] = false to now
+    }
+
     internal fun resetHealth() = health.clear()
 
     /** Copies of [track] on other servers. */
