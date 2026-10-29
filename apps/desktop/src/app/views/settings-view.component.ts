@@ -118,10 +118,12 @@ import { formatBytes } from '../core/format';
             Radio, Albums, Artists and Tracks from the head unit, or ask Assistant to play something.
           </p>
           <ol class="car-steps">
-            <li>Open your phone's Android Auto settings and tap the version number ten times to enable developer settings.</li>
-            <li>In the developer settings, turn on <strong>Unknown sources</strong> (this build is installed outside Google Play).</li>
-            <li>Back in Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
-            <li>Reconnect to the car. Statocyst appears in the media app list.</li>
+            <li>Connect your phone to the car. Statocyst appears in the media app list.</li>
+            <li>If it is missing, open Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
+            <li>
+              Still missing, and installed outside Google Play? Tap the Android Auto version number ten
+              times to enable developer settings, then turn on <strong>Unknown sources</strong>.
+            </li>
           </ol>
           @if (browseAccess(); as access) {
             <h3 class="section-label">Head units and controllers</h3>

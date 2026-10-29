@@ -159,6 +159,7 @@ import { formatDuration } from '../core/format';
     `
       .view { display: grid; gap: clamp(16px, 2vw, 26px); padding: clamp(20px, 3vw, 38px); max-width: 1480px; margin: 0 auto; animation: rise 380ms ease both; }
       .view__head { display: flex; flex-direction: column; gap: 4px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       h1 { font-size: clamp(2rem, 3.4vw, 3rem); letter-spacing: -0.03em; margin: 4px 0 6px; }
       .lede { color: var(--muted); max-width: 58ch; margin: 0; font-size: 0.92rem; }
       .smart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }

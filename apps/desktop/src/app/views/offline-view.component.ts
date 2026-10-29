@@ -46,7 +46,7 @@ import { formatDuration, formatBytes } from '../core/format';
             <caption class="sr-only">Offline tracks available without a network.</caption>
             <thead>
               <tr>
-                <th scope="col">#</th>
+                <th scope="col" class="col-index">#</th>
                 <th scope="col">Title</th>
                 <th scope="col" class="col-album">Album</th>
                 <th scope="col" class="col-format">Source</th>
@@ -130,6 +130,11 @@ import { formatDuration, formatBytes } from '../core/format';
       .col-format { color: var(--muted); font-size: 0.78rem; }
       .col-duration { color: var(--muted); font-variant-numeric: tabular-nums; }
       .col-actions { text-align: right; white-space: nowrap; }
+      @media (max-width: 720px) {
+        .col-index, .col-album, .col-format, .col-duration { display: none; }
+        .track-table th, .track-table td { padding: 10px 8px; }
+        .title-btn { min-width: 0; }
+      }
     `,
   ],
 })
