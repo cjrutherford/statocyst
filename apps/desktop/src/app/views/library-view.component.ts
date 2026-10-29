@@ -45,46 +45,48 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             Your imported audio and Jellyfin catalog live on this device. Nothing is uploaded.
           </p>
         </div>
-        <div class="actions">
-          <button
-            type="button"
-            class="btn btn--primary"
-            [disabled]="library.importing()"
-            (click)="library.pickFiles()"
-          >
-            <sc-icon name="file-plus" />
-            Import files
-          </button>
-          <button
-            type="button"
-            class="btn"
-            [disabled]="library.importing()"
-            (click)="library.pickFolder()"
-          >
-            <sc-icon name="folder" />
-            Import folder
-          </button>
-          @if (!isNative()) {
+        @if (!library.isEmpty()) {
+          <div class="actions">
             <button
               type="button"
-              class="btn btn--quiet"
+              class="btn btn--primary"
               [disabled]="library.importing()"
-              (click)="library.importDemo()"
+              (click)="library.pickFiles()"
             >
-              <sc-icon name="sparkles" />
-              Load demo
+              <sc-icon name="file-plus" />
+              Import files
             </button>
-          }
-          <button
-            type="button"
-            class="btn"
-            [disabled]="filtered().length === 0"
-            (click)="shuffleAll()"
-          >
-            <sc-icon name="shuffle" />
-            Shuffle all
-          </button>
-        </div>
+            <button
+              type="button"
+              class="btn"
+              [disabled]="library.importing()"
+              (click)="library.pickFolder()"
+            >
+              <sc-icon name="folder" />
+              Import folder
+            </button>
+            @if (!isNative()) {
+              <button
+                type="button"
+                class="btn btn--quiet"
+                [disabled]="library.importing()"
+                (click)="library.importDemo()"
+              >
+                <sc-icon name="sparkles" />
+                Load demo
+              </button>
+            }
+            <button
+              type="button"
+              class="btn"
+              [disabled]="filtered().length === 0"
+              (click)="shuffleAll()"
+            >
+              <sc-icon name="shuffle" />
+              Shuffle all
+            </button>
+          </div>
+        }
       </header>
 
       @if (library.importing()) {
@@ -144,7 +146,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
 
       @if (library.isEmpty()) {
         <div class="empty">
-          <img src="branding/statocyst-symbol.png" alt="" class="empty__mark" />
+          <img src="branding/statocyst-icon.png" alt="" class="empty__mark" />
           <h2>Your library is silent</h2>
           <p>
             Stream from a Jellyfin server to start listening, or import audio from this device.
@@ -154,8 +156,8 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             <button type="button" class="btn btn--primary" (click)="showJellyfinSetup.set(true)">
               <sc-icon name="external" /> Connect to Jellyfin
             </button>
-            <p class="empty__setup-hint" style="margin-top: 8px; font-size: 0.85em; opacity: 0.7;">
-              Supports password login and Quick Connect (SSO-friendly)
+            <p class="empty__setup-hint empty__setup-hint--fine">
+              Sign in with a password or Quick Connect. Use an https:// server address.
             </p>
           </div>
           <div class="empty__actions">
@@ -722,8 +724,8 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       .empty__mark {
         width: 96px;
         height: 96px;
-        object-fit: contain;
-        opacity: 0.85;
+        object-fit: cover;
+        border-radius: 22px;
         filter: drop-shadow(0 0 22px rgba(56, 225, 255, 0.3));
       }
       .empty h2 {
@@ -754,6 +756,12 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         color: var(--muted);
         font-size: 0.82rem;
         margin: 0;
+      }
+      .empty__setup-hint--fine {
+        flex-basis: 100%;
+        margin-top: 8px;
+        font-size: 0.78rem;
+        opacity: 0.8;
       }
       .empty__jellyfin {
         display: grid;

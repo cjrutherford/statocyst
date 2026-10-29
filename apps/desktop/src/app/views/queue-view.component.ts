@@ -16,7 +16,7 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
           <p class="eyebrow">Session queue</p>
           <h1 id="queue-heading">Queue</h1>
           <p class="lede">
-            One authoritative queue per player, restored after a restart.
+            Your play queue. It is restored when you reopen the app.
           </p>
         </div>
         <div class="actions">

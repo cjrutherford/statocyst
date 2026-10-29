@@ -191,8 +191,8 @@ interface NavItem {
         grid-template-rows: minmax(0, 1fr) auto;
         height: 100vh;
         height: 100dvh;
-        padding-top: env(safe-area-inset-top);
-        padding-bottom: env(safe-area-inset-bottom);
+        padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+        padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
         box-sizing: border-box;
       }
       .sidebar {
@@ -503,6 +503,8 @@ interface NavItem {
         .app {
           grid-template-columns: 1fr;
           grid-template-rows: minmax(0, 1fr) auto auto;
+          /* The bottom inset is applied once, under the tab bar, so it keeps the tab bar's own background. */
+          padding-bottom: 0;
         }
         .sidebar {
           grid-column: 1;
@@ -510,7 +512,7 @@ interface NavItem {
           flex-direction: row;
           align-items: stretch;
           gap: 4px;
-          padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+          padding: 6px 8px calc(6px + max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)));
           border-right: 0;
           border-top: 1px solid var(--line);
         }

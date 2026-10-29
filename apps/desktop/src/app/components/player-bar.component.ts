@@ -57,6 +57,7 @@ import { formatDuration } from '../core/format';
             type="button"
             class="icon-btn"
             aria-label="Previous track"
+            [disabled]="idle()"
             title="Previous (P)"
             (click)="playback.previous()"
           >
@@ -68,6 +69,7 @@ import { formatDuration } from '../core/format';
             [class.is-live]="playback.isPlaying()"
             [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
             title="Play or pause (Space)"
+            [disabled]="idle()"
             (click)="playback.toggle()"
           >
             <sc-icon [name]="playback.isPlaying() ? 'pause' : 'play'" />
@@ -76,6 +78,7 @@ import { formatDuration } from '../core/format';
             type="button"
             class="icon-btn"
             aria-label="Next track"
+            [disabled]="idle()"
             title="Next (N)"
             (click)="playback.next()"
           >
@@ -228,6 +231,11 @@ import { formatDuration } from '../core/format';
         align-items: center;
         justify-content: center;
         gap: clamp(6px, 1.2vw, 14px);
+      }
+      .player__play:disabled {
+        opacity: 0.45;
+        box-shadow: none;
+        cursor: default;
       }
       .player__play {
         width: 46px;
@@ -389,6 +397,10 @@ export class PlayerBarComponent {
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
 
+  /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
+  protected readonly idle = computed(
+    () => !this.playback.track() && this.playback.queue().entries.length === 0,
+  );
   protected readonly displayPosition = computed(() =>
     this.dragging() ? this.dragValue() : this.playback.snapshot().positionMs,
   );

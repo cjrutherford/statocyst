@@ -35,7 +35,7 @@ import { formatBytes } from '../core/format';
         <div>
           <p class="eyebrow">Preferences</p>
           <h1 id="settings-heading">Settings</h1>
-          <p class="lede">Appearance, diagnostics and the local data boundary.</p>
+          <p class="lede">Appearance, playback, Android Auto and on-device data.</p>
         </div>
         <button type="button" class="btn btn--quiet" (click)="refresh()">
           <sc-icon name="refresh" /> Refresh diagnostics

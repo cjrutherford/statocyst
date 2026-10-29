@@ -280,7 +280,7 @@ button {
 }
 
 .btn--quiet {
-  border-color: transparent;
+  border-color: var(--line);
   background: transparent;
   color: var(--muted);
 }
