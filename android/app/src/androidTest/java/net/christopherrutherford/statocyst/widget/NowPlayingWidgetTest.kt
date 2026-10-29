@@ -21,6 +21,7 @@ import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.PlaylistEntity
 import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
+import net.christopherrutherford.statocyst.media.BrowseIds
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.TestAudio
 import org.junit.After
@@ -83,43 +84,83 @@ class NowPlayingWidgetTest {
         thread.quitSafely()
     }
 
+    private fun tiles(contextId: String) =
+        (1..6).map { Tile(ids[it - 1], "Widget Song $it", "ZZ Artist", null, contextId) }
+
     @Test
     fun rendersTheCurrentSongAndOnlyTheTopFavorites() {
-        val rows = (1..6).map { NowPlayingWidget.Companion.FavoriteRow(ids[it - 1], "Widget Song $it – ZZ Artist") }
-            .take(NowPlayingWidget.FAVORITE_ROWS)
         val state = WidgetState(trackId = ids[0], title = "Widget Song 1", artist = "ZZ Artist", playing = true)
-        val root = inflate(NowPlayingWidget.render(context, state, rows))
+        val root = inflate(NowPlayingWidget.render(context, WidgetData(state, true, tiles(BrowseIds.FAVORITES))))
 
         assertEquals("Widget Song 1", root.findViewById<TextView>(R.id.widget_title).text.toString())
         assertEquals("ZZ Artist", root.findViewById<TextView>(R.id.widget_artist).text.toString())
         assertEquals("Pause", root.findViewById<View>(R.id.widget_play_pause).contentDescription.toString())
         assertEquals(View.VISIBLE, root.findViewById<View>(R.id.widget_fav_4).visibility)
-        assertEquals("Widget Song 4 – ZZ Artist", root.findViewById<TextView>(R.id.widget_fav_4).text.toString())
+        assertEquals("Widget Song 4 \u2013 ZZ Artist", root.findViewById<TextView>(R.id.widget_fav_4).text.toString())
         assertEquals(View.GONE, root.findViewById<View>(R.id.widget_fav_empty).visibility)
-        snapshot(root, "widget-playing.png")
+        snapshot(root, "widget-playing.png", 300, 190)
 
-        val idle = inflate(NowPlayingWidget.render(context, WidgetState(), emptyList()))
+        val idle = inflate(NowPlayingWidget.render(context, WidgetData(WidgetState())))
         assertEquals(context.getString(R.string.widget_nothing_playing), idle.findViewById<TextView>(R.id.widget_title).text.toString())
         assertEquals("Play", idle.findViewById<View>(R.id.widget_play_pause).contentDescription.toString())
         assertEquals(View.GONE, idle.findViewById<View>(R.id.widget_fav_1).visibility)
         assertEquals(View.VISIBLE, idle.findViewById<View>(R.id.widget_fav_empty).visibility)
-        snapshot(idle, "widget-idle.png")
+        snapshot(idle, "widget-idle.png", 300, 190)
     }
 
     @Test
-    fun tappingAFavoritePlaysItAndQueuesTheFavoritesAroundIt() {
+    fun largeAndCompactPlayersShowTheSongAndFavoriteState() {
+        val state = WidgetState(trackId = ids[0], title = "Widget Song 1", artist = "ZZ Artist", playing = true)
+        val large = inflate(NowPlayingLargeWidget.render(context, WidgetData(state, currentIsFavorite = true)))
+        assertEquals("Widget Song 1", large.findViewById<TextView>(R.id.widget_title).text.toString())
+        assertEquals(View.VISIBLE, large.findViewById<View>(R.id.widget_favorite).visibility)
+        snapshot(large, "widget-large.png", 300, 130)
+        val idleLarge = inflate(NowPlayingLargeWidget.render(context, WidgetData(WidgetState())))
+        assertEquals(View.INVISIBLE, idleLarge.findViewById<View>(R.id.widget_favorite).visibility)
+
+        val compact = inflate(NowPlayingCompactWidget.render(context, WidgetData(state)))
+        assertEquals("Widget Song 1", compact.findViewById<TextView>(R.id.widget_title).text.toString())
+        assertEquals("Pause", compact.findViewById<View>(R.id.widget_play_pause).contentDescription.toString())
+        snapshot(compact, "widget-compact.png", 300, 64)
+    }
+
+    @Test
+    fun quickPicksShowRecentsThenFavoritesWithoutDuplicates() {
+        val recents = tiles(BrowseIds.RECENTS).take(3)
+        val data = WidgetData(WidgetState(), favorites = tiles(BrowseIds.FAVORITES), recents = recents)
+        val picks = QuickPicksWidget.picks(data)
+        assertEquals(6, picks.size)
+        assertEquals(ids.take(3), picks.take(3).map { it.trackId })
+        assertEquals(BrowseIds.FAVORITES, picks[3].contextId)
+        assertEquals(picks.size, picks.map { it.trackId }.toSet().size)
+
+        val root = inflate(QuickPicksWidget.render(context, data))
+        assertEquals("Widget Song 1", root.findViewById<TextView>(R.id.pick_1_title).text.toString())
+        assertEquals(View.VISIBLE, root.findViewById<View>(R.id.pick_6).visibility)
+        assertEquals(View.INVISIBLE, root.findViewById<View>(R.id.pick_7).visibility)
+        assertEquals(View.GONE, root.findViewById<View>(R.id.picks_empty).visibility)
+        snapshot(root, "widget-picks.png", 300, 190)
+
+        val empty = inflate(QuickPicksWidget.render(context, WidgetData(WidgetState())))
+        assertEquals(View.VISIBLE, empty.findViewById<View>(R.id.picks_empty).visibility)
+        assertEquals(View.GONE, empty.findViewById<View>(R.id.picks_row_2).visibility)
+    }
+
+    @Test
+    fun tappingATilePlaysItAndQueuesItsListAroundIt() {
         context.stopService(Intent(context, PlaybackService::class.java))
         Thread.sleep(1_500)
         context.sendBroadcast(
-            Intent(WidgetActionReceiver.ACTION_PLAY_FAVORITE)
+            Intent(WidgetActionReceiver.ACTION_PLAY_TRACK)
                 .setComponent(ComponentName(context, WidgetActionReceiver::class.java))
-                .putExtra(WidgetActionReceiver.EXTRA_TRACK_ID, ids[2]),
+                .putExtra(WidgetActionReceiver.EXTRA_TRACK_ID, ids[2])
+                .putExtra(WidgetActionReceiver.EXTRA_CONTEXT, BrowseIds.FAVORITES),
         )
 
         val b = MediaBrowser.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
             .setApplicationLooper(thread.looper).buildAsync().get(15, TimeUnit.SECONDS)
         browser = b
-        waitFor("favorite playing") { app { b.isPlaying } }
+        waitFor("tile playing") { app { b.isPlaying } }
         assertEquals("Widget Song 3", app { b.mediaMetadata.title?.toString() })
         assertTrue("favorites should be queued around it", app { b.mediaItemCount } >= ids.size)
 
@@ -127,6 +168,30 @@ class NowPlayingWidgetTest {
         waitFor("widget state published") {
             WidgetStateStore(context).load().let { it.title == "Widget Song 3" && it.playing }
         }
+    }
+
+    @Test
+    fun theHeartTogglesTheCurrentSongAsAFavorite() {
+        context.stopService(Intent(context, PlaybackService::class.java))
+        Thread.sleep(1_500)
+        context.sendBroadcast(
+            Intent(WidgetActionReceiver.ACTION_PLAY_TRACK)
+                .setComponent(ComponentName(context, WidgetActionReceiver::class.java))
+                .putExtra(WidgetActionReceiver.EXTRA_TRACK_ID, ids[1])
+                .putExtra(WidgetActionReceiver.EXTRA_CONTEXT, BrowseIds.FAVORITES),
+        )
+        val b = MediaBrowser.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java)))
+            .setApplicationLooper(thread.looper).buildAsync().get(15, TimeUnit.SECONDS)
+        browser = b
+        waitFor("song playing") { app { b.isPlaying } }
+        assertTrue(runBlocking { db.userDao().favorites() }.any { it.trackId == ids[1] })
+
+        context.sendBroadcast(
+            Intent(WidgetActionReceiver.ACTION_TOGGLE_FAVORITE)
+                .setComponent(ComponentName(context, WidgetActionReceiver::class.java)),
+        )
+        waitFor("unfavorited") { runBlocking { db.userDao().favorites() }.none { it.trackId == ids[1] } }
+        assertTrue(!Widgets.load(context).currentIsFavorite)
     }
 
     private fun entity(id: String, title: String, file: File) = MediaItemEntity(
@@ -147,10 +212,10 @@ class NowPlayingWidgetTest {
     }
 
     /** Draws the inflated widget at a 4x3-cell size so the layout can be looked at. */
-    private fun snapshot(view: View, name: String) {
+    private fun snapshot(view: View, name: String, widthDp: Int, heightDp: Int) {
         val d = context.resources.displayMetrics.density
-        val w = (300 * d).toInt()
-        val h = (190 * d).toInt()
+        val w = (widthDp * d).toInt()
+        val h = (heightDp * d).toInt()
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             view.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY))
             view.layout(0, 0, w, h)

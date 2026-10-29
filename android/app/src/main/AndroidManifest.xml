@@ -55,11 +55,29 @@
             android:foregroundServiceType="dataSync" />
 
         <!-- Home-screen widget: now playing + top favorites. -->
-        <receiver android:name=".widget.NowPlayingWidget" android:exported="true" android:label="@string/app_name">
+        <receiver android:name=".widget.NowPlayingWidget" android:exported="true" android:label="Player + favorites">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/now_playing_widget_info" />
+        </receiver>
+        <receiver android:name=".widget.NowPlayingLargeWidget" android:exported="true" android:label="Now playing">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/now_playing_large_widget_info" />
+        </receiver>
+        <receiver android:name=".widget.NowPlayingCompactWidget" android:exported="true" android:label="Now playing (slim)">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/now_playing_compact_widget_info" />
+        </receiver>
+        <receiver android:name=".widget.QuickPicksWidget" android:exported="true" android:label="Quick picks">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/quick_picks_widget_info" />
         </receiver>
         <receiver android:name=".widget.WidgetActionReceiver" android:exported="false" />
 

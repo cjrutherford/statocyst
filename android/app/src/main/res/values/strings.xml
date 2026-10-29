@@ -7,7 +7,7 @@
     <string name="auto_shuffle">Shuffle</string>
     <string name="auto_repeat">Repeat</string>
     <string name="auto_favorite">Favorite</string>
-    <string name="widget_description">Now playing and your top favorites</string>
+    <string name="widget_description">Player with your top favorites</string>
     <string name="widget_nothing_playing">Not playing</string>
     <string name="widget_top_favorites">TOP FAVORITES</string>
     <string name="widget_no_favorites">Favorite songs to see them here</string>
@@ -15,4 +15,10 @@
     <string name="widget_pause">Pause</string>
     <string name="widget_previous">Previous</string>
     <string name="widget_next">Next</string>
+    <string name="widget_favorite">Favorite</string>
+    <string name="widget_quick_picks">Quick picks</string>
+    <string name="widget_no_picks">Play something and it will show up here</string>
+    <string name="widget_large_description">Big player with artwork and controls</string>
+    <string name="widget_compact_description">Slim player with controls</string>
+    <string name="widget_picks_description">Tap a cover to play from your recent listening</string>
 </resources>
