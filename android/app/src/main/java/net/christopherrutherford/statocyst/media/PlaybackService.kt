@@ -18,6 +18,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
+import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.radio.RadioBuilder
@@ -331,7 +332,7 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun tracks(): List<MediaItemEntity> {
         cachedTracks?.let { return it }
-        return withContext(Dispatchers.IO) { dao.getAll() }.also { cachedTracks = it }
+        return withContext(Dispatchers.IO) { Duplicates.collapse(dao.getAll()) }.also { cachedTracks = it }
     }
 
     private fun isOnline(): Boolean {

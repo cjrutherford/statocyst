@@ -16,6 +16,9 @@ interface MediaItemDao {
     @Query("SELECT * FROM media_item WHERE pathKey = :pathKey")
     suspend fun getByPathKey(pathKey: String): MediaItemEntity?
 
+    @Query("SELECT * FROM media_item WHERE sourceKind LIKE 'jellyfin%' AND title = :title COLLATE NOCASE")
+    suspend fun jellyfinByTitle(title: String): List<MediaItemEntity>
+
     @Query("SELECT COUNT(*) FROM media_item")
     suspend fun count(): Int
 

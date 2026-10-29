@@ -11,7 +11,6 @@ import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.downloads.DownloadManager
 import net.christopherrutherford.statocyst.artwork.ExternalArt
 import net.christopherrutherford.statocyst.jellyfin.ArtworkProvider
-import net.christopherrutherford.statocyst.jellyfin.JellyfinAuth
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 
 data class StreamResolution(
@@ -36,11 +35,12 @@ class SourceResolver(private val context: Context) {
     suspend fun prepare(trackId: String): PreparedTrack? = withContext(Dispatchers.IO) {
         val entity = dao.getById(trackId) ?: return@withContext null
         val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
+            ?: StreamFailover.alternates(dao, entity).firstNotNullOfOrNull { downloads.verifiedFile(it.id) ?: cache.lookup(it.id) }
         if (local != null) {
             return@withContext localUri(local)?.let { PreparedTrack(entity, it, remote = false) }
         }
         if (entity.sourceKind.startsWith("jellyfin")) {
-            return@withContext remoteStreamUrl(entity)?.let { PreparedTrack(entity, it, remote = true) }
+            return@withContext StreamFailover.remoteUrl(context, dao, entity)?.let { PreparedTrack(entity, it, remote = true) }
         }
         File(entity.path).takeIf { it.isFile }
             ?.let { file -> localUri(file)?.let { PreparedTrack(entity, it, remote = false) } }
@@ -58,13 +58,6 @@ class SourceResolver(private val context: Context) {
 
     private fun localUri(file: File): String? =
         LocalMediaServer.localUri(context.applicationContext, file)
-
-    private fun remoteStreamUrl(track: MediaItemEntity): String? {
-        val session = JellyfinSessions.forTrack(context, track) ?: return null
-        val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        // The session token is added by the player's data source, not put in the URL.
-        return JellyfinAuth.streamUrl(session.url, itemId)
-    }
 
     /**
      * Artwork URI for a given album + image tag: a token-free content:// URI served

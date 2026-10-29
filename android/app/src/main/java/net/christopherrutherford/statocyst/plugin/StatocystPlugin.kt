@@ -30,11 +30,13 @@ import net.christopherrutherford.statocyst.jellyfin.JellyfinSession
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.downloads.QueueSnapshot
 import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
+import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.BrowseAccess
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.QueueItems
+import net.christopherrutherford.statocyst.media.StreamFailover
 import android.content.ComponentName
 import android.os.Handler
 import android.os.Looper
@@ -63,7 +65,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun listTracks(call: PluginCall) {
         io(call) {
-            val tracks = dao.getAll().map(::trackJson)
+            val tracks = Duplicates.collapse(dao.getAll()).map(::trackJson)
             call.resolve(JSObject().put("tracks", JSArray(tracks)))
         }
     }
@@ -84,7 +86,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun libraryStats(call: PluginCall) {
         io(call) {
-            val tracks = dao.getAll()
+            val tracks = Duplicates.collapse(dao.getAll())
             val duration = tracks.sumOf { it.durationMs }
             call.resolve(
                 JSObject()
@@ -111,13 +113,15 @@ class StatocystPlugin : Plugin() {
         io(call) {
             val track = dao.getById(trackId)
             val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
+                ?: track?.let { StreamFailover.alternates(dao, it) }
+                    ?.firstNotNullOfOrNull { downloads.verifiedFile(it.id) ?: cache.lookup(it.id) }
             if (local != null) {
                 call.resolve(JSObject().put("url", LocalMediaServer.localUri(context, local)).put("local", true))
                 return@io
             }
             val url = when {
                 track == null -> null
-                track.sourceKind.startsWith("jellyfin") -> remoteStreamUrl(track)
+                track.sourceKind.startsWith("jellyfin") -> StreamFailover.remoteUrl(context, dao, track)
                 else -> File(track.path).takeIf { it.isFile }?.let { LocalMediaServer.localUri(context, it) }
             }
             if (url == null) {
@@ -1103,12 +1107,6 @@ class StatocystPlugin : Plugin() {
 
     private fun notifyCacheChanged() {
         emit("cacheChanged", JSObject())
-    }
-
-    private fun remoteStreamUrl(track: MediaItemEntity): String? {
-        val session = net.christopherrutherford.statocyst.jellyfin.JellyfinSessions.forTrack(context, track) ?: return null
-        val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        return net.christopherrutherford.statocyst.jellyfin.JellyfinAuth.streamUrl(session.url, itemId)
     }
 
     private fun trackJson(t: MediaItemEntity): JSObject = JSObject()
