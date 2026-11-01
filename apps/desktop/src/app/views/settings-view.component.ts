@@ -17,7 +17,7 @@ import type {
 } from '@statocyst/contracts';
 import { IconComponent, type IconName } from '../components/icon.component';
 import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
-import { bridge, isNativePlatform } from '../core/bridge';
+import { bridge, isNativePlatform, nativePlatform } from '../core/bridge';
 import { SettingsStore } from '../core/settings.store';
 import { DownloadsStore } from '../core/downloads.store';
 import { LibraryStore } from '../core/library.store';
@@ -37,7 +37,13 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
         <div>
           <p class="eyebrow">Preferences</p>
           <h1 id="settings-heading">Settings</h1>
-          <p class="lede">Appearance, Jellyfin, storage, Android Auto and on-device data.</p>
+          <p class="lede">
+            @if (isIos()) {
+              Appearance, Jellyfin, storage, AirPlay &amp; CarPlay and on-device data.
+            } @else {
+              Appearance, Jellyfin, storage, Android Auto and on-device data.
+            }
+          </p>
         </div>
         @if (tab() === 'diagnostics') {
           <button type="button" class="btn btn--quiet" (click)="refresh()">
@@ -142,47 +148,60 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
 
         @if (isNative() && tab() === 'car') {
         <section class="card" aria-labelledby="car-heading">
-          <h2 id="car-heading">Car and Android Auto</h2>
-          <p class="card__hint">
-            Statocyst appears in Android Auto as a media app: browse Recents, Favorites, Playlists,
-            Radio, Albums, Artists and Tracks from the head unit, or ask Assistant to play something.
-          </p>
-          <ol class="car-steps">
-            <li>Connect your phone to the car. Statocyst appears in the media app list.</li>
-            <li>If it is missing, open Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
-            <li>
-              Still missing, and installed outside Google Play? Tap the Android Auto version number ten
-              times to enable developer settings, then turn on <strong>Unknown sources</strong>.
-            </li>
-          </ol>
-          @if (browseAccess(); as access) {
-            <h3 class="section-label">Head units and controllers</h3>
-            @if (access.denied.length === 0 && access.allowed.length === 0) {
-              <p class="card__hint">
-                None blocked. If your head unit shows an empty browse list, reconnect it and come
-                back: a blocked app will be listed here so you can allow it.
-              </p>
+          @if (isIos()) {
+            <h2 id="car-heading">Car, AirPlay and Lock Screen</h2>
+            <p class="card__hint">
+              Statocyst integrates with iOS Now Playing, Control Center, Lock Screen, AirPlay and
+              Bluetooth head units so transport controls, scrubbing and artwork stay in sync.
+            </p>
+            <ol class="car-steps">
+              <li>Start playback in Statocyst, then connect to your car via Bluetooth, USB or CarPlay Now Playing.</li>
+              <li>Use your steering wheel, head unit or Lock Screen controls to play, pause, skip, scrub, shuffle and repeat.</li>
+              <li>For lossless wireless playback at home or in the car, select your receiver from the iOS Control Center AirPlay route picker.</li>
+            </ol>
+          } @else {
+            <h2 id="car-heading">Car and Android Auto</h2>
+            <p class="card__hint">
+              Statocyst appears in Android Auto as a media app: browse Recents, Favorites, Playlists,
+              Radio, Albums, Artists and Tracks from the head unit, or ask Assistant to play something.
+            </p>
+            <ol class="car-steps">
+              <li>Connect your phone to the car. Statocyst appears in the media app list.</li>
+              <li>If it is missing, open Android Auto settings, choose <strong>Customize launcher</strong> and make sure Statocyst is ticked.</li>
+              <li>
+                Still missing, and installed outside Google Play? Tap the Android Auto version number ten
+                times to enable developer settings, then turn on <strong>Unknown sources</strong>.
+              </li>
+            </ol>
+            @if (browseAccess(); as access) {
+              <h3 class="section-label">Head units and controllers</h3>
+              @if (access.denied.length === 0 && access.allowed.length === 0) {
+                <p class="card__hint">
+                  None blocked. If your head unit shows an empty browse list, reconnect it and come
+                  back: a blocked app will be listed here so you can allow it.
+                </p>
+              }
+              @for (pkg of access.denied; track pkg) {
+                <div class="access-row">
+                  <code>{{ pkg }}</code>
+                  <span class="card__hint">Blocked</span>
+                  <button type="button" class="btn" (click)="setBrowseAllowed(pkg, true)">Allow</button>
+                </div>
+              }
+              @for (pkg of access.allowed; track pkg) {
+                <div class="access-row">
+                  <code>{{ pkg }}</code>
+                  <span class="card__hint">Allowed</span>
+                  <button type="button" class="btn btn--quiet" (click)="setBrowseAllowed(pkg, false)">Remove</button>
+                </div>
+              }
             }
-            @for (pkg of access.denied; track pkg) {
-              <div class="access-row">
-                <code>{{ pkg }}</code>
-                <span class="card__hint">Blocked</span>
-                <button type="button" class="btn" (click)="setBrowseAllowed(pkg, true)">Allow</button>
-              </div>
-            }
-            @for (pkg of access.allowed; track pkg) {
-              <div class="access-row">
-                <code>{{ pkg }}</code>
-                <span class="card__hint">Allowed</span>
-                <button type="button" class="btn btn--quiet" (click)="setBrowseAllowed(pkg, false)">Remove</button>
-              </div>
-            }
+            <p class="card__hint">
+              Tips: say "play radio like <em>song</em>" to start a song radio, or use the Shuffle and
+              Repeat buttons on the head unit. Browse is limited to the Android Auto system and
+              Google Assistant; other apps stay blocked until you allow them above.
+            </p>
           }
-          <p class="card__hint">
-            Tips: say "play radio like <em>song</em>" to start a song radio, or use the Shuffle and
-            Repeat buttons on the head unit. Browse is limited to the Android Auto system and
-            Google Assistant; other apps stay blocked until you allow them above.
-          </p>
         </section>
         }
 
@@ -495,7 +514,10 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
           <div>
             <h2 id="about-heading">Statocyst</h2>
             <p class="card__hint">
-              @if (isNative()) {
+              @if (isIos()) {
+                Local-first, Jellyfin-oriented music for iOS. Named after the jellyfish
+                orientation organ.
+              } @else if (isNative()) {
                 Local-first, Jellyfin-oriented music for Android. Named after the jellyfish
                 orientation organ.
               } @else {
@@ -932,6 +954,9 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
 export class SettingsViewComponent {
   protected readonly settings = inject(SettingsStore);
   protected readonly isNative = isNativePlatform;
+  protected readonly isIos = computed(
+    () => (this.info()?.platform ?? nativePlatform()) === 'ios',
+  );
   protected readonly downloads = inject(DownloadsStore);
   private readonly library = inject(LibraryStore);
 
@@ -1039,7 +1064,7 @@ export class SettingsViewComponent {
   }
 
   protected async refreshBrowseAccess(): Promise<void> {
-    if (!isNativePlatform()) return;
+    if (!isNativePlatform() || nativePlatform() === 'ios') return;
     try {
       const api = bridge();
       if (api.getBrowseAccess) this.browseAccess.set(await api.getBrowseAccess());

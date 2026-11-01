@@ -781,7 +781,7 @@ export class CapacitorBridge {
       electron: 'n/a (Capacitor)',
       chrome: navigator.userAgent,
       node: 'n/a',
-      platform: 'android',
+      platform: String(native?.platform ?? (window as any).Capacitor?.getPlatform?.() ?? 'android'),
       dataPath: String(native?.dataPath ?? ''),
       databasePath: '',
       logPath: '',
