@@ -4,7 +4,11 @@ import { CapacitorBridge } from './capacitor-bridge';
 declare global {
   interface Window {
     statocyst?: StatocystBridge;
-    Capacitor?: { Plugins?: Record<string, unknown>; isNativePlatform?: () => boolean };
+    Capacitor?: {
+      Plugins?: Record<string, unknown>;
+      isNativePlatform?: () => boolean;
+      getPlatform?: () => string;
+    };
   }
 }
 
@@ -28,7 +32,14 @@ export function bridgeAvailable(): boolean {
   );
 }
 
-/** True when running inside the Capacitor Android app (as opposed to Electron). */
+/** True when running inside the Capacitor mobile app (Android or iOS, as opposed to Electron). */
 export function isNativePlatform(): boolean {
   return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
+}
+
+/** Returns `'ios'` or `'android'` when running inside Capacitor, or `null` on desktop. */
+export function nativePlatform(): 'android' | 'ios' | null {
+  if (!isNativePlatform()) return null;
+  const raw = window.Capacitor?.getPlatform?.();
+  return raw === 'ios' ? 'ios' : 'android';
 }

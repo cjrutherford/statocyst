@@ -75,6 +75,51 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
+  ios:
+    name: iOS build and sideload IPA
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-web
+      - name: Build web assets and sync them into the iOS project
+        run: |
+          pnpm exec nx build desktop --skip-nx-cache
+          pnpm exec cap sync ios
+      - name: Build for iOS Simulator (Debug)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath ios/build-sim \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Build for iOS Device (Release) and package sideload IPA
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build-device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            build
+          mkdir -p ios/build-device/Payload
+          cp -R ios/build-device/Build/Products/Release-iphoneos/App.app ios/build-device/Payload/App.app
+          codesign --force --deep --sign - ios/build-device/Payload/App.app
+          (cd ios/build-device && zip -qr Statocyst.ipa Payload)
+      - name: Upload sideload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: statocyst-ios-ipa
+          path: ios/build-device/Statocyst.ipa
+          retention-days: 14
+
   # Slow (boots an emulator), so it runs for pull requests and on demand rather than every push.
   android-instrumented:
     name: Android instrumented tests (emulator)

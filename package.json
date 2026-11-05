@@ -19,13 +19,17 @@
     "e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
     "package": "nx run desktop-electron:package",
     "graph": "nx graph",
-    "fixtures": "node tools/generate-fixtures.mjs"
+    "fixtures": "node tools/generate-fixtures.mjs",
+    "cap:sync": "nx build desktop && cap sync",
+    "ios:sync": "nx build desktop && cap sync ios",
+    "android:sync": "nx build desktop && cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
     "@capacitor/cli": "^8.5.3",
     "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@capacitor/preferences": "^8.0.1",
     "@libsql/client": "0.18.0",
     "music-metadata": "12.3.2"
