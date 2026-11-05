@@ -1,14 +1,22 @@
 name: Release
 
-# Push a tag like v1.4.0 (it must match versionName in android/app/build.gradle).
+# Two release paths, neither of which creates or approves a pull request:
+# - Push a tag like v1.4.0 (it must match versionName in android/app/build.gradle).
+# - Merge to main (or run this workflow manually): a unique prerelease tag
+#   v<versionName>-merge.<run_number> is created at the merge commit, so every merge
+#   produces downloadable APK/AAB/IPA assets without a version-bump PR.
 # The signed APK, the signed Play AAB, the R8 mapping file and checksums are attached to a GitHub
-# Release for that tag. If PLAY_SERVICE_ACCOUNT_JSON is set, the AAB is also uploaded to the Play
-# internal testing track.
+# Release for that tag. If PLAY_SERVICE_ACCOUNT_JSON is set, a *tagged* release is also uploaded to
+# the Play internal testing track (merge builds skip Play because the versionCode is unchanged).
 on:
   push:
     tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
+  # Create the tag/release and upload assets. Deliberately no pull-requests permission:
+  # the workflow never creates, approves or comments on a PR.
   contents: write
 
 concurrency:
@@ -28,21 +36,32 @@ jobs:
     timeout-minutes: 45
     outputs:
       name: ${{ steps.version.outputs.name }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the tag against the app version
+      - name: Resolve the release tag and app version
         id: version
         run: |
           name=$(sed -n 's/^ *versionName "\(.*\)"$/\1/p' android/app/build.gradle)
           code=$(sed -n 's/^ *versionCode \([0-9][0-9]*\)$/\1/p' android/app/build.gradle)
-          tag="${GITHUB_REF_NAME}"
           if [[ -z "$name" || -z "$code" ]]; then echo "::error::could not read versionName/versionCode"; exit 1; fi
-          if [[ "$tag" != "v$name" ]]; then
-            echo "::error::tag $tag does not match versionName $name in android/app/build.gradle"; exit 1
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            if [[ "$tag" != "v$name" ]]; then
+              echo "::error::tag $tag does not match versionName $name in android/app/build.gradle"; exit 1
+            fi
+            title="Statocyst $name"
+          else
+            # Merge/manual builds keep the app version but get a unique tag so repeated
+            # merges never try to move an existing release.
+            tag="v$name-merge.${GITHUB_RUN_NUMBER}"
+            title="Statocyst $name (merge build ${GITHUB_RUN_NUMBER})"
           fi
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
 
       - name: Check signing secrets are configured
         env:
@@ -137,10 +156,18 @@ jobs:
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ steps.version.outputs.title }}
         run: |
-          flags=(--verify-tag --generate-notes --title "Statocyst ${{ steps.version.outputs.name }}")
-          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then flags+=(--prerelease); fi
-          gh release create "${GITHUB_REF_NAME}" dist-release/* "${flags[@]}"
+          flags=(--generate-notes --title "$TITLE")
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            flags+=(--verify-tag)
+          else
+            flags+=(--target "$GITHUB_SHA")
+          fi
+          # A suffix means a pre-release (merge build or -rc tag); full vN.N.N stays stable.
+          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" dist-release/* "${flags[@]}"
 
   ipa:
     name: Build and attach sideload iOS IPA
@@ -180,11 +207,84 @@ jobs:
       - name: Upload IPA to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist-ios/* --clobber
+        run: gh release upload "${{ needs.apk.outputs.tag }}" dist-ios/* --clobber
+
+  electron:
+    name: Electron installers (${{ matrix.target }})
+    needs: apk
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: windows-latest
+            target: win
+          - os: macos-15
+            target: mac
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-web
+      - name: Ensure the Electron binary is available to electron-builder
+        shell: bash
+        run: |
+          if [ ! -d node_modules/electron/dist ]; then
+            node node_modules/electron/install.js
+          fi
+      - name: Build web and Electron bundles
+        shell: bash
+        env:
+          NODE_ENV: production
+        run: |
+          pnpm exec nx build desktop --skip-nx-cache
+          node tools/build-electron.mjs
+      - name: Package Linux installers
+        if: matrix.target == 'linux'
+        shell: bash
+        run: pnpm exec electron-builder --linux AppImage deb --config electron-builder.yml --publish never
+      - name: Package Windows installer
+        if: matrix.target == 'win'
+        shell: bash
+        run: pnpm exec electron-builder --win nsis --config electron-builder.yml --publish never
+      - name: Package macOS installer
+        if: matrix.target == 'mac'
+        shell: bash
+        run: pnpm exec electron-builder --mac dmg zip --config electron-builder.yml --publish never
+      - name: Collect installers and checksums
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p dist-release
+          shopt -s nullglob
+          files=(release/*.AppImage release/*.deb release/*.exe release/*.dmg release/*.zip)
+          if [ ${#files[@]} -eq 0 ]; then echo "::error::electron-builder produced no installer"; exit 1; fi
+          cp "${files[@]}" dist-release/
+          cd dist-release
+          if command -v sha256sum >/dev/null; then
+            sha256sum * > "SHA256SUMS-electron-${TARGET}.txt"
+          else
+            shasum -a 256 * > "SHA256SUMS-electron-${TARGET}.txt"
+          fi
+          cat "SHA256SUMS-electron-${TARGET}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: statocyst-electron-${{ matrix.target }}
+          path: dist-release/*
+      - name: Upload installers to the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.apk.outputs.tag }}" dist-release/* --clobber
 
   play-internal:
     name: Upload the AAB to the Play internal track
     needs: apk
+    # Merge builds reuse the same versionCode; Play would reject a duplicate. Only
+    # versioned tag releases go to Play.
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

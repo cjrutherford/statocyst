@@ -15,10 +15,30 @@ asarUnpack:
   - node_modules/libsql/**/*
 npmRebuild: false
 electronVersion: 45.0.0
+artifactName: statocyst-${version}-${os}-${arch}.${ext}
 linux:
   target:
-    - dir
+    - AppImage
+    - deb
   category: AudioVideo
   icon: resources/icons/statocyst-512.png
   executableName: statocyst
-  artifactName: statocyst-${version}-${arch}.${ext}
+win:
+  target:
+    - nsis
+  icon: resources/icons/statocyst-512.png
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.music
+  icon: resources/icons/statocyst-512.png
+  # No signing identity in CI: build an unsigned app. Users open it with
+  # right-click → Open the first time. Add a Developer ID + notarization later.
+  identity: null
+
