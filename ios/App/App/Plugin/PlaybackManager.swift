@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
+import Network
 import UIKit
 
 struct PlaybackQueueSlot: Codable, Equatable {
@@ -54,17 +55,38 @@ final class PlaybackManager: NSObject {
     private var shuffleEnabled: Bool = false
     private var repeatMode: String = "off" // "off" | "all" | "one"
     private var currentError: String? = nil
+    private var currentErrorIsNetwork: Bool = false
     private var desiredPlay: Bool = false
     private var qualityPreference: String = "lossless"
     private var cacheBudgetBytes: Int64 = 2 * 1024 * 1024 * 1024
 
+    private let networkMonitor = NWPathMonitor()
+    private let networkMonitorQueue = DispatchQueue(label: "com.hopefulaspirationsindustries.statocyst.network")
+    private var networkAvailable: Bool = true
+    private var networkInterface: NWInterface.InterfaceType?
+    private var isRecovering: Bool = false
+    private var recoveryAttempt: Int = 0
+    private var recoveryWorkItem: DispatchWorkItem?
+    private var recoveryPositionMs: Int64 = 0
+    private var currentUsesTranscode: Bool = false
+    private var currentIsLocal: Bool = false
+    private var stallWorkItem: DispatchWorkItem?
+
     private static let QUEUE_PREF_KEY = "statocyst.native_playback_queue"
+    private static let QUALITY_PREF_KEY = "statocyst.playback_quality"
+    private static let RECOVERY_BACKOFF_SECONDS: [TimeInterval] = [2, 5, 10, 20, 30, 30, 30, 30]
+    private static let RECOVERY_WATCHDOG_SECONDS: TimeInterval = 15
+    private static let TRANSCODE_START_MS: Int64 = 5_000
+    private static let STALL_SECONDS: TimeInterval = 6
+    private static let TRANSCODE_BITS_PER_SECOND: Int64 = 192_000
 
     private override init() {
         super.init()
+        qualityPreference = UserDefaults.standard.string(forKey: Self.QUALITY_PREF_KEY) == "auto" ? "auto" : "lossless"
         configureAudioSession()
         configureRemoteCommandCenter()
         configurePlayerObservers()
+        configureNetworkMonitor()
         restorePersistedQueue()
     }
 
@@ -93,6 +115,8 @@ final class PlaybackManager: NSObject {
         switch type {
         case .began:
             desiredPlay = false
+            endRecovery()
+            endStallWatch()
             player.pause()
             emitState()
         case .ended:
@@ -173,6 +197,9 @@ final class PlaybackManager: NSObject {
         let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
             guard let self = self else { return }
+            if self.player.timeControlStatus == .playing {
+                self.recoveryPositionMs = self.currentPositionMs()
+            }
             if self.desiredPlay || self.player.timeControlStatus == .playing {
                 self.onPositionChanged?(self.currentPositionMs(), self.currentDurationMs())
                 self.updateNowPlayingElapsed()
@@ -181,7 +208,23 @@ final class PlaybackManager: NSObject {
 
         timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
             DispatchQueue.main.async {
-                self?.emitState()
+                guard let self = self else { return }
+                switch self.player.timeControlStatus {
+                case .playing:
+                    self.currentError = nil
+                    self.currentErrorIsNetwork = false
+                    self.endRecovery()
+                    self.endStallWatch()
+                case .waitingToPlayAtSpecifiedRate:
+                    if self.desiredPlay {
+                        self.scheduleStallWatch()
+                    }
+                case .paused:
+                    break
+                @unknown default:
+                    break
+                }
+                self.emitState()
             }
         }
     }
@@ -195,6 +238,11 @@ final class PlaybackManager: NSObject {
 
     func setQuality(_ quality: String) {
         qualityPreference = (quality == "auto") ? "auto" : "lossless"
+        UserDefaults.standard.set(qualityPreference, forKey: Self.QUALITY_PREF_KEY)
+        if isRecovering {
+            recoveryAttempt = 0
+            scheduleRecovery(immediate: networkAvailable)
+        }
     }
 
     func setQueue(
@@ -229,6 +277,8 @@ final class PlaybackManager: NSObject {
             return
         }
 
+        endRecovery()
+        endStallWatch()
         self.entries = newEntries
         self.currentIndex = targetIdx ?? 0
         persistQueue()
@@ -241,11 +291,28 @@ final class PlaybackManager: NSObject {
         if currentIndex < 0 || currentIndex >= entries.count {
             currentIndex = 0
         }
+        if let item = player.currentItem, item.status == .failed {
+            if currentErrorIsNetwork || isNetworkFailure(item.error) {
+                desiredPlay = true
+                currentError = nil
+                currentErrorIsNetwork = true
+                isRecovering = true
+                recoveryAttempt = 0
+                recoveryPositionMs = max(currentPositionMs(), recoveryPositionMs)
+                endStallWatch()
+                scheduleRecovery(immediate: networkAvailable)
+                emitState()
+                return
+            }
+            loadCurrentItem(startPositionMs: 0, autoplay: true)
+            return
+        }
         if player.currentItem == nil {
             loadCurrentItem(startPositionMs: 0, autoplay: true)
             return
         }
         if currentStateName() == "ended" {
+            recoveryPositionMs = 0
             player.seek(to: .zero)
         }
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -256,17 +323,25 @@ final class PlaybackManager: NSObject {
 
     func pause() {
         desiredPlay = false
+        endRecovery()
+        endStallWatch()
         player.pause()
         emitState()
     }
 
     func stop() {
+        endRecovery()
+        endStallWatch()
         desiredPlay = false
         player.pause()
         player.replaceCurrentItem(with: nil)
         entries.removeAll()
         currentIndex = -1
         currentError = nil
+        currentErrorIsNetwork = false
+        currentUsesTranscode = false
+        currentIsLocal = false
+        recoveryPositionMs = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         persistQueue()
         emitQueue()
@@ -275,6 +350,8 @@ final class PlaybackManager: NSObject {
 
     func skipNext() {
         guard !entries.isEmpty else { return }
+        endRecovery()
+        endStallWatch()
         if shuffleEnabled && entries.count > 1 {
             let candidates = entries.indices.filter { $0 != currentIndex }
             currentIndex = candidates.randomElement() ?? ((currentIndex + 1) % entries.count)
@@ -290,6 +367,8 @@ final class PlaybackManager: NSObject {
 
     func skipPrevious() {
         guard !entries.isEmpty else { return }
+        endRecovery()
+        endStallWatch()
         if currentPositionMs() > 3_000 {
             seekTo(positionMs: 0)
             if !desiredPlay { play() }
@@ -310,6 +389,8 @@ final class PlaybackManager: NSObject {
     @discardableResult
     func playEntry(entryId: String) -> Bool {
         guard let idx = entries.firstIndex(where: { $0.entryId == entryId }) else { return false }
+        endRecovery()
+        endStallWatch()
         currentIndex = idx
         persistQueue()
         loadCurrentItem(startPositionMs: 0, autoplay: true)
@@ -319,6 +400,20 @@ final class PlaybackManager: NSObject {
 
     func seekTo(positionMs: Int64) {
         let clamped = max(0, positionMs)
+        if isRecovering {
+            recoveryPositionMs = clamped
+            scheduleRecovery(immediate: networkAvailable)
+            emitState()
+            return
+        }
+        if currentUsesTranscode && clamped > Self.TRANSCODE_START_MS {
+            // A transcode cannot be joined part-way through; asking the server for
+            // the original at the seek target is the reliable path.
+            _ = loadCurrentItem(startPositionMs: clamped, autoplay: desiredPlay, preferTranscode: false)
+            emitState()
+            return
+        }
+        recoveryPositionMs = clamped
         let target = CMTime(value: clamped, timescale: 1000)
         player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             guard let self = self else { return }
@@ -356,6 +451,14 @@ final class PlaybackManager: NSObject {
     // MARK: - Item Resolution & Loading
 
     func resolvePlaybackURL(trackId: String, budgetBytes: Int64) -> (url: String?, isLocal: Bool) {
+        return resolvePlaybackURL(trackId: trackId, budgetBytes: budgetBytes, preferTranscode: false)
+    }
+
+    private func resolvePlaybackURL(
+        trackId: String,
+        budgetBytes: Int64,
+        preferTranscode: Bool
+    ) -> (url: String?, isLocal: Bool) {
         let track = db.getMediaItemById(trackId)
         if let dlFile = downloads.verifiedFile(trackId), let uri = LocalMediaServer.localUri(for: dlFile) {
             return (uri, true)
@@ -375,13 +478,22 @@ final class PlaybackManager: NSObject {
             }
             guard let session = JellyfinSessions.forTrack(track) else { return (nil, false) }
             let itemId = track.path.isEmpty ? String(track.id.dropFirst(track.id.hasPrefix("jf-") ? 3 : 0)) : track.path
-            let url = JellyfinAuth.streamUrl(serverUrl: session.url, itemId: itemId)
             if budgetBytes > 0 {
                 DispatchQueue.global(qos: .utility).async { [weak self] in
                     self?.cache.prefetch(trackId: trackId, requestedBudget: budgetBytes)
                 }
             }
-            return (url, false)
+            if preferTranscode && qualityPreference == "auto" {
+                return (
+                    JellyfinAuth.transcodeUrl(
+                        serverUrl: session.url,
+                        itemId: itemId,
+                        bitsPerSecond: Self.TRANSCODE_BITS_PER_SECOND
+                    ),
+                    false
+                )
+            }
+            return (JellyfinAuth.streamUrl(serverUrl: session.url, itemId: itemId), false)
         } else {
             let fileURL = URL(fileURLWithPath: track.path)
             var isDir: ObjCBool = false
@@ -392,30 +504,47 @@ final class PlaybackManager: NSObject {
         }
     }
 
-    private func loadCurrentItem(startPositionMs: Int64, autoplay: Bool) {
+    @discardableResult
+    private func loadCurrentItem(startPositionMs: Int64, autoplay: Bool, preferTranscode: Bool = false) -> Bool {
         currentError = nil
+        currentErrorIsNetwork = false
+        endStallWatch()
         if let endObserver = endObserver {
             NotificationCenter.default.removeObserver(endObserver)
             self.endObserver = nil
         }
         statusObservation?.invalidate()
         statusObservation = nil
+        recoveryPositionMs = max(0, startPositionMs)
 
         guard let slot = currentSlot else {
             player.replaceCurrentItem(with: nil)
+            currentIsLocal = false
+            currentUsesTranscode = false
             emitState()
-            return
+            return false
         }
 
         let track = db.getMediaItemById(slot.trackId)
-        let resolved = resolvePlaybackURL(trackId: slot.trackId, budgetBytes: cacheBudgetBytes)
+        let wantsTranscode = preferTranscode && qualityPreference == "auto"
+        let resolved = resolvePlaybackURL(
+            trackId: slot.trackId,
+            budgetBytes: cacheBudgetBytes,
+            preferTranscode: wantsTranscode
+        )
         guard let urlString = resolved.url, let url = URL(string: urlString) else {
             currentError = "MEDIA_UNAVAILABLE"
+            currentErrorIsNetwork = false
             desiredPlay = false
+            currentIsLocal = false
+            currentUsesTranscode = false
             player.replaceCurrentItem(with: nil)
             emitState()
-            return
+            return false
         }
+
+        currentIsLocal = resolved.isLocal
+        currentUsesTranscode = wantsTranscode && !resolved.isLocal && (track?.sourceKind.hasPrefix("jellyfin") ?? false)
 
         let asset: AVURLAsset
         if !resolved.isLocal, let track = track, let session = JellyfinSessions.forTrack(track) {
@@ -428,10 +557,19 @@ final class PlaybackManager: NSObject {
         let item = AVPlayerItem(asset: asset)
         statusObservation = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
             DispatchQueue.main.async {
-                guard let self = self else { return }
+                guard let self = self, self.player.currentItem === observedItem else { return }
                 if observedItem.status == .failed {
-                    self.currentError = observedItem.error?.localizedDescription ?? "PLAYER_ERROR"
-                    self.desiredPlay = false
+                    let failure = observedItem.error
+                    if self.isNetworkFailure(failure) {
+                        self.endStallWatch()
+                        self.beginRecovery(reason: failure?.localizedDescription)
+                    } else {
+                        self.currentError = failure?.localizedDescription ?? "PLAYER_ERROR"
+                        self.currentErrorIsNetwork = false
+                        self.desiredPlay = false
+                        self.endRecovery()
+                        self.endStallWatch()
+                    }
                 }
                 self.updateNowPlayingMetadata()
                 self.emitState()
@@ -461,10 +599,14 @@ final class PlaybackManager: NSObject {
         updateNowPlayingMetadata()
         emitState()
         prefetchNeighbors()
+        return true
     }
 
     private func handleItemEnded() {
+        endRecovery()
+        endStallWatch()
         if repeatMode == "one" {
+            recoveryPositionMs = 0
             player.seek(to: .zero)
             player.play()
             emitState()
@@ -531,6 +673,10 @@ final class PlaybackManager: NSObject {
     }
 
     private func currentStateName() -> String {
+        if isRecovering {
+            if !desiredPlay { return "paused" }
+            return networkAvailable ? "buffering" : "waiting-network"
+        }
         if currentError != nil { return "error" }
         if entries.isEmpty || currentSlot == nil { return "idle" }
         if let item = player.currentItem {
@@ -631,6 +777,252 @@ final class PlaybackManager: NSObject {
             info[MPMediaItemPropertyPlaybackDuration] = Double(dur) / 1000.0
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    // MARK: - Network & Playback Recovery
+
+    private func configureNetworkMonitor() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                self?.handleNetworkPath(path)
+            }
+        }
+        networkMonitor.start(queue: networkMonitorQueue)
+    }
+
+    private func handleNetworkPath(_ path: NWPath) {
+        let wasAvailable = networkAvailable
+        let previousInterface = networkInterface
+        networkAvailable = path.status == .satisfied
+        networkInterface = interfaceType(of: path)
+
+        guard networkAvailable else { return }
+
+        if isRecovering {
+            // A returning network wakes recovery immediately instead of waiting
+            // out the remaining backoff.
+            recoveryAttempt = 0
+            scheduleRecovery(immediate: true)
+            return
+        }
+
+        if !wasAvailable, currentErrorIsNetwork, player.currentItem != nil {
+            beginRecovery(reason: currentError)
+            return
+        }
+
+        let interfaceChanged = previousInterface != nil
+            && networkInterface != nil
+            && previousInterface != networkInterface
+        if (interfaceChanged || !wasAvailable), currentError == nil, desiredPlay,
+           player.currentItem != nil, !currentIsLocal {
+            reloadCurrentItemAtCurrentPosition()
+        }
+    }
+
+    private func interfaceType(of path: NWPath) -> NWInterface.InterfaceType? {
+        if path.usesInterfaceType(.wifi) { return .wifi }
+        if path.usesInterfaceType(.cellular) { return .cellular }
+        if path.usesInterfaceType(.wiredEthernet) { return .wiredEthernet }
+        if path.usesInterfaceType(.other) { return .other }
+        return nil
+    }
+
+    private func isNetworkFailure(_ error: Error?) -> Bool {
+        guard let error = error else { return !networkAvailable }
+        var current: NSError? = error as NSError
+        var depth = 0
+        while let ns = current, depth < 5 {
+            if ns.domain == NSURLErrorDomain {
+                switch ns.code {
+                case NSURLErrorNotConnectedToInternet,
+                     NSURLErrorNetworkConnectionLost,
+                     NSURLErrorTimedOut,
+                     NSURLErrorCannotFindHost,
+                     NSURLErrorCannotConnectToHost,
+                     NSURLErrorDNSLookupFailed,
+                     NSURLErrorSecureConnectionFailed,
+                     NSURLErrorInternationalRoamingOff,
+                     NSURLErrorDataNotAllowed,
+                     NSURLErrorCallIsActive,
+                     NSURLErrorResourceUnavailable,
+                     NSURLErrorCannotLoadFromNetwork,
+                     NSURLErrorBackgroundSessionWasDisconnected:
+                    return true
+                default:
+                    break
+                }
+            }
+            current = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        // AVFoundation sometimes wraps transport failures in an opaque error; if
+        // the path is down, the safest classification is a network failure.
+        return !networkAvailable
+    }
+
+    /**
+     * Called when the current item failed for a network reason. The queue and the
+     * item are left in place; only the source URL is re-resolved on each attempt.
+     * Backoff is capped and does not advance the queue. A network return wakes the
+     * loop immediately, so a ten-minute outage resumes at the same position.
+     */
+    private func beginRecovery(reason: String?) {
+        guard player.currentItem != nil, currentSlot != nil else { return }
+
+        if isRecovering {
+            recoveryPositionMs = max(currentPositionMs(), recoveryPositionMs)
+            scheduleRecovery(immediate: networkAvailable)
+            emitState()
+            return
+        }
+
+        guard desiredPlay else {
+            currentError = reason ?? "PLAYBACK_ERROR"
+            currentErrorIsNetwork = true
+            emitState()
+            return
+        }
+
+        isRecovering = true
+        currentError = nil
+        currentErrorIsNetwork = true
+        recoveryAttempt = 0
+        recoveryPositionMs = max(currentPositionMs(), recoveryPositionMs)
+        player.pause()
+        endStallWatch()
+        scheduleRecovery(immediate: networkAvailable)
+        emitState()
+    }
+
+    private func scheduleRecovery(immediate: Bool, delay: TimeInterval? = nil) {
+        guard isRecovering else { return }
+        recoveryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isRecovering else { return }
+            self.recoveryWorkItem = nil
+            if !self.networkAvailable {
+                self.scheduleRecovery(immediate: false, delay: 2)
+                return
+            }
+            self.attemptRecovery()
+        }
+        recoveryWorkItem = work
+        let wait = delay ?? (immediate ? 0 : nextRecoveryDelay())
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait, execute: work)
+    }
+
+    private func nextRecoveryDelay() -> TimeInterval {
+        let index = min(max(recoveryAttempt, 0), Self.RECOVERY_BACKOFF_SECONDS.count - 1)
+        return Self.RECOVERY_BACKOFF_SECONDS[index]
+    }
+
+    private func attemptRecovery() {
+        guard isRecovering else { return }
+        guard networkAvailable else {
+            scheduleRecovery(immediate: false, delay: 2)
+            return
+        }
+        guard player.currentItem != nil, currentSlot != nil else {
+            finishRecovery(message: "MEDIA_UNAVAILABLE")
+            return
+        }
+
+        let position = max(currentPositionMs(), recoveryPositionMs)
+        recoveryPositionMs = position
+        recoveryAttempt += 1
+        let preferTranscode = shouldPreferTranscode(positionMs: position)
+        if loadCurrentItem(startPositionMs: position, autoplay: true, preferTranscode: preferTranscode) {
+            desiredPlay = true
+            scheduleRecoveryWatchdog()
+        } else {
+            // Keep the intent to play and the current position; the next attempt
+            // may resolve once the session or network is available again.
+            desiredPlay = true
+            currentError = nil
+            currentErrorIsNetwork = true
+            scheduleRecovery(immediate: false)
+        }
+        emitState()
+    }
+
+    private func scheduleRecoveryWatchdog() {
+        recoveryWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.isRecovering else { return }
+            self.recoveryWorkItem = nil
+            if self.player.timeControlStatus == .playing {
+                self.endRecovery()
+                self.emitState()
+                return
+            }
+            if !self.networkAvailable {
+                self.scheduleRecovery(immediate: false, delay: 2)
+                return
+            }
+            self.scheduleRecovery(immediate: false)
+        }
+        recoveryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.RECOVERY_WATCHDOG_SECONDS, execute: work)
+    }
+
+    private func finishRecovery(message: String) {
+        isRecovering = false
+        recoveryAttempt = 0
+        recoveryWorkItem?.cancel()
+        recoveryWorkItem = nil
+        currentError = message
+        currentErrorIsNetwork = true
+        player.pause()
+        emitState()
+    }
+
+    private func endRecovery() {
+        isRecovering = false
+        recoveryAttempt = 0
+        recoveryWorkItem?.cancel()
+        recoveryWorkItem = nil
+    }
+
+    private func shouldPreferTranscode(positionMs: Int64) -> Bool {
+        guard qualityPreference == "auto", !currentIsLocal, positionMs <= Self.TRANSCODE_START_MS else {
+            return false
+        }
+        guard let slot = currentSlot, let track = db.getMediaItemById(slot.trackId) else { return false }
+        return track.sourceKind.hasPrefix("jellyfin")
+    }
+
+    private func reloadCurrentItemAtCurrentPosition() {
+        guard currentSlot != nil else { return }
+        let position = max(currentPositionMs(), recoveryPositionMs)
+        recoveryPositionMs = position
+        let preferTranscode = shouldPreferTranscode(positionMs: position)
+        _ = loadCurrentItem(startPositionMs: position, autoplay: desiredPlay, preferTranscode: preferTranscode)
+        emitState()
+    }
+
+    private func scheduleStallWatch() {
+        guard stallWorkItem == nil else { return }
+        guard qualityPreference == "auto", !currentIsLocal, !currentUsesTranscode else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.stallWorkItem = nil
+            guard self.desiredPlay, !self.currentIsLocal, !self.currentUsesTranscode else { return }
+            guard self.qualityPreference == "auto" else { return }
+            guard self.player.currentItem?.status != .failed else { return }
+            guard self.player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+            let position = self.currentPositionMs()
+            guard position <= Self.TRANSCODE_START_MS else { return }
+            _ = self.loadCurrentItem(startPositionMs: position, autoplay: true, preferTranscode: true)
+            self.emitState()
+        }
+        stallWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.STALL_SECONDS, execute: work)
+    }
+
+    private func endStallWatch() {
+        stallWorkItem?.cancel()
+        stallWorkItem = nil
     }
 
     // MARK: - Queue Persistence
