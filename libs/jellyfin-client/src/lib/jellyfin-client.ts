@@ -345,6 +345,8 @@ export interface JellyfinAudioItem {
   genres: string[];
   container: string | null;
   bitrate: number | null;
+  /** Original file size in bytes when the server reports it, else null. */
+  size: number | null;
   imageTag: string | null;
 }
 
@@ -388,6 +390,7 @@ function toAudioItem(record: Record<string, unknown>): JellyfinAudioItem | null 
     genres: asStringArray(record['Genres']),
     container: asString(source['Container']) ?? asString(record['Container']),
     bitrate: asNumber(source['Bitrate']),
+    size: asNumber(source['Size']),
     imageTag: asString(imageTags['Primary']),
   };
 }

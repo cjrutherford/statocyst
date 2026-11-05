@@ -61,6 +61,13 @@ interface NavItem {
         </p>
       </div>
     } @else {
+      @if (!online()) {
+        <button type="button" class="offline-chip" (click)="navigate('offline')" aria-live="polite">
+          <sc-icon name="offline" />
+          <span>Offline — downloaded music only</span>
+        </button>
+      }
+
       <div class="app">
         <aside class="sidebar" aria-label="Primary">
           <div class="brand">
@@ -195,6 +202,29 @@ interface NavItem {
         padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
         box-sizing: border-box;
       }
+      .offline-chip {
+        position: fixed;
+        top: calc(10px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)));
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 90;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 13px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 196, 92, 0.45);
+        background: rgba(24, 18, 6, 0.9);
+        color: var(--warning);
+        font: inherit;
+        font-size: 0.74rem;
+        cursor: pointer;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(12px);
+      }
+      .offline-chip:hover {
+        border-color: var(--warning);
+      }
       .sidebar {
         grid-row: 1;
         display: flex;
@@ -308,6 +338,10 @@ interface NavItem {
       .status[data-state='buffering'] .status__dot {
         background: var(--violet);
         box-shadow: 0 0 10px var(--violet);
+      }
+      .status[data-state='waiting-network'] .status__dot {
+        background: var(--warning);
+        box-shadow: 0 0 10px var(--warning);
       }
       .status[data-state='error'] .status__dot {
         background: var(--danger);
@@ -587,6 +621,8 @@ export class AppComponent {
 
   readonly ready = signal(false);
   readonly info = signal<AppInfo | null>(null);
+  /** Best-effort WebView connectivity, used only for the shell banner. */
+  readonly online = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
   protected readonly offlineCount = computed(() =>
     this.library.tracks().filter((track) => track.sourceId === 'local' || this.downloads.isDownloaded()(track.id)).length,
   );
@@ -601,7 +637,13 @@ export class AppComponent {
 
   constructor() {
     this.setupBackButton();
+    this.setupConnectivity();
     void this.bootstrap();
+  }
+
+  private setupConnectivity(): void {
+    window.addEventListener('online', () => this.online.set(true));
+    window.addEventListener('offline', () => this.online.set(false));
   }
 
   /**
@@ -666,6 +708,8 @@ export class AppComponent {
         return 'Playing';
       case 'buffering':
         return 'Buffering';
+      case 'waiting-network':
+        return 'Waiting for network';
       case 'paused':
         return 'Paused';
       case 'ended':

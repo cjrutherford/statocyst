@@ -6,7 +6,7 @@
   "schemaVersion": 1,
   "$defs": {
     "repeatMode": { "enum": ["off", "all", "one"] },
-    "playbackState": { "enum": ["idle", "buffering", "playing", "paused", "ended", "error"] },
+    "playbackState": { "enum": ["idle", "buffering", "playing", "paused", "ended", "error", "waiting-network"] },
     "errorCode": {
       "enum": [
         "INVALID_ARGUMENT",

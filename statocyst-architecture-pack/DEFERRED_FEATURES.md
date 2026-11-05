@@ -14,7 +14,7 @@ Do not build the following in MVP-1..MVP-4 unless a specifically accepted depend
 | Remote metadata/file mutation | Expansion | Explicit write capability, permission and audit |
 | Third-party extension SDK/execution | Expansion | Enforced isolation and compatibility |
 | macOS notarization and broad distro packaging | Progressive | Signed/reproducible CI builds |
-| iOS/CarPlay | Progressive | libSQL iOS feasibility, entitlements, native AVFoundation/CarPlay tests |
+| iOS/CarPlay | **Promoted** | Superseded for this programme by ADR-034: iOS parity is S034, CarPlay audio is S039. Entitlement approval and a real head unit remain external gates. |
 | Bit-perfect output | Research | Platform-specific output path evidence |
 | Rich multi-device preference vector sync | Expansion | Validated provider and privacy/tombstone semantics |
 

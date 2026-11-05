@@ -1,4 +1,4 @@
-import type { Settings, ThemePreference, DensityPreference, QualityPreference } from '@statocyst/contracts';
+import type { Settings, ThemePreference, DensityPreference, QualityPreference, DownloadProfile } from '@statocyst/contracts';
 import type { StatocystDatabase } from '@statocyst/persistence';
 import type { Logger } from './logger';
 
@@ -14,11 +14,15 @@ export const DEFAULT_SETTINGS: Settings = {
   cacheBudgetBytes: DEFAULT_CACHE_BUDGET_BYTES,
   quality: 'lossless',
   listeningHistory: false,
+  downloadWifiOnly: true,
+  downloadQuotaBytes: 0,
+  downloadQuality: 'original',
 };
 
 const THEMES: readonly ThemePreference[] = ['system', 'dark', 'light'];
 const DENSITIES: readonly DensityPreference[] = ['comfortable', 'compact'];
 const QUALITIES: readonly QualityPreference[] = ['lossless', 'auto'];
+const DOWNLOAD_PROFILES: readonly DownloadProfile[] = ['original', 'balanced', 'saver'];
 
 function isUnit(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
@@ -84,6 +88,19 @@ export class SettingsService {
         typeof input.listeningHistory === 'boolean'
           ? input.listeningHistory
           : DEFAULT_SETTINGS.listeningHistory,
+      downloadWifiOnly:
+        typeof input.downloadWifiOnly === 'boolean'
+          ? input.downloadWifiOnly
+          : DEFAULT_SETTINGS.downloadWifiOnly,
+      downloadQuotaBytes:
+        typeof input.downloadQuotaBytes === 'number' &&
+        Number.isFinite(input.downloadQuotaBytes) &&
+        input.downloadQuotaBytes >= 0
+          ? input.downloadQuotaBytes
+          : DEFAULT_SETTINGS.downloadQuotaBytes,
+      downloadQuality: DOWNLOAD_PROFILES.includes(input.downloadQuality as DownloadProfile)
+        ? (input.downloadQuality as DownloadProfile)
+        : DEFAULT_SETTINGS.downloadQuality,
     };
   }
 }

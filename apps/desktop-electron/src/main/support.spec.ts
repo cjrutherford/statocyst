@@ -37,6 +37,9 @@ const SETTINGS = {
   cacheBudgetBytes: 2 * 1024 * 1024 * 1024,
   quality: 'lossless' as const,
   listeningHistory: false,
+  downloadWifiOnly: true,
+  downloadQuotaBytes: 0,
+  downloadQuality: 'original' as const,
 };
 
 describe('buildSupportBundle', () => {

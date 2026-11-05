@@ -34,6 +34,9 @@ import { formatDuration } from '../core/format';
         @if (playback.snapshot().state === 'buffering') {
           <span class="player__state">Buffering</span>
         }
+        @if (playback.snapshot().state === 'waiting-network') {
+          <span class="player__state player__state--waiting">Offline — will resume</span>
+        }
         @if (playback.snapshot().state === 'error') {
           <span class="player__state player__state--error">Audio error</span>
         }
@@ -215,6 +218,9 @@ import { formatDuration } from '../core/format';
       }
       .player__state--error {
         color: var(--danger);
+      }
+      .player__state--waiting {
+        color: var(--warning);
       }
       .player__expand {
         margin-left: auto;

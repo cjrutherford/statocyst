@@ -15,6 +15,7 @@ export const PLAYBACK_STATES = [
   'paused',
   'ended',
   'error',
+  'waiting-network',
 ] as const;
 export type PlaybackState = (typeof PLAYBACK_STATES)[number];
 
@@ -61,6 +62,10 @@ export interface Track {
   year?: number | null;
   genre?: string | null;
   format?: string | null;
+  /** Size of the original media in bytes; 0 or undefined when the source does not report it. */
+  sizeBytes?: number;
+  /** Source bitrate in bits per second, when known. */
+  bitrate?: number | null;
   missing: boolean;
   /** Ids of the same recording on other servers, hidden behind this row. */
   aliases?: string[];

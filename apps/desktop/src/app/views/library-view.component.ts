@@ -25,6 +25,7 @@ import { isNativePlatform } from '../core/bridge';
 import {
   formatDuration,
   formatLabel,
+  formatBytes,
   pluralize,
 } from '../core/format';
 
@@ -261,7 +262,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                     [checked]="allVisibleSelected()"
                     (change)="toggleSelectAll()"
                   />
-                  <span>Select all ({{ selectedCount() }} of {{ filtered().length }})</span>
+                  <span>Select all ({{ selectedCount() }} of {{ filtered().length }})@if (selectedBytes() > 0) { · {{ formatBytes(selectedBytes()) }} }</span>
                 </label>
                 <button type="button" class="btn btn--quiet" [disabled]="selectedCount() === 0" (click)="downloadSelected()">
                   <sc-icon name="download" /> Download
@@ -364,6 +365,9 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                               @if (track.year) {
                                 <span class="dot">·</span> {{ track.year }}
                               }
+                              @if (track.sizeBytes) {
+                                <span class="dot">·</span> {{ formatBytes(track.sizeBytes) }}
+                              }
                             </span>
                           </div>
                         </div>
@@ -373,7 +377,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                         <span class="source">{{ track.sourceLabel }}</span>
                       </td>
                       <td class="col-format">
-                        <span class="format">{{ formatLabel(track.format) }}</span>
+                        <span class="format">{{ formatLabel(track.format) }}@if (track.sizeBytes) { · {{ formatBytes(track.sizeBytes) }} }</span>
                       </td>
                       <td class="col-duration">{{ formatDuration(track.durationMs) }}</td>
                       <td class="col-actions">
@@ -556,6 +560,14 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             <button type="button" role="menuitem" (click)="toggleDownload(menu.track); closeContextMenu()">
               {{ downloads.isDownloaded()(menu.track.id) ? 'Remove download' : 'Download for offline' }}
             </button>
+            @if (!downloads.isDownloaded()(menu.track.id)) {
+              <button type="button" role="menuitem" (click)="downloadWithProfile(menu.track, 'saver'); closeContextMenu()">
+                Download data saver · ~96 kbps
+              </button>
+              <button type="button" role="menuitem" (click)="downloadWithProfile(menu.track, 'balanced'); closeContextMenu()">
+                Download balanced · ~128 kbps
+              </button>
+            }
           }
           @if (menu.track.sourceId === 'local') {
             <button type="button" role="menuitem" class="danger" (click)="remove(menu.track); closeContextMenu()">Remove from library</button>
@@ -1133,6 +1145,9 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       }
       .track-row {
         transition: background 120ms ease;
+        /* Long libraries (2k+ rows) render only what is near the viewport. */
+        content-visibility: auto;
+        contain-intrinsic-size: auto 64px;
       }
       .track-row:hover {
         background: var(--surface-row-hover);
@@ -1497,6 +1512,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly isNative = isNativePlatform;
   protected readonly formatDuration = formatDuration;
   protected readonly formatLabel = formatLabel;
+  protected readonly formatBytes = formatBytes;
   protected readonly pluralize = pluralize;
 
   protected readonly search = signal('');
@@ -1511,6 +1527,13 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly selectMode = signal(false);
   protected readonly selected = signal<Set<string>>(new Set());
   protected readonly selectedCount = computed(() => this.selected().size);
+  protected readonly selectedBytes = computed(() => {
+    const selected = this.selected();
+    if (selected.size === 0) return 0;
+    return this.library
+      .tracks()
+      .reduce((sum, track) => (selected.has(track.id) ? sum + (track.sizeBytes ?? 0) : sum), 0);
+  });
   protected readonly contextMenu = signal<{ x: number; y: number; track: Track; queue?: Track[] } | null>(null);
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressMoved = false;
@@ -1629,7 +1652,12 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     const d = this.detail();
     const tracks = this.detailTracks();
     const minutes = Math.max(1, Math.round(tracks.reduce((sum, t) => sum + t.durationMs, 0) / 60000));
-    const base = `${tracks.length} track${tracks.length === 1 ? '' : 's'} · ${minutes} min`;
+    const bytes = tracks.reduce((sum, t) => sum + (t.sizeBytes ?? 0), 0);
+    const size = bytes > 0 ? ` · ${formatBytes(bytes)}` : '';
+    const isDownloaded = this.downloads.isDownloaded();
+    const offline = tracks.filter((t) => t.sourceId === 'local' || isDownloaded(t.id)).length;
+    const coverage = tracks.length > 0 ? ` · ${offline} of ${tracks.length} offline` : '';
+    const base = `${tracks.length} track${tracks.length === 1 ? '' : 's'} · ${minutes} min${size}${coverage}`;
     if (d?.kind === 'artist') {
       const albums = this.detailAlbums().length;
       return `${albums} album${albums === 1 ? '' : 's'} · ${base}`;
@@ -1859,5 +1887,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     } else {
       void this.downloads.download(track.id, track.title);
     }
+  }
+
+  protected downloadWithProfile(track: Track, profile: 'original' | 'balanced' | 'saver'): void {
+    void this.downloads.download(track.id, track.title, { profile });
   }
 }

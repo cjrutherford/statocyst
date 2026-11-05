@@ -11,6 +11,9 @@ export const DEFAULT_SETTINGS: Settings = {
   cacheBudgetBytes: 2 * 1024 * 1024 * 1024,
   quality: 'lossless',
   listeningHistory: false,
+  downloadWifiOnly: true,
+  downloadQuotaBytes: 0,
+  downloadQuality: 'original',
 };
 
 @Injectable({ providedIn: 'root' })

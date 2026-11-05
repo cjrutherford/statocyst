@@ -13,6 +13,8 @@ export const BRIDGE_VERSION = 1 as const;
 export type ThemePreference = 'system' | 'dark' | 'light';
 export type DensityPreference = 'comfortable' | 'compact';
 export type QualityPreference = 'lossless' | 'auto';
+/** Quality of the offline copy. Original is the untouched file; Balanced/Saver are transcodes. */
+export type DownloadProfile = 'original' | 'balanced' | 'saver';
 
 export interface Settings {
   theme: ThemePreference;
@@ -28,6 +30,12 @@ export interface Settings {
    * derived listening data is opt-in (ADR-015). Never sent off the device.
    */
   listeningHistory: boolean;
+  /** Only transfer pinned downloads on an unmetered (Wi-Fi/Ethernet) connection. */
+  downloadWifiOnly: boolean;
+  /** Cap for pinned downloads in bytes; 0 = automatic (10 GB capped by a quarter of free space). */
+  downloadQuotaBytes: number;
+  /** Default quality for new pins. */
+  downloadQuality: DownloadProfile;
 }
 
 export interface AppInfo {
@@ -183,6 +191,12 @@ export interface DownloadView {
   container: string | null;
   verified: boolean;
   createdAt: string;
+  /** Quality profile used for this copy; missing on records written before profiles existed. */
+  profile?: DownloadProfile;
+  codec?: string | null;
+  bitRate?: number | null;
+  /** Original file size in bytes, for the space saved by a transcode. */
+  sourceBytes?: number;
 }
 
 export interface DownloadProgress {
@@ -216,6 +230,8 @@ export interface DownloadQueueEntry {
   attempt: number;
   /** Last error: the failure reason, or the transient problem being retried. */
   error: string | null;
+  /** Why a waiting entry is paused, e.g. "Waiting for Wi-Fi". */
+  waitingReason?: string | null;
 }
 
 /** The whole native download queue: per-track state plus aggregate progress. */
@@ -239,7 +255,7 @@ export interface DownloadsBridge {
    * Native background queue (Android): downloads keep running with the screen off,
    * retry and resume after network drops. Absent where downloads run one by one.
    */
-  enqueue?(trackIds: string[]): Promise<DownloadQueueSnapshot>;
+  enqueue?(trackIds: string[], profile?: DownloadProfile): Promise<DownloadQueueSnapshot>;
   cancelQueue?(): Promise<DownloadQueueSnapshot>;
   retryFailed?(): Promise<DownloadQueueSnapshot>;
   dismissQueue?(): Promise<DownloadQueueSnapshot>;
@@ -251,7 +267,7 @@ export interface DownloadsBridge {
    */
   readonly supported?: boolean;
   /** Downloads a track to the protected (non-evictable) store and verifies it. */
-  download(trackId: string): Promise<Result<DownloadSummary>>;
+  download(trackId: string, profile?: DownloadProfile): Promise<Result<DownloadSummary>>;
   remove(trackId: string): Promise<Result<{ removed: boolean }>>;
   list(): Promise<DownloadView[]>;
   stats(): Promise<DownloadStats>;

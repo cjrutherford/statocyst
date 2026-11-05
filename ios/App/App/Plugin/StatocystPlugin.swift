@@ -79,6 +79,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     private var importCancelled = false
     private var pendingPickerCall: CAPPluginCall?
     private var pendingPickerIsFolder = false
+    private var lifecycleObserverRegistered = false
 
     private static let DEFAULT_CACHE_BUDGET: Int64 = 2 * 1024 * 1024 * 1024
     private static let USER_STATE_SEEDED_KEY = "statocyst.user_state_seeded"
@@ -89,12 +90,30 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
 
         downloadQueueListenerId = DownloadCenter.shared.addListener { [weak self] snapshot in
             guard let self = self else { return }
-            self.emit("downloadQueue", self.queueSnapshotDict(snapshot))
-            if snapshot.finished && !self.wasDownloadsFinished {
-                self.notifyCacheChanged()
+            let payload = self.queueSnapshotDict(snapshot)
+            // The center publishes from worker and URLSession delegate threads.
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.emit("downloadQueue", payload)
+                if snapshot.finished && !self.wasDownloadsFinished {
+                    self.notifyCacheChanged()
+                }
+                self.wasDownloadsFinished = snapshot.finished
             }
-            self.wasDownloadsFinished = snapshot.finished
         }
+
+        if !lifecycleObserverRegistered {
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleAppDidBecomeActive(_:)),
+                name: UIApplication.didBecomeActiveNotification,
+                object: nil
+            )
+            lifecycleObserverRegistered = true
+        }
+        // A cold launch and a return from suspension both rebuild pending work from
+        // the durable queue; the background session reconnects on the same call.
+        DownloadCenter.shared.restorePending()
 
         playback.onStateChanged = { [weak self] state in
             guard let self = self else { return }
@@ -113,9 +132,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         if let id = downloadQueueListenerId {
             DownloadCenter.shared.removeListener(id)
         }
+    }
+
+    @objc private func handleAppDidBecomeActive(_ notification: Notification) {
+        DownloadCenter.shared.restorePending()
     }
 
     // MARK: - Library
@@ -151,6 +175,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 try? FileManager.default.removeItem(at: cached)
                 self.db.deleteCacheEntry(trackId)
             }
+            DownloadCenter.shared.cancel(trackId: trackId)
             self.downloads.remove(trackId)
             let removed = self.importer.removeTrack(trackId)
             call.resolve(["removed": removed])
@@ -423,6 +448,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         }
         ioQueue.async { [weak self] in
             guard let self = self else { return }
+            DownloadCenter.shared.cancel(trackId: trackId)
             let removed = self.downloads.remove(trackId)
             call.resolve(["removed": removed])
         }
@@ -607,19 +633,32 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             call.reject("url and token required")
             return
         }
+        let previousToken = JellyfinSessions.get(serverId)?.token
         JellyfinSessions.save(JellyfinSession(serverId: serverId, url: url, userId: userId, token: token))
+        if let previousToken = previousToken, previousToken != token {
+            // Resume blobs still carry the replaced Authorization header.
+            for id in db.idsByServer(serverId) {
+                DownloadStore.clearResumeData(trackId: id)
+            }
+        }
         call.resolve()
     }
 
     @objc func removeSession(_ call: CAPPluginCall) {
         if let serverId = call.getString("serverId"), !serverId.isEmpty {
             JellyfinSessions.remove(serverId)
+            // Resume blobs for this server carry the removed token.
+            for id in db.idsByServer(serverId) {
+                DownloadStore.clearResumeData(trackId: id)
+            }
         }
         call.resolve()
     }
 
     @objc func clearSession(_ call: CAPPluginCall) {
         JellyfinSessions.clear()
+        // Resume blobs still carry the old Authorization header.
+        DownloadStore.clearAllResumeData()
         call.resolve()
     }
 
@@ -636,6 +675,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 ids.append(contentsOf: self.db.unattributedRemoteIds())
             }
             for id in ids {
+                DownloadCenter.shared.cancel(trackId: id)
                 _ = self.downloads.remove(id)
             }
             self.db.deleteMediaItemsByIds(ids)
@@ -726,6 +766,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 if !seen.isEmpty && startIndex >= total {
                     let gone = self.db.idsByServer(serverId).filter { !seen.contains($0) }
                     for id in gone {
+                        DownloadCenter.shared.cancel(trackId: id)
                         _ = self.downloads.remove(id)
                         if let cached = self.cache.lookup(id) {
                             try? FileManager.default.removeItem(at: cached)
@@ -1066,6 +1107,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "year": t.year as Any,
             "genre": t.genre as Any,
             "format": t.format as Any,
+            "sizeBytes": t.sizeBytes,
+            "bitrate": t.bitrate as Any,
             "jellyfinImageTag": t.jellyfinImageTag as Any,
             "albumId": t.albumId as Any,
             "artworkUrl": artworkFor(t) as Any,
@@ -1155,6 +1198,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         let container = (source?["Container"] as? String) ?? "audio"
         let codec = source?["Codec"] as? String
         let bitrate = (source?["Bitrate"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+        let sizeBytes = (source?["Size"] as? NSNumber)?.int64Value ?? 0
         let ticks = (item["RunTimeTicks"] as? NSNumber)?.int64Value ?? 0
         let durationMs = ticks / 10_000
         let genres = (item["Genres"] as? [String])?.joined(separator: ", ")
@@ -1170,7 +1214,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             pathKey: "jellyfin:\(id)",
             fileName: name,
             ext: container,
-            sizeBytes: 0,
+            sizeBytes: sizeBytes,
             mtimeMs: 0,
             title: name,
             artist: artist,

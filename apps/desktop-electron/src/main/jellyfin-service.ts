@@ -66,7 +66,7 @@ function toTrackUpsert(item: JellyfinAudioItem, sourceId: string, jellyfinId: st
     pathKey: `jellyfin:${jellyfinId}:${item.id}`,
     fileName: item.name,
     ext: container,
-    sizeBytes: 0,
+    sizeBytes: item.size ?? 0,
     mtimeMs: 0,
     title: item.name,
     artist,

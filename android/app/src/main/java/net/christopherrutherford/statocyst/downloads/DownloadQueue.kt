@@ -12,6 +12,7 @@ data class QueueEntry(
     val totalBytes: Long?,
     val attempt: Int,
     val error: String?,
+    val waitingReason: String? = null,
 ) {
     val pending: Boolean get() = state != DownloadState.FAILED && state != DownloadState.DONE
 }
@@ -42,9 +43,11 @@ class DownloadQueue(
     private val runner: (trackId: String, events: DownloadEvents) -> Unit,
     private val persist: (List<String>) -> Unit = {},
     private val networkUp: () -> Boolean = { true },
+    private val blockedReason: () -> String? = { if (networkUp()) null else "Waiting for network" },
     concurrency: Int = 2,
     private val clock: () -> Long = System::currentTimeMillis,
     private val emitIntervalMs: Long = 250,
+    private val pause: (Long) -> Unit = { Thread.sleep(it) },
 ) {
     private class Mutable(val trackId: String) {
         var state = DownloadState.QUEUED
@@ -52,8 +55,9 @@ class DownloadQueue(
         var total: Long? = null
         var attempt = 0
         var error: String? = null
+        var waitingReason: String? = null
         val pending: Boolean get() = state != DownloadState.FAILED && state != DownloadState.DONE
-        fun snapshot() = QueueEntry(trackId, state, received, total, attempt, error)
+        fun snapshot() = QueueEntry(trackId, state, received, total, attempt, error, waitingReason)
     }
 
     private val entries = LinkedHashMap<String, Mutable>()
@@ -134,19 +138,52 @@ class DownloadQueue(
         } ?: run { persistPending(); publish(force = true); return }
         publish(force = true)
 
+        // Hold the entry before touching the network. This is what makes a
+        // "Wi-Fi only" queue wait instead of failing on a metered link, and it
+        // keeps the reason visible to the UI and the notification.
+        while (true) {
+            val reason = synchronized(this) { if (networkUp()) null else blockedReason() }
+            if (reason == null) break
+            change(entry) {
+                state = DownloadState.WAITING
+                waitingReason = reason
+                error = null
+            }
+            pause(2_000)
+            if (synchronized(this) { id in cancelled }) {
+                synchronized(this) { cancelled.remove(id); entries.remove(id) }
+                publish(force = true)
+                return
+            }
+            if (synchronized(this) { !entries.containsKey(id) }) return
+        }
+        if (synchronized(this) { entry.state != DownloadState.ACTIVE }) {
+            change(entry) { state = DownloadState.ACTIVE; waitingReason = null }
+        }
+
         val events = object : DownloadEvents {
             override fun cancelled() = synchronized(this@DownloadQueue) { id in cancelled }
             override fun online() = networkUp()
-            override fun waiting() = change(entry) { state = DownloadState.WAITING }
+            override fun waiting() = change(entry) {
+                state = DownloadState.WAITING
+                waitingReason = if (networkUp()) null else blockedReason()
+            }
             override fun retrying(attempt: Int, reason: String) = change(entry) {
                 state = DownloadState.RETRYING
                 this.attempt = attempt
                 error = reason
+                waitingReason = null
             }
             override fun progress(received: Long, total: Long?) {
                 val resumed = synchronized(this@DownloadQueue) { entry.state != DownloadState.ACTIVE }
                 if (resumed) {
-                    change(entry) { state = DownloadState.ACTIVE; error = null; this.received = received; this.total = total }
+                    change(entry) {
+                        state = DownloadState.ACTIVE
+                        error = null
+                        waitingReason = null
+                        this.received = received
+                        this.total = total
+                    }
                 } else {
                     synchronized(this@DownloadQueue) { entry.received = received; entry.total = total }
                     publish(force = false)
@@ -160,6 +197,7 @@ class DownloadQueue(
                 total = total ?: received
                 received = total ?: received
                 error = null
+                waitingReason = null
             }
         } catch (_: DownloadCancelled) {
             synchronized(this) { cancelled.remove(id); entries.remove(id) }
@@ -168,6 +206,7 @@ class DownloadQueue(
             change(entry) {
                 state = DownloadState.FAILED
                 this.error = error.message ?: error.javaClass.simpleName
+                waitingReason = null
             }
         }
         persistPending()

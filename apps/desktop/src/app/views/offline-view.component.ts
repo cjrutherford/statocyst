@@ -36,7 +36,7 @@ import { formatDuration, formatBytes } from '../core/format';
         </div>
       } @else {
         <div class="toolbar">
-          <span class="result-count">{{ tracks().length }} offline track{{ tracks().length === 1 ? '' : 's' }}</span>
+          <span class="result-count">{{ tracks().length }} offline track{{ tracks().length === 1 ? '' : 's' }}@if (offlineBytes() > 0) { · {{ formatBytes(offlineBytes()) }} }</span>
           @if (downloads.stats().count > 0) {
             <span class="result-count">{{ downloads.stats().count }} pinned · {{ formatBytes(downloads.stats().totalBytes) }}</span>
           }
@@ -50,6 +50,7 @@ import { formatDuration, formatBytes } from '../core/format';
                 <th scope="col">Title</th>
                 <th scope="col" class="col-album">Album</th>
                 <th scope="col" class="col-format">Source</th>
+                <th scope="col" class="col-size">Size</th>
                 <th scope="col" class="col-duration">Time</th>
                 <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
               </tr>
@@ -72,9 +73,12 @@ import { formatDuration, formatBytes } from '../core/format';
                     @if (track.sourceId === 'local') {
                       <span class="badge">Imported</span>
                     } @else if (downloads.isDownloaded()(track.id)) {
-                      <span class="badge badge--ok">Pinned</span>
+                      <span class="badge badge--ok">
+                        Pinned@if (downloads.profileOf()(track.id); as profile) { · {{ profile }} }
+                      </span>
                     }
                   </td>
+                  <td class="col-size">{{ formatBytes(track.sizeBytes ?? 0) }}</td>
                   <td class="col-duration">{{ formatDuration(track.durationMs) }}</td>
                   <td class="col-actions">
                     <button type="button" class="icon-btn" aria-label="Play" (click)="play(track)">
@@ -128,10 +132,11 @@ import { formatDuration, formatBytes } from '../core/format';
       .col-index { width: 36px; color: var(--muted); }
       .col-album { color: var(--muted); }
       .col-format { color: var(--muted); font-size: 0.78rem; }
+      .col-size { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.78rem; }
       .col-duration { color: var(--muted); font-variant-numeric: tabular-nums; }
       .col-actions { text-align: right; white-space: nowrap; }
       @media (max-width: 720px) {
-        .col-index, .col-album, .col-format, .col-duration { display: none; }
+        .col-index, .col-album, .col-format, .col-size, .col-duration { display: none; }
         .track-table th, .track-table td { padding: 10px 8px; }
         .title-btn { min-width: 0; }
       }
@@ -150,6 +155,10 @@ export class OfflineViewComponent {
       (track) => track.sourceId === 'local' || isDownloaded(track.id),
     );
   });
+
+  protected readonly offlineBytes = computed(() =>
+    this.tracks().reduce((sum, track) => sum + (track.sizeBytes ?? 0), 0),
+  );
 
   protected play(track: Track): void {
     void this.playback.playTrack(track.id);

@@ -85,12 +85,12 @@ class DownloadService : Service() {
             .setShowWhen(false)
         if (snapshot.pending > 0) {
             val number = snapshot.done + snapshot.failed + 1
-            val waiting = snapshot.entries.any { it.state == DownloadState.WAITING }
+            val waiting = snapshot.entries.firstOrNull { it.state == DownloadState.WAITING }
             val retrying = snapshot.entries.any { it.state == DownloadState.RETRYING }
             b.setContentTitle("Downloading ${minOf(number, snapshot.total)} of ${snapshot.total}")
                 .setContentText(
                     when {
-                        waiting -> "Waiting for network"
+                        waiting != null -> waiting.waitingReason ?: "Waiting for network"
                         retrying -> "Retrying after a connection problem"
                         snapshot.failed > 0 -> "${snapshot.failed} failed so far"
                         else -> "Keeping your music available offline"

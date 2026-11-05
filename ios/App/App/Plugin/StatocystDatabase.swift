@@ -704,6 +704,47 @@ final class StatocystDatabase {
         }
     }
 
+    func getAllPlaylists() -> [PlaylistEntity] {
+        return queue.sync {
+            guard let db = db else { return [] }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            let sql = "SELECT id, name, createdAt, position FROM playlist ORDER BY position ASC, LOWER(name) ASC;"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            var list: [PlaylistEntity] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let id = colString(stmt, 0)
+                if id.isEmpty { continue }
+                list.append(PlaylistEntity(
+                    id: id,
+                    name: colString(stmt, 1),
+                    createdAt: sqlite3_column_int64(stmt, 2),
+                    position: Int(sqlite3_column_int(stmt, 3))
+                ))
+            }
+            return list
+        }
+    }
+
+    func getAllPlaylistTracks() -> [PlaylistTrackEntity] {
+        return queue.sync {
+            guard let db = db else { return [] }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            let sql = "SELECT playlistId, position, trackId FROM playlist_track ORDER BY playlistId ASC, position ASC;"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            var list: [PlaylistTrackEntity] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                list.append(PlaylistTrackEntity(
+                    playlistId: colString(stmt, 0),
+                    position: Int(sqlite3_column_int(stmt, 1)),
+                    trackId: colString(stmt, 2)
+                ))
+            }
+            return list
+        }
+    }
+
     func replaceUserState(
         favorites: [FavoriteEntity],
         playlists: [PlaylistEntity],

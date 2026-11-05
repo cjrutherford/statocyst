@@ -58,7 +58,7 @@ export class PlaybackStore {
   readonly track = computed<Track | null>(() => this.snapshot().track);
   readonly isPlaying = computed(() => {
     const state = this.snapshot().state;
-    return state === 'playing' || state === 'buffering';
+    return state === 'playing' || state === 'buffering' || state === 'waiting-network';
   });
   readonly progress = computed(() => {
     const { positionMs, durationMs } = this.snapshot();
@@ -141,7 +141,11 @@ export class PlaybackStore {
 
   async toggle(): Promise<void> {
     const snapshot = this.snapshot();
-    if (snapshot.state === 'playing' || snapshot.state === 'buffering') {
+    if (
+      snapshot.state === 'playing' ||
+      snapshot.state === 'buffering' ||
+      snapshot.state === 'waiting-network'
+    ) {
       await this.command({ type: 'pause' });
       return;
     }
