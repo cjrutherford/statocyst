@@ -200,6 +200,8 @@ interface NavItem {
         height: 100dvh;
         padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
         padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
         box-sizing: border-box;
       }
       .app.is-offline {
@@ -693,24 +695,25 @@ export class AppComponent {
 
   private async bootstrap(): Promise<void> {
     if (!bridgeAvailable()) return;
-    try {
-      await this.settingsStore.init();
-    } catch {
-      // Settings failures are non-fatal; defaults are already applied.
-    }
+    performance.mark('statocyst:boot-start');
     this.audio.start();
-    await this.playback.init();
-    await this.library.init();
-    await this.downloads.init();
+    // Downloads only decorate rows with an offline badge; do not hold first
+    // paint for them. Settings, playback and the library are the critical path.
+    void this.downloads.init();
+    await Promise.all([
+      this.settingsStore.init().catch(() => undefined),
+      this.playback.init(),
+      this.library.init(),
+    ]);
     // Server health is a network probe. It updates the badge when it answers,
     // but the app has to be usable offline, so it never blocks the shell.
     void this.jellyfin.init();
-    try {
-      this.info.set(await bridge().app.info());
-    } catch {
-      // Informational only.
-    }
     this.ready.set(true);
+    performance.mark('statocyst:shell-interactive');
+    void bridge()
+      .app.info()
+      .then((info) => this.info.set(info))
+      .catch(() => undefined);
   }
 
   protected statusLabel(): string {

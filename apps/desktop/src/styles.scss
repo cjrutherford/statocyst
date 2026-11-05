@@ -387,6 +387,61 @@ button {
    Motion preferences
 --------------------------------------------------------------------------- */
 
+/* --------------------------------------------------------------------------
+   Capacitor native rendering profile
+   Keeps the ocean/bubble palette and light/dark themes, but swaps live glass
+   effects for composited or pre-tinted surfaces. Live backdrop blur over a
+   scrolling list is the most expensive paint path in the Android WebView.
+--------------------------------------------------------------------------- */
+
+:root[data-native] body {
+  /* The shell itself does not scroll; removing fixed attachment avoids a
+     full-screen repaint when inner lists move. */
+  background-attachment: scroll;
+}
+
+:root[data-native] .player,
+:root[data-native] .sidebar,
+:root[data-native] .toast,
+:root[data-native] .boot,
+:root[data-native] .offline-chip,
+:root[data-native] .volume-pop,
+:root[data-native] .context-menu,
+:root[data-native] .selection-bar,
+:root[data-native] .dls {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-native] .main {
+  scroll-behavior: auto;
+  overscroll-behavior-y: contain;
+}
+
+/* Keep the mini-player clear of a landscape cutout without losing the edge. */
+:root[data-native] .player {
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+
+/* Static radial bloom instead of a live blur filter on the pearl highlight. */
+:root[data-native] .stage__pearl {
+  filter: none;
+  background: radial-gradient(circle at 50% 70%, rgba(255, 255, 255, 0.18), transparent 62%);
+}
+
+/* The play-button breathing is decorative; keep a static glow so playback does
+   not repaint a large shadow every frame. */
+:root[data-native] .player__play.is-live {
+  animation: none;
+}
+
+:root[data-native] .track-row,
+:root[data-native] .album-card,
+:root[data-native] .artist-card {
+  contain: layout paint style;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

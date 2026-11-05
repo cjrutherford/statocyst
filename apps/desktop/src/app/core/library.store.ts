@@ -78,13 +78,15 @@ export class LibraryStore {
     if (this.loaded()) return;
     this.loading.set(true);
     try {
-      const [tracks, stats] = await Promise.all([
-        bridge().library.listTracks(),
-        bridge().library.stats(),
-      ]);
+      const tracks = await bridge().library.listTracks();
       this.tracks.set(tracks);
-      this.stats.set(stats);
       this.loaded.set(true);
+      if (typeof performance !== 'undefined') performance.mark('statocyst:library-ready');
+      // Counts are decorative and can land after the first paint.
+      void bridge()
+        .library.stats()
+        .then((stats) => this.stats.set(stats))
+        .catch(() => undefined);
     } catch (error) {
       this.toasts.error('Could not load the library', String(error));
     } finally {
@@ -94,12 +96,12 @@ export class LibraryStore {
 
   async refresh(): Promise<void> {
     try {
-      const [tracks, stats] = await Promise.all([
-        bridge().library.listTracks(),
-        bridge().library.stats(),
-      ]);
+      const tracks = await bridge().library.listTracks();
       this.tracks.set(tracks);
-      this.stats.set(stats);
+      void bridge()
+        .library.stats()
+        .then((stats) => this.stats.set(stats))
+        .catch(() => undefined);
     } catch (error) {
       this.toasts.error('Could not refresh the library', String(error));
     }

@@ -455,10 +455,10 @@ export class PlayerBarComponent {
     () => !this.playback.track() && this.playback.queue().entries.length === 0,
   );
   protected readonly displayPosition = computed(() =>
-    this.dragging() ? this.dragValue() : this.playback.snapshot().positionMs,
+    this.dragging() ? this.dragValue() : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
-    Math.max(1, this.playback.snapshot().durationMs),
+    Math.max(1, this.playback.durationMs()),
   );
   protected readonly progressPercent = computed(() =>
     Math.min(100, (this.displayPosition() / this.displayDuration()) * 100),

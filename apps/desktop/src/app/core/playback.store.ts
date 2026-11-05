@@ -49,9 +49,20 @@ export class PlaybackStore {
   private readonly destroyRef = inject(DestroyRef);
   private readonly toasts = inject(ToastStore);
   private initialised = false;
+  /** Guards the initial snapshot read against an event that arrived while it was in flight. */
+  private stateRevision = 0;
+  private positionRevision = 0;
+  private queueRevision = 0;
 
   readonly snapshot = signal<PlaybackSnapshot>({ ...EMPTY_SNAPSHOT });
   readonly queue = signal<QueueSnapshot>({ ...EMPTY_QUEUE });
+  /**
+   * Position and duration are high-frequency playback data, deliberately kept out
+   * of `snapshot` so a 1 Hz native ticker does not invalidate every component that
+   * reads the coarse playback state (track, shuffle, repeat, buffering).
+   */
+  readonly positionMs = signal(0);
+  readonly durationMs = signal(0);
   readonly ready = signal(false);
   readonly lastError = signal<string | null>(null);
 
@@ -61,9 +72,9 @@ export class PlaybackStore {
     return state === 'playing' || state === 'buffering' || state === 'waiting-network';
   });
   readonly progress = computed(() => {
-    const { positionMs, durationMs } = this.snapshot();
+    const durationMs = this.durationMs();
     if (durationMs <= 0) return 0;
-    return Math.min(1, Math.max(0, positionMs / durationMs));
+    return Math.min(1, Math.max(0, this.positionMs() / durationMs));
   });
   readonly currentIndex = computed(() => {
     const { entries, currentEntryId } = this.queue();
@@ -87,12 +98,24 @@ export class PlaybackStore {
     const unsubscribe = api.playback.onEvent((event) => this.handleEvent(event));
     this.destroyRef.onDestroy(unsubscribe);
     try {
+      const stateRevision = this.stateRevision;
+      const positionRevision = this.positionRevision;
+      const queueRevision = this.queueRevision;
       const [snapshot, queue] = await Promise.all([
         api.playback.getSnapshot(),
         api.playback.getQueue(),
       ]);
-      this.snapshot.set(snapshot);
-      this.queue.set(queue);
+      // A state/queue event may have landed while the initial reads were in
+      // flight (cold start runs the library load in parallel). Do not overwrite
+      // the newer truth with the stale snapshot captured before it.
+      if (this.stateRevision === stateRevision) {
+        this.snapshot.set(snapshot);
+        if (this.positionRevision === positionRevision) {
+          this.positionMs.set(snapshot.positionMs);
+          this.durationMs.set(snapshot.durationMs);
+        }
+      }
+      if (this.queueRevision === queueRevision) this.queue.set(queue);
       this.ready.set(true);
     } catch (error) {
       this.toasts.error('Playback state unavailable', String(error));
@@ -112,6 +135,8 @@ export class PlaybackStore {
       return result;
     }
     this.snapshot.set(result.value);
+    this.positionMs.set(result.value.positionMs);
+    this.durationMs.set(result.value.durationMs);
     this.lastError.set(null);
     if (QUEUE_COMMANDS.has(command.type)) {
       const queue = await bridge().playback.getQueue().catch(() => null);
@@ -162,7 +187,8 @@ export class PlaybackStore {
   }
 
   async seekBy(deltaMs: number): Promise<void> {
-    const { positionMs, durationMs } = this.snapshot();
+    const positionMs = this.positionMs();
+    const durationMs = this.durationMs();
     const target = Math.min(Math.max(0, positionMs + deltaMs), durationMs || Number.MAX_SAFE_INTEGER);
     await this.seek(target);
   }
@@ -228,16 +254,20 @@ export class PlaybackStore {
   private handleEvent(event: PlaybackEvent): void {
     switch (event.type) {
       case 'stateChanged':
+        this.stateRevision += 1;
         this.snapshot.set(event.snapshot);
+        this.positionMs.set(event.snapshot.positionMs);
+        this.durationMs.set(event.snapshot.durationMs);
         break;
       case 'positionChanged':
-        this.snapshot.update((snapshot) => ({
-          ...snapshot,
-          positionMs: event.positionMs,
-          durationMs: event.durationMs || snapshot.durationMs,
-        }));
+        // High-frequency path: do not replace the snapshot signal. Only the
+        // components bound to the seek position need to re-render.
+        this.positionRevision += 1;
+        this.positionMs.set(event.positionMs);
+        this.durationMs.update((current) => event.durationMs || current);
         break;
       case 'queueChanged':
+        this.queueRevision += 1;
         this.queue.set(event.queue);
         break;
       case 'trackChanged':
