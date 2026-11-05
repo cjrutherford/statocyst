@@ -31,12 +31,13 @@ env:
 
 jobs:
   apk:
-    name: Build, sign and publish the APK and AAB
+    name: Build and publish Android artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
       name: ${{ steps.version.outputs.name }}
       tag: ${{ steps.version.outputs.tag }}
+      signed: ${{ steps.signing.outputs.available }}
     steps:
       - uses: actions/checkout@v4
 
@@ -63,16 +64,25 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "title=$title" >> "$GITHUB_OUTPUT"
 
-      - name: Check signing secrets are configured
+      - name: Detect release signing
+        id: signing
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          missing=()
           for v in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [[ -z "${!v}" ]]; then echo "::error::missing repository secret for $v (see android/RELEASING.md, 'CI release')"; exit 1; fi
+            if [[ -z "${!v}" ]]; then missing+=("$v"); fi
           done
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release signing secrets are configured; publishing signed APK/AAB."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing release signing secrets: ${missing[*]}. Publishing a debug-signed APK instead. Add the four ANDROID_* secrets for signed release artifacts and Play uploads."
+          fi
 
       - uses: ./.github/actions/setup-web
       - uses: actions/setup-java@v4
@@ -101,6 +111,7 @@ jobs:
           pnpm exec cap sync android
 
       - name: Install the signing key
+        if: steps.signing.outputs.available == 'true'
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -116,11 +127,17 @@ jobs:
           } > android/keystore.properties
 
       - name: Unit tests, release lint, signed release APK and AAB
+        if: steps.signing.outputs.available == 'true'
         working-directory: android
         run: ./gradlew --console=plain testDebugUnitTest lintVitalRelease assembleRelease bundleRelease
 
+      - name: Unit tests and debug APK (unsigned release fallback)
+        if: steps.signing.outputs.available != 'true'
+        working-directory: android
+        run: ./gradlew --console=plain testDebugUnitTest assembleDebug
+
       - name: Verify the signatures
-        id: apk
+        if: steps.signing.outputs.available == 'true'
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
           aab=android/app/build/outputs/bundle/release/app-release.aab
@@ -136,13 +153,30 @@ jobs:
           if [[ "$aab_actual" != "$EXPECTED_CERT_SHA256" ]]; then
             echo "::error::AAB is signed with an unexpected certificate ($aab_actual)"; exit 1
           fi
+
+      - name: Collect release artifacts
+        run: |
           name="${{ steps.version.outputs.name }}"
           mkdir -p dist-release
-          cp "$apk" "dist-release/statocyst-$name.apk"
-          cp "$aab" "dist-release/statocyst-$name.aab"
-          # R8 mapping: upload to Play Console (App bundle explorer) to de-obfuscate crash reports.
-          cp android/app/build/outputs/mapping/release/mapping.txt "dist-release/statocyst-$name-mapping.txt"
-          (cd dist-release && sha256sum "statocyst-$name.apk" "statocyst-$name.aab" > SHA256SUMS && cat SHA256SUMS)
+          if [[ "${{ steps.signing.outputs.available }}" == "true" ]]; then
+            apk=android/app/build/outputs/apk/release/app-release.apk
+            aab=android/app/build/outputs/bundle/release/app-release.aab
+            cp "$apk" "dist-release/statocyst-$name.apk"
+            cp "$aab" "dist-release/statocyst-$name.aab"
+            # R8 mapping: upload to Play Console (App bundle explorer) to de-obfuscate crash reports.
+            cp android/app/build/outputs/mapping/release/mapping.txt "dist-release/statocyst-$name-mapping.txt"
+            (cd dist-release && sha256sum "statocyst-$name.apk" "statocyst-$name.aab" > SHA256SUMS)
+          else
+            # Without release secrets the release APK would be unsigned and uninstallable.
+            # A debug-signed APK is still useful for sideloading a merge build.
+            apk=android/app/build/outputs/apk/debug/app-debug.apk
+            cp "$apk" "dist-release/statocyst-$name-debug.apk"
+            if [[ -f android/app/build/outputs/mapping/debug/mapping.txt ]]; then
+              cp android/app/build/outputs/mapping/debug/mapping.txt "dist-release/statocyst-$name-debug-mapping.txt"
+            fi
+            (cd dist-release && sha256sum "statocyst-$name-debug.apk" > SHA256SUMS)
+          fi
+          cat dist-release/SHA256SUMS
 
       - name: Remove the signing key
         if: always()
@@ -159,14 +193,21 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           TITLE: ${{ steps.version.outputs.title }}
         run: |
-          flags=(--generate-notes --title "$TITLE")
+          if [[ "${{ steps.signing.outputs.available }}" == "true" ]]; then
+            flags=(--generate-notes --title "$TITLE")
+          else
+            flags=(--title "$TITLE" --notes "Unsigned build: Android release signing secrets are not configured, so the attached APK is a debug-signed sideload build and there is no AAB. Add ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD for signed releases. The iOS IPA is ad-hoc signed and the desktop installers are unsigned.")
+          fi
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             flags+=(--verify-tag)
           else
             flags+=(--target "$GITHUB_SHA")
           fi
-          # A suffix means a pre-release (merge build or -rc tag); full vN.N.N stays stable.
-          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          # A suffix means a pre-release (merge build or -rc tag); an unsigned
+          # build is always a pre-release because it is not a shippable artifact.
+          if [[ "$TAG" == *-* || "${{ steps.signing.outputs.available }}" != "true" ]]; then
+            flags+=(--prerelease)
+          fi
           gh release create "$TAG" dist-release/* "${flags[@]}"
 
   ipa:
@@ -243,15 +284,15 @@ jobs:
       - name: Package Linux installers
         if: matrix.target == 'linux'
         shell: bash
-        run: pnpm exec electron-builder --linux AppImage deb --config electron-builder.yml --publish never
+        run: pnpm exec electron-builder --linux AppImage deb --config electron-builder.yml -c.extraMetadata.version="${{ needs.apk.outputs.name }}" --publish never
       - name: Package Windows installer
         if: matrix.target == 'win'
         shell: bash
-        run: pnpm exec electron-builder --win nsis --config electron-builder.yml --publish never
+        run: pnpm exec electron-builder --win nsis --config electron-builder.yml -c.extraMetadata.version="${{ needs.apk.outputs.name }}" --publish never
       - name: Package macOS installer
         if: matrix.target == 'mac'
         shell: bash
-        run: pnpm exec electron-builder --mac dmg zip --config electron-builder.yml --publish never
+        run: pnpm exec electron-builder --mac dmg zip --config electron-builder.yml -c.extraMetadata.version="${{ needs.apk.outputs.name }}" --publish never
       - name: Collect installers and checksums
         shell: bash
         env:
@@ -283,8 +324,8 @@ jobs:
     name: Upload the AAB to the Play internal track
     needs: apk
     # Merge builds reuse the same versionCode; Play would reject a duplicate. Only
-    # versioned tag releases go to Play.
-    if: github.ref_type == 'tag'
+    # versioned tag releases with a real signing key go to Play.
+    if: github.ref_type == 'tag' && needs.apk.outputs.signed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:

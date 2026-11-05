@@ -4,6 +4,12 @@
   "private": true,
   "license": "MIT",
   "description": "Statocyst — local-first, Jellyfin-oriented music player",
+  "homepage": "https://github.com/cjrutherford/statocyst",
+  "desktopName": "statocyst.desktop",
+  "author": {
+    "name": "Statocyst contributors",
+    "email": "statocyst@users.noreply.github.com"
+  },
   "main": "dist/apps/desktop-electron/main.js",
   "packageManager": "pnpm@10.18.3",
   "engines": {
