@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, HostListener, inject, output, signal } from '@angular/core';
 import { ArtworkComponent } from './artwork.component';
 import { IconComponent } from './icon.component';
 import { PlaybackStore } from '../core/playback.store';
@@ -122,23 +122,40 @@ import { formatDuration } from '../core/format';
         <button
           type="button"
           class="icon-btn"
-          [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
-          [title]="playback.snapshot().muted ? 'Unmute (M)' : 'Mute (M)'"
-          (click)="playback.toggleMute()"
+          [class.is-active]="volumeOpen()"
+          [attr.aria-label]="playback.snapshot().muted ? 'Volume (muted)' : 'Volume'"
+          [attr.aria-expanded]="volumeOpen()"
+          aria-haspopup="dialog"
+          [title]="'Volume (M to mute)'"
+          (click)="volumeOpen.set(!volumeOpen())"
         >
           <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
         </button>
-        <input
-          class="range range--volume"
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          [value]="playback.snapshot().volume"
-          [style.--progress]="volumePercent() + '%'"
-          aria-label="Volume"
-          (input)="onVolume($event)"
-        />
+        @if (volumeOpen()) {
+          <div class="volume-backdrop" (click)="volumeOpen.set(false)"></div>
+          <div class="volume-pop" role="dialog" aria-label="Volume">
+            <button
+              type="button"
+              class="icon-btn"
+              [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
+              (click)="playback.toggleMute()"
+            >
+              <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
+            </button>
+            <input
+              class="range range--volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              [value]="playback.snapshot().volume"
+              [style.--progress]="volumePercent() + '%'"
+              aria-label="Volume"
+              (input)="onVolume($event)"
+            />
+            <span class="volume-value">{{ volumePercent().toFixed(0) }}%</span>
+          </div>
+        }
         <button
           type="button"
           class="icon-btn"
@@ -293,10 +310,41 @@ import { formatDuration } from '../core/format';
         text-align: center;
       }
       .player__extras {
+        position: relative;
         display: flex;
         align-items: center;
         justify-content: flex-end;
         gap: 8px;
+      }
+      .volume-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 119;
+      }
+      .volume-pop {
+        position: fixed;
+        right: 24px;
+        bottom: 134px;
+        z-index: 120;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel-strong, #0b1224);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(18px);
+      }
+      .volume-pop .range--volume {
+        width: 110px;
+      }
+      .volume-value {
+        min-width: 34px;
+        text-align: right;
+        font-size: 0.7rem;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
       }
       .range {
         appearance: none;
@@ -345,12 +393,10 @@ import { formatDuration } from '../core/format';
         .player {
           grid-template-columns: minmax(140px, 1fr) minmax(280px, 1.4fr) auto;
         }
-        .range--volume {
-          display: none;
-        }
       }
       .player {
         position: relative;
+        z-index: 110;
       }
       .player__hairline {
         display: none;
@@ -402,6 +448,7 @@ export class PlayerBarComponent {
 
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
+  protected readonly volumeOpen = signal(false);
 
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(
@@ -431,5 +478,10 @@ export class PlayerBarComponent {
 
   protected onVolume(event: Event): void {
     void this.playback.setVolume(Number((event.target as HTMLInputElement).value));
+  }
+
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    this.volumeOpen.set(false);
   }
 }

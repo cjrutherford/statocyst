@@ -25,8 +25,8 @@ import { formatDuration } from '../core/format';
           </p>
         </div>
         <div class="actions">
-          <button type="button" class="btn btn--quiet" (click)="saveFavorites()">Save favorites as playlist</button>
-          <button type="button" class="btn btn--quiet" (click)="saveRecentlyAdded()">Save recently added</button>
+          <button type="button" class="btn btn--quiet" [disabled]="favorites().length === 0" (click)="saveFavorites()">Save favorites as playlist</button>
+          <button type="button" class="btn btn--quiet" [disabled]="recentlyAdded().length === 0" (click)="saveRecentlyAdded()">Save recently added</button>
           <button type="button" class="btn btn--primary" (click)="createSmartPlaylist()">New smart playlist</button>
         </div>
       </header>
@@ -160,6 +160,19 @@ import { formatDuration } from '../core/format';
       .view { display: grid; gap: clamp(16px, 2vw, 26px); padding: clamp(20px, 3vw, 38px); max-width: 1480px; margin: 0 auto; animation: rise 380ms ease both; }
       .view__head { display: flex; flex-direction: column; gap: 4px; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      @media (max-width: 640px) {
+        .actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+        }
+        .actions .btn:last-child {
+          grid-column: 1 / -1;
+        }
+        .smart-card__download {
+          width: 44px;
+          height: 44px;
+        }
+      }
       h1 { font-size: clamp(2rem, 3.4vw, 3rem); letter-spacing: -0.03em; margin: 4px 0 6px; }
       .lede { color: var(--muted); max-width: 58ch; margin: 0; font-size: 0.92rem; }
       .smart-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }

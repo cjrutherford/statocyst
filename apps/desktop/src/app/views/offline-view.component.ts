@@ -5,6 +5,7 @@ import { IconComponent } from '../components/icon.component';
 import { LibraryStore } from '../core/library.store';
 import { DownloadsStore } from '../core/downloads.store';
 import { PlaybackStore } from '../core/playback.store';
+import { NavigationStore } from '../core/navigation.store';
 import { isNativePlatform } from '../core/bridge';
 import { formatDuration, formatBytes } from '../core/format';
 
@@ -33,6 +34,9 @@ import { formatDuration, formatBytes } from '../core/format';
             Download tracks from the Library, or import audio from this device, and they will
             appear here.
           </p>
+          <button type="button" class="btn" (click)="navigation.navigate('library')">
+            <sc-icon name="library" /> Browse library
+          </button>
         </div>
       } @else {
         <div class="toolbar">
@@ -148,6 +152,7 @@ export class OfflineViewComponent {
   protected readonly library = inject(LibraryStore);
   protected readonly downloads = inject(DownloadsStore);
   protected readonly playback = inject(PlaybackStore);
+  protected readonly navigation = inject(NavigationStore);
 
   protected readonly tracks = computed<Track[]>(() => {
     const isDownloaded = this.downloads.isDownloaded();

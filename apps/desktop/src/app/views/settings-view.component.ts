@@ -41,8 +41,10 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
           <p class="lede">
             @if (isIos()) {
               Appearance, Jellyfin, storage, AirPlay &amp; CarPlay and on-device data.
-            } @else {
+            } @else if (isNative()) {
               Appearance, Jellyfin, storage, Android Auto and on-device data.
+            } @else {
+              Appearance, Jellyfin, storage and on-device data.
             }
           </p>
         </div>
@@ -452,7 +454,7 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
             }
           </div>
 
-          @if (downloads.supported) {
+          @if (downloads.supported && isNative() && !isIos()) {
             <div class="field">
               <span class="field__label" id="dl-network-label">Download over</span>
               <div class="segmented" role="radiogroup" aria-labelledby="dl-network-label">
