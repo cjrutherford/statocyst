@@ -23,6 +23,11 @@ linux:
   category: AudioVideo
   icon: resources/icons/statocyst-512.png
   executableName: statocyst
+  syncDesktopName: true
+  maintainer: Statocyst contributors <statocyst@users.noreply.github.com>
+  vendor: Statocyst
+  synopsis: Local-first, Jellyfin-oriented music player
+  description: Statocyst is a local-first music player for imported audio and Jellyfin libraries.
 win:
   target:
     - nsis

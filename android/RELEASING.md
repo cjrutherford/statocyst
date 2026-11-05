@@ -158,6 +158,14 @@ search. For a sideloaded build the phone needs Android Auto developer settings
   checks that the signing certificate is the one in section 3, and creates a
   GitHub Release with `statocyst-<version>.apk` and `SHA256SUMS` attached. A tag
   with a `-` (e.g. `v1.5.0-rc1`) is marked as a pre-release.
+- The same workflow runs on every push to `main` (a merged PR). It creates a
+  unique prerelease tag `v<versionName>-merge.<run_number>` at the merge commit
+  and publishes Android, iOS and Electron artifacts. No version-bump PR and no
+  Actions PR approval are involved.
+- If the four signing secrets below are missing, the merge build still succeeds:
+  it publishes a **debug-signed** APK for sideloading and skips the AAB and Play
+  upload, with a warning in the release notes. Add the secrets to get a signed
+  APK/AAB and enable the Play internal upload on versioned tag releases.
 
 One-time setup: add these repository secrets (Settings -> Secrets and variables
 -> Actions), from the key in section 3:
