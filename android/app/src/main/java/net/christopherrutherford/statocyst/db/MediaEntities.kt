@@ -13,6 +13,12 @@ data class DownloadEntity(
     val container: String?,
     val verified: Boolean,
     val createdAt: String,
+    /** Wire name of the quality profile; "original" for records written before profiles. */
+    val profile: String = "original",
+    val codec: String? = null,
+    val bitRate: Int? = null,
+    /** Original file size, so the space saved by a transcode can be reported. */
+    val sourceBytes: Long = 0,
 )
 
 /** An entry in the evictable rolling cache (never a pinned download). */

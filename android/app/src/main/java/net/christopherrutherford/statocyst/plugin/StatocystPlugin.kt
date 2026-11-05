@@ -3,6 +3,7 @@ package net.christopherrutherford.statocyst.plugin
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.StatFs
 import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -26,6 +27,8 @@ import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.cache.MediaCache
 import net.christopherrutherford.statocyst.downloads.DownloadCenter
 import net.christopherrutherford.statocyst.downloads.DownloadManager
+import net.christopherrutherford.statocyst.downloads.DownloadPolicy
+import net.christopherrutherford.statocyst.downloads.DownloadProfile
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSession
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.downloads.QueueSnapshot
@@ -284,6 +287,7 @@ class StatocystPlugin : Plugin() {
         if (c.duration == C.TIME_UNSET) 0L else c.duration
 
     private fun stateName(c: MediaController): String = when {
+        PlaybackService.networkHold -> "waiting-network"
         c.playerError != null -> "error"
         c.mediaItemCount == 0 -> "idle"
         c.playbackState == Player.STATE_ENDED -> "ended"
@@ -477,7 +481,8 @@ class StatocystPlugin : Plugin() {
         if (trackId.isEmpty()) { call.reject("trackId required"); return }
         io(call) {
             try {
-                val outcome = downloads.download(trackId) { received, total, done, error ->
+                val profile = DownloadProfile.from(call.getString("profile"))
+                val outcome = downloads.download(trackId, profile) { received, total, done, error ->
                     emit("downloadProgress", JSObject()
                         .put("trackId", trackId)
                         .put("receivedBytes", received)
@@ -504,8 +509,36 @@ class StatocystPlugin : Plugin() {
     fun enqueueDownloads(call: PluginCall) {
         val ids = call.getArray("trackIds")?.toList<String>().orEmpty().filter { it.isNotBlank() }
         if (ids.isEmpty()) { call.reject("trackIds required"); return }
-        val added = DownloadCenter.enqueue(context, ids)
-        call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()).put("added", added))
+        val wifiOnly = call.getBoolean("wifiOnly") ?: true
+        val quota = call.getLong("quotaBytes") ?: 0L
+        val profile = DownloadProfile.from(call.getString("profile"))
+        DownloadCenter.setPolicy(context, wifiOnly, quota)
+        io(call) {
+            val tracks = ids.mapNotNull { dao.getById(it) }
+            val requested = tracks.sumOf {
+                DownloadPolicy.estimateBytes(it.sizeBytes, it.bitrate, it.durationMs, profile)
+            }
+            val pinned = downloads.stats().second
+            val free = StatFs(context.filesDir.absolutePath).availableBytes
+            val decision = DownloadPolicy.admit(requested, pinned, free, quota)
+            if (!decision.allowed) {
+                call.reject(decision.reason ?: "Not enough space for these downloads", "DOWNLOAD_POLICY")
+                return@io
+            }
+            val added = DownloadCenter.enqueue(context, ids, profile)
+            call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()).put("added", added))
+        }
+    }
+
+    /** Applies the Wi-Fi/pin-limit policy to a queue that is already waiting. */
+    @PluginMethod
+    fun setDownloadPolicy(call: PluginCall) {
+        DownloadCenter.setPolicy(
+            context,
+            call.getBoolean("wifiOnly") ?: true,
+            call.getLong("quotaBytes") ?: 0L,
+        )
+        call.resolve()
     }
 
     @PluginMethod
@@ -551,6 +584,7 @@ class StatocystPlugin : Plugin() {
                 .put("totalBytes", e.totalBytes)
                 .put("attempt", e.attempt)
                 .put("error", e.error)
+                .put("waitingReason", e.waitingReason)
         }))
 
     @PluginMethod
@@ -1199,6 +1233,10 @@ class StatocystPlugin : Plugin() {
         .put("container", d.container)
         .put("verified", d.verified)
         .put("createdAt", d.createdAt)
+        .put("profile", d.profile)
+        .put("codec", d.codec)
+        .put("bitRate", d.bitRate)
+        .put("sourceBytes", d.sourceBytes)
 
     private fun downloadSummary(d: DownloadEntity): JSObject = JSObject()
         .put("trackId", d.trackId)

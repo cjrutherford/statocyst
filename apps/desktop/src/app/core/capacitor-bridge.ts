@@ -8,6 +8,7 @@ import type {
   DownloadStats,
   DownloadSummary,
   DownloadView,
+  DownloadProfile,
   EngineCommand,
   EngineEvent,
   EngineLoadRequest,
@@ -330,7 +331,10 @@ export class CapacitorBridge {
         default: {
           // enqueue / playNext / remove / reorder / clear: compute the edit,
           // then push the new order down while the current item keeps playing.
-          const wasPlaying = this.snapshot.state === 'playing' || this.snapshot.state === 'buffering';
+          const wasPlaying =
+            this.snapshot.state === 'playing' ||
+            this.snapshot.state === 'buffering' ||
+            this.snapshot.state === 'waiting-network';
           const outcome = applyQueueCommand(this.queue, command, this.context());
           if (outcome.error) return fail(outcome.error.code, outcome.error.message);
           this.queue = outcome.queue;
@@ -662,6 +666,11 @@ export class CapacitorBridge {
     const quality = ((await getPref('quality')) ?? 'lossless') as Settings['quality'];
     const budget = Number((await getPref('cacheBudgetBytes')) ?? 2 * 1024 * 1024 * 1024);
     const listeningHistory = (await getPref('listeningHistory')) === 'true';
+    const downloadWifiOnly = (await getPref('downloadWifiOnly')) !== 'false';
+    const quota = Number((await getPref('downloadQuotaBytes')) ?? 0);
+    const qualityRaw = (await getPref('downloadQuality')) ?? 'original';
+    const downloadQuality: Settings['downloadQuality'] =
+      qualityRaw === 'balanced' || qualityRaw === 'saver' ? qualityRaw : 'original';
     return {
       theme: theme as Settings['theme'],
       density: density as Settings['density'],
@@ -670,6 +679,9 @@ export class CapacitorBridge {
       quality,
       cacheBudgetBytes: Number.isFinite(budget) && budget > 0 ? budget : 2 * 1024 * 1024 * 1024,
       listeningHistory,
+      downloadWifiOnly,
+      downloadQuotaBytes: Number.isFinite(quota) && quota >= 0 ? quota : 0,
+      downloadQuality,
     };
   }
   async setSettings(patch: Partial<Settings>): Promise<Settings> {
@@ -698,6 +710,22 @@ export class CapacitorBridge {
       await setPref('cacheBudgetBytes', String(next.cacheBudgetBytes));
     if (patch.listeningHistory !== undefined)
       await setPref('listeningHistory', String(next.listeningHistory));
+    if (patch.downloadWifiOnly !== undefined)
+      await setPref('downloadWifiOnly', String(next.downloadWifiOnly));
+    if (patch.downloadQuotaBytes !== undefined)
+      await setPref('downloadQuotaBytes', String(next.downloadQuotaBytes));
+    if (patch.downloadQuality !== undefined)
+      await setPref('downloadQuality', String(next.downloadQuality));
+    if (patch.downloadWifiOnly !== undefined || patch.downloadQuotaBytes !== undefined) {
+      try {
+        await (window as any).Capacitor?.Plugins?.['Statocyst']?.setDownloadPolicy?.({
+          wifiOnly: next.downloadWifiOnly,
+          quotaBytes: next.downloadQuotaBytes,
+        });
+      } catch {
+        /* applied with the next enqueue */
+      }
+    }
     try {
       localStorage.setItem('statocyst.settings', JSON.stringify(next));
     } catch {
@@ -1236,6 +1264,7 @@ export class CapacitorBridge {
         totalBytes: e?.totalBytes == null ? null : Number(e.totalBytes),
         attempt: Number(e?.attempt ?? 0),
         error: e?.error == null ? null : String(e.error),
+        waitingReason: e?.waitingReason == null ? null : String(e.waitingReason),
       })),
     };
   }
@@ -1243,8 +1272,17 @@ export class CapacitorBridge {
   downloads = {
     // Android keeps pinned, verified downloads in app-private storage.
     supported: true as const,
-    enqueue: async (trackIds: string[]): Promise<DownloadQueueSnapshot> =>
-      this.toQueueSnapshot(await this.plugin().enqueueDownloads({ trackIds })),
+    enqueue: async (trackIds: string[], profile?: DownloadProfile): Promise<DownloadQueueSnapshot> => {
+      const settings = await this.getSettings();
+      return this.toQueueSnapshot(
+        await this.plugin().enqueueDownloads({
+          trackIds,
+          wifiOnly: settings.downloadWifiOnly,
+          quotaBytes: settings.downloadQuotaBytes,
+          profile: profile ?? settings.downloadQuality,
+        }),
+      );
+    },
     cancelQueue: async (): Promise<DownloadQueueSnapshot> =>
       this.toQueueSnapshot(await this.plugin().cancelDownloads()),
     retryFailed: async (): Promise<DownloadQueueSnapshot> =>
@@ -1258,9 +1296,9 @@ export class CapacitorBridge {
       this.attachNativeListeners();
       return () => this.queueListeners.delete(listener);
     },
-    download: async (trackId: string): Promise<Result<DownloadSummary>> => {
+    download: async (trackId: string, profile?: DownloadProfile): Promise<Result<DownloadSummary>> => {
       try {
-        const raw = await this.plugin()?.downloadTrack?.({ trackId });
+        const raw = await this.plugin()?.downloadTrack?.({ trackId, profile });
         return {
           ok: true as const,
           value: {

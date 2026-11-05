@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistTrackEntity::class,
         RecentEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class StatocystDatabase : RoomDatabase() {
@@ -84,10 +84,23 @@ abstract class StatocystDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6 records how a pinned copy was produced. Existing rows are originals,
+         * so the defaults are truthful rather than a guess.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `download` ADD COLUMN `profile` TEXT NOT NULL DEFAULT 'original'")
+                db.execSQL("ALTER TABLE `download` ADD COLUMN `codec` TEXT")
+                db.execSQL("ALTER TABLE `download` ADD COLUMN `bitRate` INTEGER")
+                db.execSQL("ALTER TABLE `download` ADD COLUMN `sourceBytes` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): StatocystDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, StatocystDatabase::class.java, "statocyst.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { INSTANCE = it }
             }

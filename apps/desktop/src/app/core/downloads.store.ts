@@ -4,6 +4,7 @@ import type {
   DownloadQueueEntry,
   DownloadQueueSnapshot,
   DownloadStats,
+  DownloadProfile,
 } from '@statocyst/contracts';
 import { bridge, bridgeAvailable } from './bridge';
 import { LibraryStore } from './library.store';
@@ -46,6 +47,7 @@ export class DownloadsStore {
   private readonly library = inject(LibraryStore);
 
   readonly downloadedIds = signal<Set<string>>(new Set());
+  readonly profiles = signal<Map<string, DownloadProfile>>(new Map());
   readonly stats = signal<DownloadStats>({ ...EMPTY_STATS });
   readonly progress = signal<DownloadProgress | null>(null);
   readonly loading = signal(false);
@@ -81,6 +83,12 @@ export class DownloadsStore {
   readonly trackState = computed(() => {
     const map = this.entryById();
     return (trackId: string) => map.get(trackId)?.state ?? null;
+  });
+
+  /** Quality profile of a verified pin, when the record carries one. */
+  readonly profileOf = computed(() => {
+    const profiles = this.profiles();
+    return (trackId: string) => profiles.get(trackId) ?? null;
   });
 
   /** Fraction (0–1) of the in-flight download, or null when it has no size. */
@@ -124,7 +132,7 @@ export class DownloadsStore {
         : Math.min(99, Math.floor((trackFractions(q.entries) / q.total) * 100));
 
     const running = q.entries.filter((e) => e.state === 'active' || e.state === 'retrying' || e.state === 'waiting');
-    const waiting = running.some((e) => e.state === 'waiting');
+    const waiting = running.find((e) => e.state === 'waiting');
     const retrying = running.find((e) => e.state === 'retrying');
     const names = running.map((e) => this.titleOf(e.trackId));
     const failedEntries = q.entries
@@ -142,7 +150,7 @@ export class DownloadsStore {
       kind = waiting ? 'waiting' : retrying ? 'retrying' : 'active';
       title = `Downloading ${Math.min(finishedCount + 1, q.total)} of ${q.total}`;
       detail = waiting
-        ? 'Waiting for network — will continue automatically'
+        ? (waiting.waitingReason ?? 'Waiting for network — will continue automatically')
         : retrying
           ? `Connection problem, retrying (attempt ${retrying.attempt + 1})`
           : names.length > 0
@@ -174,21 +182,25 @@ export class DownloadsStore {
     return Math.min(100, Math.round((b.done / b.total) * 100));
   });
 
-  async downloadMany(trackIds: string[], titleFor?: (id: string) => string): Promise<void> {
+  async downloadMany(
+    trackIds: string[],
+    titleFor?: (id: string) => string,
+    profile?: DownloadProfile,
+  ): Promise<void> {
     const unique = [...new Set(trackIds)].filter((id) => !this.isDownloaded()(id));
     if (unique.length === 0) {
       this.toasts.success('Already downloaded', 'Every track in this selection is already saved.');
       return;
     }
     if (this.hasQueue) {
-      await this.enqueue(unique, titleFor);
+      await this.enqueue(unique, titleFor, profile);
       return;
     }
     this.jsBatch.set({ total: unique.length, done: 0, failed: 0, currentTitle: null });
     let failed = 0;
     for (const id of unique) {
       this.jsBatch.update((b) => (b ? { ...b, currentTitle: titleFor?.(id) ?? null } : b));
-      const ok = await this.download(id, titleFor?.(id), { quiet: true });
+      const ok = await this.download(id, titleFor?.(id), { quiet: true, profile });
       if (!ok) failed += 1;
       this.jsBatch.update((b) => (b ? { ...b, done: b.done + 1, failed } : b));
     }
@@ -222,7 +234,15 @@ export class DownloadsStore {
   async refresh(): Promise<void> {
     try {
       const [list, stats] = await Promise.all([bridge().downloads.list(), bridge().downloads.stats()]);
-      this.downloadedIds.set(new Set(list.filter((d) => d.verified).map((d) => d.trackId)));
+      const verified = list.filter((d) => d.verified);
+      this.downloadedIds.set(new Set(verified.map((d) => d.trackId)));
+      this.profiles.set(
+        new Map(
+          verified
+            .filter((d) => d.profile)
+            .map((d) => [d.trackId, d.profile as DownloadProfile] as const),
+        ),
+      );
       this.stats.set(stats);
       this.loaded.set(true);
     } catch (error) {
@@ -230,14 +250,18 @@ export class DownloadsStore {
     }
   }
 
-  async download(trackId: string, title?: string, options: { quiet?: boolean } = {}): Promise<boolean> {
+  async download(
+    trackId: string,
+    title?: string,
+    options: { quiet?: boolean; profile?: DownloadProfile } = {},
+  ): Promise<boolean> {
     if (this.hasQueue) {
-      await this.enqueue([trackId], title ? () => title : undefined);
+      await this.enqueue([trackId], title ? () => title : undefined, options.profile);
       return true;
     }
     this.progress.set({ trackId, receivedBytes: 0, totalBytes: null, done: false, error: null });
     try {
-      const result = await bridge().downloads.download(trackId);
+      const result = await bridge().downloads.download(trackId, options.profile);
       if (!result.ok) {
         this.toasts.error(result.error.message, result.error.code);
         return false;
@@ -282,7 +306,11 @@ export class DownloadsStore {
     await this.queueCall((d) => d.dismissQueue!());
   }
 
-  private async enqueue(trackIds: string[], titleFor?: (id: string) => string): Promise<void> {
+  private async enqueue(
+    trackIds: string[],
+    titleFor?: (id: string) => string,
+    profile?: DownloadProfile,
+  ): Promise<void> {
     this.ensureQueueSubscription();
     for (const id of trackIds) {
       const title = titleFor?.(id);
@@ -290,10 +318,13 @@ export class DownloadsStore {
     }
     this.announced = false;
     try {
-      this.applyQueue(await bridge().downloads.enqueue!(trackIds), false);
+      this.applyQueue(await bridge().downloads.enqueue!(trackIds, profile), false);
     } catch (error) {
       this.announced = true;
-      this.toasts.error('Could not start the download', String(error));
+      this.toasts.error(
+        'Could not start the download',
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 

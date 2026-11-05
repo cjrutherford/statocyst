@@ -22,3 +22,13 @@ Intelligence, federation, multi-device enhanced sync, extensibility, iOS/CarPlay
 
 ## Criteria for progressing
 Each milestone: all slices VERIFIED, meaningful end-to-end demo on real target runtime, no unresolved critical security/data-loss defect, evidence manifest completed, explicit release readiness decision. Scope changes need record in ADR/deferred register.
+
+
+## Rural Offline + iOS/CarPlay (S030–S039)
+**Status: IN_PROGRESS (2026-11-05).** Branch `feature/rural-offline-parity`.
+
+Promotes the rural-offline evaluation into slices: size truth, quality-aware pins, storage and
+metered policy, resilient playback, iOS offline parity, sparse cache, collection prefetch,
+durable transfers, mobile UX, and CarPlay audio. Evidence lives in `evidence/S030-report.md`–
+`S039-report.md`. iOS and CarPlay are no longer deferred (ADR-034); entitlement and head-unit
+validation remain external gates.

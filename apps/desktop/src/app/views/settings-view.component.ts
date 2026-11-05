@@ -10,6 +10,7 @@ import type {
   CacheStats,
   DiagnosticsInfo,
   DensityPreference,
+  DownloadProfile,
   HealthCheck,
   QualityPreference,
   Settings,
@@ -451,6 +452,77 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
             }
           </div>
 
+          @if (downloads.supported) {
+            <div class="field">
+              <span class="field__label" id="dl-network-label">Download over</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="dl-network-label">
+                <button
+                  type="button"
+                  role="radio"
+                  [attr.aria-checked]="settings.settings().downloadWifiOnly"
+                  [class.is-active]="settings.settings().downloadWifiOnly"
+                  (click)="setDownloadWifiOnly(true)"
+                >
+                  Wi-Fi only
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  [attr.aria-checked]="!settings.settings().downloadWifiOnly"
+                  [class.is-active]="!settings.settings().downloadWifiOnly"
+                  (click)="setDownloadWifiOnly(false)"
+                >
+                  Any network
+                </button>
+              </div>
+              <p class="card__hint">
+                On a metered connection a Wi-Fi-only queue waits instead of spending your data.
+              </p>
+            </div>
+
+            <div class="field">
+              <span class="field__label" id="dl-quota-label">Offline limit</span>
+              <div class="segmented" role="radiogroup" aria-labelledby="dl-quota-label">
+                @for (quota of downloadQuotas; track quota.value) {
+                  <button
+                    type="button"
+                    role="radio"
+                    [attr.aria-checked]="settings.settings().downloadQuotaBytes === quota.value"
+                    [class.is-active]="settings.settings().downloadQuotaBytes === quota.value"
+                    (click)="setDownloadQuota(quota.value)"
+                  >
+                    {{ quota.label }}
+                  </button>
+                }
+              </div>
+              <p class="card__hint">
+                Auto keeps pinned audio under 10 GB and never uses more than a quarter of free space.
+              </p>
+            </div>
+            @if (isNative() && !isIos()) {
+              <div class="field">
+                <span class="field__label" id="dl-quality-label">Offline quality</span>
+                <div class="segmented" role="radiogroup" aria-labelledby="dl-quality-label">
+                  @for (quality of downloadQualities; track quality.value) {
+                    <button
+                      type="button"
+                      role="radio"
+                      [attr.aria-checked]="settings.settings().downloadQuality === quality.value"
+                      [class.is-active]="settings.settings().downloadQuality === quality.value"
+                      (click)="setDownloadQuality(quality.value)"
+                    >
+                      {{ quality.label }}
+                    </button>
+                  }
+                </div>
+                <p class="card__hint">
+                  Applies to new pins. Original keeps the file untouched; Balanced and Saver
+                  store a smaller MP3 copy and can take longer because the server transcodes.
+                </p>
+              </div>
+            }
+          }
+
           @if (activeDownload(); as active) {
             <div class="dl-progress" role="status" aria-live="polite">
               <span>Downloading…</span>
@@ -471,7 +543,9 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
               @for (track of downloadedTracks(); track track.id) {
                 <li>
                   <span class="dl-list__title">{{ track.title }}</span>
-                  <span class="dl-list__artist">{{ track.artist }}</span>
+                  <span class="dl-list__artist">
+                    {{ track.artist }} · {{ formatBytes(track.sizeBytes ?? 0) }}@if (downloads.profileOf()(track.id); as profile) { · {{ profile }} }
+                  </span>
                   <button
                     type="button"
                     class="icon-btn icon-btn--danger"
@@ -1033,6 +1107,18 @@ export class SettingsViewComponent {
     { value: 8 * 1024 * 1024 * 1024, label: '8 GB' },
     { value: 32 * 1024 * 1024 * 1024, label: '32 GB' },
   ];
+  protected readonly downloadQuotas: Array<{ value: number; label: string }> = [
+    { value: 0, label: 'Auto' },
+    { value: 5 * 1024 * 1024 * 1024, label: '5 GB' },
+    { value: 10 * 1024 * 1024 * 1024, label: '10 GB' },
+    { value: 25 * 1024 * 1024 * 1024, label: '25 GB' },
+    { value: 50 * 1024 * 1024 * 1024, label: '50 GB' },
+  ];
+  protected readonly downloadQualities: Array<{ value: DownloadProfile; label: string }> = [
+    { value: 'original', label: 'Original' },
+    { value: 'balanced', label: 'Balanced · 128k' },
+    { value: 'saver', label: 'Saver · 96k' },
+  ];
 
   protected readonly isPackaged = computed(() => this.info()?.packaged ?? false);
 
@@ -1129,6 +1215,18 @@ export class SettingsViewComponent {
   protected setCacheBudget(cacheBudgetBytes: number): void {
     void this.settings.update({ cacheBudgetBytes } satisfies Partial<Settings>);
     void this.refreshCache();
+  }
+
+  protected setDownloadWifiOnly(downloadWifiOnly: boolean): void {
+    void this.settings.update({ downloadWifiOnly } satisfies Partial<Settings>);
+  }
+
+  protected setDownloadQuota(downloadQuotaBytes: number): void {
+    void this.settings.update({ downloadQuotaBytes } satisfies Partial<Settings>);
+  }
+
+  protected setDownloadQuality(downloadQuality: DownloadProfile): void {
+    void this.settings.update({ downloadQuality } satisfies Partial<Settings>);
   }
 
   protected async clearCache(): Promise<void> {

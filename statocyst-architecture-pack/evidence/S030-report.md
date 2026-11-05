@@ -20,12 +20,12 @@
 | `nx run-many -t test -p contracts jellyfin-client desktop-electron --skip-nx-cache` | PASS (68 tests, 2 skipped) |
 | `nx build desktop --skip-nx-cache` | PASS |
 | `cap sync android` | PASS |
-| `./gradlew testDebugUnitTest` (JDK 17) | BLOCKED: `invalid source release: 21` |
-| `./gradlew testDebugUnitTest` (JDK 25) | BLOCKED: toolchain has no `javac` |
+| `./gradlew testDebugUnitTest` (JDK 21, downloaded locally) | PASS (all app unit tests) |
+| `./gradlew assembleDebug` (JDK 21) | PASS |
 | `xcodebuild` | BLOCKED: macOS/Xcode not available in this environment |
 
 ## Unresolved risks
-- Android compile and iOS build are only verifiable in CI (macOS-15 / JDK 21).
+- The Android project compiles and its unit tests pass with Temurin 21; iOS still needs CI/macOS.
 - A Jellyfin server may omit `MediaSources[0].Size`; the UI must show an unknown size rather than
   `0 B` in that case. The current change stores `0` and the renderer hides it, which is acceptable
   for S030 but S031/S032 must treat `0` as unknown, not as an empty file.

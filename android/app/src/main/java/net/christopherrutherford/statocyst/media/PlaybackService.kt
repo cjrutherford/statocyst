@@ -105,7 +105,12 @@ class PlaybackService : MediaLibraryService() {
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     // A swap of the item itself (below) must not trigger another look at it.
-                    if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) refreshItem(currentMediaItemIndex)
+                    if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                        networkHold = false
+                        recovery?.cancel()
+                        recovery = null
+                        refreshItem(currentMediaItemIndex)
+                    }
                     publishWidget()
                     persistQueue()
                     extendContext()
@@ -128,6 +133,12 @@ class PlaybackService : MediaLibraryService() {
                 }
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     if (playWhenReady && player.playbackState == Player.STATE_BUFFERING) watchForStall()
+                    // A deliberate pause cancels a network hold; it must not restart under the user.
+                    if (!playWhenReady) {
+                        networkHold = false
+                        recovery?.cancel()
+                        recovery = null
+                    }
                     publishWidget()
                 }
                 override fun onPlaybackStateChanged(playbackState: Int) {
@@ -281,27 +292,31 @@ class PlaybackService : MediaLibraryService() {
         recovery?.cancel()
         recovery = null
         recoveryAttempts = 0
+        networkHold = false
     }
 
     /**
-     * The stream died because the connection or the server did. Keep the song and its position,
-     * and re-resolve it every so often: a server that just failed is skipped so a duplicate on
-     * another server takes over, a finished cache copy is used, and a returning network resumes
-     * playback where it stopped. After the last attempt playback pauses in place, not skips on.
+     * The stream died because the connection or the server did. Hold the song at its
+     * position and keep trying: a server that just failed is skipped so a duplicate
+     * on another server takes over, a finished cache copy is used, and a returning
+     * network resumes playback where it stopped.
+     *
+     * This deliberately has no attempt limit. Rural dead zones can last minutes or
+     * hours; giving up after two and a half minutes left the user to press play.
+     * The loop sleeps between attempts and wakes immediately on a network callback.
      */
     private fun recoverFromNetworkLoss(error: PlaybackException) {
         if (recovery?.isActive == true) return
         recovery = scope.launch {
+            networkHold = true
+            var attempt = 0
             while (isActive) {
-                if (recoveryAttempts >= PlaybackFailures.RECOVERY_BACKOFF_MS.size) {
-                    endRecovery()
-                    reportFailure(error)
-                    player.pause()
-                    return@launch
+                if (!isOnline()) {
+                    networkHold = true
+                    // Wake on the next available network, or re-check every 30 s.
+                    withTimeoutOrNull(NETWORK_POLL_MS) { networkSignal.receive() }
+                    continue
                 }
-                val wait = PlaybackFailures.RECOVERY_BACKOFF_MS[recoveryAttempts++]
-                withTimeoutOrNull(wait) { networkSignal.receive() }
-                if (!isOnline()) continue
                 val current = player.currentMediaItem ?: return@launch
                 val index = player.currentMediaItemIndex
                 val position = player.currentPosition
@@ -310,7 +325,11 @@ class PlaybackService : MediaLibraryService() {
                     ?.let { StreamFailover.markFailed(it.serverId) }
                 // A transcode cannot be joined part-way through; the original can.
                 val mode = if (position > TRANSCODE_START_MS) AdaptiveQuality.Mode.DIRECT else null
-                val fresh = resolveItem(current, mode) ?: continue
+                val fresh = resolveItem(current, mode)
+                if (fresh == null) {
+                    delay(backoff(attempt++))
+                    continue
+                }
                 player.replaceMediaItem(index, fresh.buildUpon().setMediaId(current.mediaId).build())
                 player.seekTo(index, position)
                 player.prepare()
@@ -320,8 +339,22 @@ class PlaybackService : MediaLibraryService() {
                     delay(500)
                     waited += 500
                 }
+                if (player.playbackState == Player.STATE_READY) {
+                    networkHold = false
+                    return@launch
+                }
+                networkHold = true
+                delay(backoff(attempt++))
             }
         }
+    }
+
+    /** Backoff grows to 30 s and is jittered so two devices do not retry in lockstep. */
+    private fun backoff(attempt: Int): Long {
+        val steps = PlaybackFailures.RECOVERY_BACKOFF_MS
+        val base = steps[attempt.coerceIn(0, steps.lastIndex)]
+        val jitter = (base * 0.2 * kotlin.random.Random.nextDouble()).toLong()
+        return base + jitter
     }
 
     /** Tells the car and notification why a song failed instead of just skipping it. */
@@ -1092,12 +1125,14 @@ class PlaybackService : MediaLibraryService() {
     companion object {
         private const val TAG = "PlaybackService"
         /** How many upcoming songs are fetched onto the device while the current one plays. */
-        private const val PREFETCH_AHEAD = 2
+        private const val PREFETCH_AHEAD = 5
         private const val POSITION_SAVE_MS = 5_000L
         /** Buffering this long at the start of a song means the connection cannot carry the original. */
         private const val STALL_MS = 6_000L
         /** A transcode cannot be seeked into, so it is only taken within this far of the start. */
         private const val TRANSCODE_START_MS = 5_000L
+        /** Re-check a dead network at least this often even when the callback does not fire. */
+        private const val NETWORK_POLL_MS = 30_000L
         private const val CHANNEL_ID = "statocyst_media"
         private const val RECENT_LIMIT = 100
         private const val CMD_SHUFFLE = "statocyst.shuffle"
@@ -1110,6 +1145,10 @@ class PlaybackService : MediaLibraryService() {
 
         @Volatile
         private var instance: PlaybackService? = null
+
+        /** True while playback is held waiting for a network; surfaced as `waiting-network`. */
+        @Volatile
+        var networkHold: Boolean = false
 
         /** Library sync finished: re-read the catalog and refresh every browse folder. */
         fun onCatalogChanged() = instance?.let { svc ->

@@ -15,6 +15,7 @@ export const PLAYBACK_STATES = [
   'paused',
   'ended',
   'error',
+  'waiting-network',
 ] as const;
 export type PlaybackState = (typeof PLAYBACK_STATES)[number];
 

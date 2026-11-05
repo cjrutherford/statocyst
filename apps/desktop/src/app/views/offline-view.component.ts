@@ -73,7 +73,9 @@ import { formatDuration, formatBytes } from '../core/format';
                     @if (track.sourceId === 'local') {
                       <span class="badge">Imported</span>
                     } @else if (downloads.isDownloaded()(track.id)) {
-                      <span class="badge badge--ok">Pinned</span>
+                      <span class="badge badge--ok">
+                        Pinned@if (downloads.profileOf()(track.id); as profile) { · {{ profile }} }
+                      </span>
                     }
                   </td>
                   <td class="col-size">{{ formatBytes(track.sizeBytes ?? 0) }}</td>

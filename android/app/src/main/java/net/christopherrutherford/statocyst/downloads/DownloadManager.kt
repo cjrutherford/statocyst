@@ -1,6 +1,7 @@
 package net.christopherrutherford.statocyst.downloads
 
 import android.content.Context
+import android.os.StatFs
 import net.christopherrutherford.statocyst.db.DownloadEntity
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
@@ -35,25 +36,46 @@ class DownloadManager(private val context: Context) {
     fun download(
         trackId: String,
         onProgress: (received: Long, total: Long?, done: Boolean, error: String?) -> Unit,
-    ): Outcome = download(trackId, object : DownloadEvents {
+    ): Outcome = download(trackId, DownloadProfile.ORIGINAL, object : DownloadEvents {
+        override fun progress(received: Long, total: Long?) = onProgress(received, total, false, null)
+    })
+
+    fun download(trackId: String, events: DownloadEvents): Outcome =
+        download(trackId, DownloadProfile.ORIGINAL, events)
+
+    fun download(
+        trackId: String,
+        profile: DownloadProfile,
+        onProgress: (received: Long, total: Long?, done: Boolean, error: String?) -> Unit,
+    ): Outcome = download(trackId, profile, object : DownloadEvents {
         override fun progress(received: Long, total: Long?) = onProgress(received, total, false, null)
     })
 
     /**
-     * Downloads [trackId], resuming a leftover `.part` file from an earlier
-     * attempt and retrying transient network failures (see [ResumableDownload]).
+     * Downloads [trackId] at [profile], resuming a leftover `.part` file from an
+     * earlier attempt and retrying transient network failures (see [ResumableDownload]).
+     *
+     * A transcode is written as `.mp3` regardless of the source container, so the file
+     * on disk always matches its bytes. Re-pinning at a different quality replaces the
+     * old copy instead of silently keeping it.
      */
-    fun download(trackId: String, events: DownloadEvents): Outcome {
+    fun download(trackId: String, profile: DownloadProfile, events: DownloadEvents): Outcome {
         val track = runBlockingLookup(trackId)
             ?: throw IllegalArgumentException("The track does not exist")
         directory.mkdirs()
 
-        val ext = (track.ext.ifEmpty { track.format ?: "bin" }).lowercase()
+        val ext = profile.extension ?: (track.ext.ifEmpty { track.format ?: "bin" }).lowercase()
         val finalFile = File(directory, "$trackId.$ext")
         val partFile = File(directory, "$trackId.$ext.part")
 
-        // Already downloaded and intact: report it without touching the network.
-        verifiedFile(trackId)?.let { return Outcome(requireNotNull(daoGet(trackId)), true) }
+        // Already downloaded at the requested quality: report it without touching the network.
+        val existing = daoGet(trackId)
+        if (existing != null && existing.profile == profile.wire) {
+            verifiedFile(trackId)?.let { return Outcome(existing, true) }
+        } else if (existing != null) {
+            // Re-pin at a different quality: drop the old bytes first.
+            remove(trackId)
+        }
 
         if (finalFile.exists()) finalFile.delete()
         val remote = track.sourceKind.startsWith("jellyfin")
@@ -62,9 +84,12 @@ class DownloadManager(private val context: Context) {
 
         var keepPart = false
         try {
+            if (StatFs(context.filesDir.absolutePath).availableBytes < DownloadPolicy.RESERVE_BYTES) {
+                throw IllegalStateException("Not enough free space to start this download")
+            }
             if (remote) {
                 try {
-                    copyRemote(track, partFile, events)
+                    copyRemote(track, profile, partFile, events)
                 } catch (error: java.io.IOException) {
                     keepPart = true
                     throw error
@@ -84,9 +109,13 @@ class DownloadManager(private val context: Context) {
                 localPath = finalFile.absolutePath,
                 sizeBytes = size,
                 sha256 = digest,
-                container = track.format ?: track.ext,
+                container = if (profile.transcoded) profile.extension else (track.format ?: track.ext),
                 verified = true,
                 createdAt = Instant.now().toString(),
+                profile = profile.wire,
+                codec = profile.codec ?: track.codec,
+                bitRate = profile.bitRate ?: track.bitrate,
+                sourceBytes = track.sizeBytes,
             )
             runBlockingWrite { dao.upsert(entity) }
             events.progress(size, size)
@@ -148,13 +177,21 @@ class DownloadManager(private val context: Context) {
         return file
     }
 
-    private fun copyRemote(track: MediaItemEntity, target: File, events: DownloadEvents) {
+    private fun copyRemote(
+        track: MediaItemEntity,
+        profile: DownloadProfile,
+        target: File,
+        events: DownloadEvents,
+    ) {
         val session = JellyfinSessions.forTrack(context, track)
             ?: throw IllegalStateException("The server is not signed in")
         val serverUrl = session.url
         val token = session.token
         val itemId = track.path.ifEmpty { track.id.removePrefix("jf-") }
-        val url = JellyfinAuth.streamUrl(serverUrl, itemId)
+        val url = when {
+            profile.transcoded -> JellyfinAuth.transcodeUrl(serverUrl, itemId, profile.bitRate!!.toLong())
+            else -> JellyfinAuth.streamUrl(serverUrl, itemId)
+        }
         ResumableDownload.fetch(
             open = { rangeStart ->
                 JellyfinAuth.open(url, token).also {
