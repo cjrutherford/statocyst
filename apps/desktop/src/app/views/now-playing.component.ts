@@ -5,6 +5,8 @@ import { PlaybackStore } from '../core/playback.store';
 import { NavigationStore } from '../core/navigation.store';
 import { RadioStore } from '../core/radio.store';
 import { LibraryStore } from '../core/library.store';
+import { FavoritesStore } from '../core/favorites.store';
+import { DownloadsStore } from '../core/downloads.store';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
 
 @Component({
@@ -48,7 +50,26 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
             }
             <p class="eyebrow">{{ track.album }}</p>
             <h2 class="title">{{ track.title }}</h2>
-            <p class="artist">{{ track.artist }}</p>
+            <div class="artist-row">
+              <p class="artist">{{ track.artist }}</p>
+              @if (canDownload()) {
+                <button
+                  type="button"
+                  class="dl-pill"
+                  [class.is-done]="downloaded()"
+                  [class.is-busy]="downloading()"
+                  [disabled]="downloading()"
+                  [attr.aria-label]="downloadLabel()"
+                  [title]="downloaded() ? 'Remove download' : 'Download for offline'"
+                  (click)="toggleDownload()"
+                >
+                  <sc-icon [name]="downloaded() ? 'check' : 'download'" />
+                  <span>{{ downloadLabel() }}</span>
+                </button>
+              } @else if (isLocal()) {
+                <span class="on-device"><sc-icon name="check" /> On this device</span>
+              }
+            </div>
 
             <div class="chips">
               <span class="chip">{{ formatLabel(track.format) }}</span>
@@ -84,6 +105,16 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
             </div>
 
             <div class="controls">
+              <button
+                type="button"
+                class="icon-btn icon-btn--lg control-favorite"
+                [class.is-active]="favorite()"
+                [attr.aria-pressed]="favorite()"
+                [attr.aria-label]="favorite() ? 'Remove from favorites' : 'Add to favorites'"
+                (click)="toggleFavorite()"
+              >
+                <sc-icon [name]="favorite() ? 'heart-filled' : 'heart'" />
+              </button>
               <button
                 type="button"
                 class="icon-btn icon-btn--lg"
@@ -127,47 +158,46 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
               >
                 <sc-icon [name]="playback.snapshot().repeat === 'one' ? 'repeat-one' : 'repeat'" />
               </button>
+              <div class="volume-slot">
+                <button
+                  type="button"
+                  class="icon-btn icon-btn--lg"
+                  [class.is-active]="volumeOpen()"
+                  [attr.aria-label]="playback.snapshot().muted ? 'Volume (muted)' : 'Volume'"
+                  [attr.aria-expanded]="volumeOpen()"
+                  aria-haspopup="dialog"
+                  (click)="volumeOpen.set(!volumeOpen())"
+                >
+                  <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
+                </button>
+                @if (volumeOpen()) {
+                  <div class="volume-backdrop" (click)="volumeOpen.set(false)"></div>
+                  <div class="volume-pop" role="dialog" aria-label="Volume">
+                    <button
+                      type="button"
+                      class="icon-btn"
+                      [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
+                      (click)="playback.toggleMute()"
+                    >
+                      <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
+                    </button>
+                    <input
+                      class="range range--volume"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      [value]="playback.snapshot().volume"
+                      [style.--progress]="volumePercent() + '%'"
+                      aria-label="Volume"
+                      (input)="onVolume($event)"
+                    />
+                    <span class="volume-value">{{ volumePercent().toFixed(0) }}%</span>
+                  </div>
+                }
+              </div>
             </div>
-
-            <div class="volume">
-              <button
-                type="button"
-                class="icon-btn"
-                [class.is-active]="volumeOpen()"
-                [attr.aria-label]="playback.snapshot().muted ? 'Volume (muted)' : 'Volume'"
-                [attr.aria-expanded]="volumeOpen()"
-                aria-haspopup="dialog"
-                (click)="volumeOpen.set(!volumeOpen())"
-              >
-                <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
-              </button>
-              <span class="state">{{ stateLabel() }}</span>
-              @if (volumeOpen()) {
-                <div class="volume-backdrop" (click)="volumeOpen.set(false)"></div>
-                <div class="volume-pop" role="dialog" aria-label="Volume">
-                  <button
-                    type="button"
-                    class="icon-btn"
-                    [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
-                    (click)="playback.toggleMute()"
-                  >
-                    <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
-                  </button>
-                  <input
-                    class="range range--volume"
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    [value]="playback.snapshot().volume"
-                    [style.--progress]="volumePercent() + '%'"
-                    aria-label="Volume"
-                    (input)="onVolume($event)"
-                  />
-                  <span class="volume-value">{{ volumePercent().toFixed(0) }}%</span>
-                </div>
-              }
-            </div>
+            <p class="stage__state">{{ stateLabel() }}</p>
 
             <div class="more">
               <button type="button" class="btn" (click)="radio.start(track)">Start radio</button>
@@ -320,10 +350,59 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         letter-spacing: -0.035em;
         overflow-wrap: anywhere;
       }
+      .artist-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
       .artist {
         margin: 0;
         font-size: 1.08rem;
         color: var(--cyan);
+      }
+      .on-device,
+      .dl-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font: inherit;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+      }
+      .on-device {
+        color: var(--muted);
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+      }
+      .dl-pill {
+        cursor: pointer;
+        color: var(--cyan);
+        border: 1px solid rgba(56, 225, 255, 0.34);
+        background: rgba(56, 225, 255, 0.08);
+        transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+      }
+      .dl-pill:hover:not(:disabled) {
+        border-color: rgba(56, 225, 255, 0.58);
+        background: rgba(56, 225, 255, 0.14);
+      }
+      .dl-pill.is-done {
+        color: var(--success);
+        border-color: rgba(74, 222, 128, 0.34);
+        background: rgba(74, 222, 128, 0.08);
+      }
+      .dl-pill.is-busy {
+        color: var(--muted);
+        border-color: var(--line);
+        background: var(--surface-2);
+        cursor: progress;
+      }
+      .dl-pill:disabled {
+        opacity: 1;
       }
       .chips {
         display: flex;
@@ -382,10 +461,16 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         box-shadow: 0 0 16px rgba(56, 225, 255, 0.6);
       }
       .controls {
+        position: relative;
         display: flex;
         align-items: center;
         gap: clamp(10px, 1.6vw, 20px);
         margin-top: 8px;
+      }
+      .control-favorite.is-active {
+        color: var(--danger);
+        background: rgba(255, 107, 138, 0.12);
+        border-color: rgba(255, 107, 138, 0.28);
       }
       .play {
         width: 72px;
@@ -415,12 +500,10 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
       .icon-btn--lg {
         font-size: 1.35rem;
       }
-      .volume {
+      .volume-slot {
         position: relative;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-top: 6px;
+        display: grid;
+        place-items: center;
       }
       .volume-backdrop {
         position: fixed;
@@ -429,7 +512,7 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
       }
       .volume-pop {
         position: absolute;
-        left: 0;
+        right: 0;
         bottom: calc(100% + 8px);
         z-index: 120;
         display: flex;
@@ -441,6 +524,7 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         background: var(--panel-strong, #0b1224);
         box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
         backdrop-filter: blur(18px);
+        max-width: calc(100vw - 24px);
       }
       .volume-pop .range--volume {
         width: 150px;
@@ -456,7 +540,8 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         flex: none;
         width: 160px;
       }
-      .state {
+      .stage__state {
+        margin: 0;
         font-size: 0.66rem;
         letter-spacing: 0.16em;
         text-transform: uppercase;
@@ -625,12 +710,33 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
       @media (max-width: 900px) {
         .view {
           gap: 16px;
+          padding-left: max(14px, env(safe-area-inset-left, 0px));
+          padding-right: max(14px, env(safe-area-inset-right, 0px));
         }
         .stage {
           grid-template-columns: 1fr;
         }
         .stage__art {
           max-width: min(380px, 24vh);
+        }
+        /* Seven symmetric cells keep the play button exactly centred while the
+           favorite and volume controls sit at the outer edges. */
+        .controls {
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr 1.4fr 1fr 1fr 1fr;
+          justify-items: center;
+          align-items: center;
+          gap: 0;
+          width: 100%;
+          margin-top: 14px;
+        }
+        .controls .icon-btn--lg {
+          font-size: 1.25rem;
+        }
+        .play {
+          width: 64px;
+          height: 64px;
+          font-size: 1.7rem;
         }
         /* Long titles must not push the transport controls off a phone screen. */
         .title {
@@ -655,6 +761,17 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
           -webkit-line-clamp: 2;
         }
       }
+      @media (max-width: 360px) {
+        /* Very narrow phones: keep the seven-cell transport from colliding. */
+        .controls .icon-btn--lg {
+          min-width: 40px;
+        }
+        .play {
+          width: 56px;
+          height: 56px;
+          font-size: 1.45rem;
+        }
+      }
       .more {
         display: flex;
         flex-wrap: wrap;
@@ -669,6 +786,8 @@ export class NowPlayingViewComponent {
   protected readonly navigation = inject(NavigationStore);
   protected readonly radio = inject(RadioStore);
   protected readonly library = inject(LibraryStore);
+  protected readonly favorites = inject(FavoritesStore);
+  protected readonly downloads = inject(DownloadsStore);
   protected readonly formatDuration = formatDuration;
   protected readonly formatLabel = formatLabel;
   protected readonly pluralize = pluralize;
@@ -680,10 +799,10 @@ export class NowPlayingViewComponent {
   protected readonly volumeOpen = signal(false);
 
   protected readonly displayPosition = computed(() =>
-    this.dragging() ? this.dragValue() : this.playback.snapshot().positionMs,
+    this.dragging() ? this.dragValue() : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
-    Math.max(1, this.playback.snapshot().durationMs),
+    Math.max(1, this.playback.durationMs()),
   );
   protected readonly progressPercent = computed(() =>
     Math.min(100, (this.displayPosition() / this.displayDuration()) * 100),
@@ -698,6 +817,69 @@ export class NowPlayingViewComponent {
     if (state === 'paused') return 'Paused';
     return this.playback.isPlaying() ? 'Playing' : 'Ready';
   });
+
+  protected readonly favorite = computed(() => {
+    const track = this.playback.track();
+    return track ? this.favorites.isFavorite()(track.id) : false;
+  });
+  /** Only a remote Jellyfin item can be pinned; a local file is already here. */
+  protected readonly canDownload = computed(() => {
+    const track = this.playback.track();
+    return (
+      !!track &&
+      this.downloads.supported &&
+      (track.sourceKind === 'jellyfin' || track.sourceId === 'jellyfin')
+    );
+  });
+  protected readonly isLocal = computed(() => {
+    const track = this.playback.track();
+    if (!track) return false;
+    return (
+      track.sourceKind === 'local' ||
+      track.sourceKind === 'demo' ||
+      (!track.sourceKind && track.sourceId === 'local')
+    );
+  });
+  protected readonly downloaded = computed(() => {
+    const track = this.playback.track();
+    return track ? this.downloads.isDownloaded()(track.id) : false;
+  });
+  protected readonly downloading = computed(() => {
+    const track = this.playback.track();
+    return track ? this.downloads.isDownloading()(track.id) : false;
+  });
+  protected readonly downloadFraction = computed(() => {
+    const track = this.playback.track();
+    return track ? this.downloads.trackFraction()(track.id) : null;
+  });
+  protected readonly downloadLabel = computed(() => {
+    if (this.downloaded()) return 'Saved offline';
+    if (this.downloading()) {
+      const fraction = this.downloadFraction();
+      return fraction == null ? 'Downloading' : `Downloading ${Math.round(fraction * 100)}%`;
+    }
+    const track = this.playback.track();
+    const state = track ? this.downloads.trackState()(track.id) : null;
+    if (state === 'waiting') return 'Waiting for network';
+    if (state === 'retrying') return 'Retrying';
+    if (state === 'failed') return 'Retry download';
+    return 'Download';
+  });
+
+  protected toggleFavorite(): void {
+    const track = this.playback.track();
+    if (track) this.favorites.toggle(track.id);
+  }
+
+  protected toggleDownload(): void {
+    const track = this.playback.track();
+    if (!track) return;
+    if (this.downloaded()) {
+      void this.downloads.remove(track.id, track.title);
+      return;
+    }
+    if (!this.downloading()) void this.downloads.download(track.id, track.title);
+  }
 
   protected minimize(): void {
     if (!this.navigation.back()) this.navigation.navigate('library');

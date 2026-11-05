@@ -17,6 +17,8 @@ export type IconName =
   | 'folder'
   | 'file-plus'
   | 'sparkles'
+  | 'heart'
+  | 'heart-filled'
   | 'search'
   | 'trash'
   | 'up'
@@ -122,6 +124,12 @@ export type IconName =
         @case ('sparkles') {
           <path d="M12 3l1.8 4.6L18.5 9.5l-4.7 1.9L12 16l-1.8-4.6L5.5 9.5l4.7-1.9z" />
           <path d="M18.5 15.5l.8 2.1 2.2.9-2.2.8-.8 2.2-.9-2.2-2.1-.8 2.1-.9z" opacity=".7" />
+        }
+        @case ('heart') {
+          <path d="M12 20.2S4.8 15.7 4.8 10.2A4.4 4.4 0 0 1 12 7.1a4.4 4.4 0 0 1 7.2 3.1c0 5.5-7.2 10-7.2 10z" />
+        }
+        @case ('heart-filled') {
+          <path d="M12 20.2S4.8 15.7 4.8 10.2A4.4 4.4 0 0 1 12 7.1a4.4 4.4 0 0 1 7.2 3.1c0 5.5-7.2 10-7.2 10z" fill="currentColor" />
         }
         @case ('search') {
           <circle cx="10.5" cy="10.5" r="6.5" />

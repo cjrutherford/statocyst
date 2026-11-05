@@ -58,6 +58,8 @@ export interface Track {
   artistArtworkUrl?: string | null;
   sourceId: string;
   sourceLabel: string;
+  /** Runtime source kind: `local`, `demo`, or `jellyfin`. Optional for older hosts. */
+  sourceKind?: string;
   trackNo?: number | null;
   year?: number | null;
   genre?: string | null;
