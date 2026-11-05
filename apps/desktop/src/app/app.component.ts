@@ -68,7 +68,7 @@ interface NavItem {
         </button>
       }
 
-      <div class="app">
+      <div class="app" [class.is-offline]="!online()">
         <aside class="sidebar" aria-label="Primary">
           <div class="brand">
             <img src="branding/statocyst-symbol.png" alt="" class="brand__mark" />
@@ -202,28 +202,34 @@ interface NavItem {
         padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
         box-sizing: border-box;
       }
+      .app.is-offline {
+        padding-top: calc(28px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)));
+      }
       .offline-chip {
         position: fixed;
-        top: calc(10px + max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)));
-        left: 50%;
-        transform: translateX(-50%);
-        z-index: 90;
-        display: inline-flex;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 95;
+        display: flex;
         align-items: center;
+        justify-content: center;
         gap: 7px;
-        padding: 7px 13px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 196, 92, 0.45);
-        background: rgba(24, 18, 6, 0.9);
+        box-sizing: border-box;
+        min-height: 28px;
+        padding: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)) 12px 0;
+        border: 0;
+        border-bottom: 1px solid rgba(255, 196, 92, 0.45);
+        border-radius: 0;
+        background: rgba(24, 18, 6, 0.96);
         color: var(--warning);
         font: inherit;
         font-size: 0.74rem;
         cursor: pointer;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
         backdrop-filter: blur(12px);
       }
       .offline-chip:hover {
-        border-color: var(--warning);
+        background: rgba(38, 28, 8, 0.98);
       }
       .sidebar {
         grid-row: 1;
@@ -420,7 +426,7 @@ interface NavItem {
       }
       .toasts {
         position: fixed;
-        bottom: 104px;
+        bottom: 118px;
         right: 18px;
         display: grid;
         gap: 8px;
@@ -513,7 +519,7 @@ interface NavItem {
           transform: none;
         }
       }
-      @media (max-width: 1080px) {
+      @media (max-width: 900px) {
         .app {
           grid-template-columns: 76px minmax(0, 1fr);
         }
@@ -539,6 +545,12 @@ interface NavItem {
           grid-template-rows: minmax(0, 1fr) auto auto;
           /* The bottom inset is applied once, under the tab bar, so it keeps the tab bar's own background. */
           padding-bottom: 0;
+        }
+        .toasts {
+          left: 8px;
+          right: 8px;
+          bottom: calc(156px + 12px + max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)));
+          max-width: none;
         }
         .sidebar {
           grid-column: 1;

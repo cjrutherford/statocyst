@@ -326,7 +326,19 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
         }
       }
       @media (max-width: 640px) {
-        .queue__artist,
+        .queue__item {
+          flex-wrap: wrap;
+          row-gap: 4px;
+        }
+        .queue__main {
+          flex: 1 1 calc(100% - 36px);
+        }
+        .queue__actions {
+          width: 100%;
+          justify-content: flex-end;
+          padding-top: 4px;
+          border-top: 1px dashed var(--line);
+        }
         .queue__time {
           display: none;
         }

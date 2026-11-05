@@ -25,6 +25,10 @@ export class LibraryStore {
   readonly loaded = signal(false);
   readonly lastImport = signal<ImportSummary | null>(null);
 
+  clearLastImport(): void {
+    this.lastImport.set(null);
+  }
+
   private importProgressUnsubscribe: (() => void) | null = null;
 
   /** Hidden duplicate id -> id of the row shown in its place. */

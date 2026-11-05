@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, HostListener, inject, output, signal } from '@angular/core';
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
 import { PlaybackStore } from '../core/playback.store';
+import { NavigationStore } from '../core/navigation.store';
 import { RadioStore } from '../core/radio.store';
 import { LibraryStore } from '../core/library.store';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
@@ -18,9 +19,14 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
           <p class="eyebrow">Now playing</p>
           <h1 id="now-heading">The deep channel</h1>
         </div>
-        <button type="button" class="btn btn--quiet" (click)="openQueue.emit()">
-          <sc-icon name="queue" /> Open queue
-        </button>
+        <div class="head-actions">
+          <button type="button" class="btn btn--quiet" (click)="minimize()">
+            <sc-icon name="down" /> Minimize
+          </button>
+          <button type="button" class="btn btn--quiet" (click)="openQueue.emit()">
+            <sc-icon name="queue" /> Open queue
+          </button>
+        </div>
       </header>
 
       @if (playback.track(); as track) {
@@ -127,23 +133,40 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
               <button
                 type="button"
                 class="icon-btn"
-                [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
-                (click)="playback.toggleMute()"
+                [class.is-active]="volumeOpen()"
+                [attr.aria-label]="playback.snapshot().muted ? 'Volume (muted)' : 'Volume'"
+                [attr.aria-expanded]="volumeOpen()"
+                aria-haspopup="dialog"
+                (click)="volumeOpen.set(!volumeOpen())"
               >
                 <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
               </button>
-              <input
-                class="range range--volume"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                [value]="playback.snapshot().volume"
-                [style.--progress]="volumePercent() + '%'"
-                aria-label="Volume"
-                (input)="onVolume($event)"
-              />
               <span class="state">{{ stateLabel() }}</span>
+              @if (volumeOpen()) {
+                <div class="volume-backdrop" (click)="volumeOpen.set(false)"></div>
+                <div class="volume-pop" role="dialog" aria-label="Volume">
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    [attr.aria-label]="playback.snapshot().muted ? 'Unmute' : 'Mute'"
+                    (click)="playback.toggleMute()"
+                  >
+                    <sc-icon [name]="playback.snapshot().muted ? 'mute' : 'volume'" />
+                  </button>
+                  <input
+                    class="range range--volume"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    [value]="playback.snapshot().volume"
+                    [style.--progress]="volumePercent() + '%'"
+                    aria-label="Volume"
+                    (input)="onVolume($event)"
+                  />
+                  <span class="volume-value">{{ volumePercent().toFixed(0) }}%</span>
+                </div>
+              }
             </div>
 
             <div class="more">
@@ -215,6 +238,11 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         justify-content: space-between;
         gap: 16px;
         flex-wrap: wrap;
+      }
+      .head-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
       }
       h1 {
         margin: 4px 0 0;
@@ -388,10 +416,41 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         font-size: 1.35rem;
       }
       .volume {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 12px;
         margin-top: 6px;
+      }
+      .volume-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 119;
+      }
+      .volume-pop {
+        position: absolute;
+        left: 0;
+        bottom: calc(100% + 8px);
+        z-index: 120;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel-strong, #0b1224);
+        box-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(18px);
+      }
+      .volume-pop .range--volume {
+        width: 150px;
+      }
+      .volume-value {
+        min-width: 34px;
+        text-align: right;
+        font-size: 0.7rem;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
       }
       .range--volume {
         flex: none;
@@ -607,6 +666,7 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
 })
 export class NowPlayingViewComponent {
   protected readonly playback = inject(PlaybackStore);
+  protected readonly navigation = inject(NavigationStore);
   protected readonly radio = inject(RadioStore);
   protected readonly library = inject(LibraryStore);
   protected readonly formatDuration = formatDuration;
@@ -617,6 +677,7 @@ export class NowPlayingViewComponent {
 
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
+  protected readonly volumeOpen = signal(false);
 
   protected readonly displayPosition = computed(() =>
     this.dragging() ? this.dragValue() : this.playback.snapshot().positionMs,
@@ -637,6 +698,15 @@ export class NowPlayingViewComponent {
     if (state === 'paused') return 'Paused';
     return this.playback.isPlaying() ? 'Playing' : 'Ready';
   });
+
+  protected minimize(): void {
+    if (!this.navigation.back()) this.navigation.navigate('library');
+  }
+
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    this.volumeOpen.set(false);
+  }
 
   protected onSeekInput(event: Event): void {
     this.dragging.set(true);

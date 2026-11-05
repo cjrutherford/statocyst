@@ -179,6 +179,15 @@ import { IconComponent } from './icon.component';
         gap: 8px;
         justify-content: flex-end;
       }
+      @media (max-width: 640px) {
+        :host {
+          top: auto;
+          bottom: calc(156px + 10px + max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)));
+          left: 8px;
+          right: 8px;
+          width: auto;
+        }
+      }
     `,
   ],
 })

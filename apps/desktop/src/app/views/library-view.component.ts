@@ -126,6 +126,15 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                   · {{ pluralize(summary.rejected.length, 'file') }} rejected
                 }
               </span>
+              <button
+                type="button"
+                class="icon-btn"
+                aria-label="Dismiss import summary"
+                title="Dismiss"
+                (click)="library.clearLastImport()"
+              >
+                <sc-icon name="close" />
+              </button>
             </div>
             @if (summary.rejected.length > 0) {
               <details class="import-panel__details">
@@ -547,16 +556,26 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       <div class="context-layer" #contextLayer>
       @if (contextMenu(); as menu) {
         <div class="context-backdrop" (click)="closeContextMenu()" (contextmenu)="$event.preventDefault()"></div>
-        <div class="context-menu" [style.left.px]="menu.x" [style.top.px]="menu.y" role="menu">
+        <div class="context-menu" [style.left.px]="menu.x" [style.top.px]="menu.y" role="menu" aria-label="Track actions">
+          <div class="context-head">
+            <span class="context-title">{{ menu.track.title }}</span>
+            <button type="button" class="icon-btn context-close" aria-label="Close actions" (click)="closeContextMenu()">
+              <sc-icon name="close" />
+            </button>
+          </div>
+          <div class="context-sep" aria-hidden="true"></div>
           <button type="button" role="menuitem" (click)="play(menu.track, menu.queue); closeContextMenu()">Play</button>
           <button type="button" role="menuitem" (click)="playNext(menu.track); closeContextMenu()">Play next</button>
           <button type="button" role="menuitem" (click)="enqueue(menu.track); closeContextMenu()">Add to queue</button>
+          <div class="context-sep" aria-hidden="true"></div>
           <button type="button" role="menuitem" (click)="startRadio(menu.track); closeContextMenu()">Start radio</button>
           <button type="button" role="menuitem" (click)="saveRadio(menu.track); closeContextMenu()">Save radio as playlist</button>
+          <div class="context-sep" aria-hidden="true"></div>
           <button type="button" role="menuitem" (click)="favorites.toggle(menu.track.id); closeContextMenu()">
             {{ favorites.isFavorite()(menu.track.id) ? 'Unfavorite' : 'Favorite' }}
           </button>
           @if (downloads.supported && menu.track.sourceId !== 'local') {
+            <div class="context-sep" aria-hidden="true"></div>
             <button type="button" role="menuitem" (click)="toggleDownload(menu.track); closeContextMenu()">
               {{ downloads.isDownloaded()(menu.track.id) ? 'Remove download' : 'Download for offline' }}
             </button>
@@ -570,6 +589,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             }
           }
           @if (menu.track.sourceId === 'local') {
+            <div class="context-sep" aria-hidden="true"></div>
             <button type="button" role="menuitem" class="danger" (click)="remove(menu.track); closeContextMenu()">Remove from library</button>
           }
         </div>
@@ -680,6 +700,9 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         align-items: center;
         gap: 10px;
         color: var(--text);
+      }
+      .import-panel__summary .icon-btn {
+        margin-left: auto;
       }
       .import-panel__details {
         margin-top: 8px;
@@ -1396,13 +1419,51 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         display: grid;
         gap: 2px;
       }
+      .context-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 2px 2px 10px;
+      }
+      .context-title {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .context-close {
+        flex: none;
+        width: 32px;
+        height: 32px;
+      }
+      .context-sep {
+        height: 1px;
+        margin: 3px 6px;
+        background: var(--line);
+      }
       @media (max-width: 640px) {
+        .context-backdrop {
+          background: rgba(0, 0, 0, 0.35);
+        }
         .context-menu {
-          left: 8px !important;
-          right: 8px;
+          left: 0 !important;
+          right: 0;
           top: auto !important;
-          bottom: 8px;
-          max-height: 70vh;
+          bottom: 0;
+          max-height: 80vh;
+          max-height: 80dvh;
+          border-radius: 16px 16px 0 0;
+          border-bottom: 0;
+          padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+        }
+      }
+      @media (pointer: coarse) {
+        .context-menu button {
+          min-height: 44px;
         }
       }
 
@@ -1535,6 +1596,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       .reduce((sum, track) => (selected.has(track.id) ? sum + (track.sizeBytes ?? 0) : sum), 0);
   });
   protected readonly contextMenu = signal<{ x: number; y: number; track: Track; queue?: Track[] } | null>(null);
+  private contextTrigger: HTMLElement | null = null;
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private longPressMoved = false;
   private longPressStart: { x: number; y: number } | null = null;
@@ -1812,6 +1874,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected openContextMenu(track: Track, event: MouseEvent, queue?: Track[]): void {
     event.preventDefault();
+    this.contextTrigger = event.currentTarget as HTMLElement | null;
     // Keep the menu on-screen: phones are narrower/shorter than the menu.
     const margin = 8;
     const width = 260;
@@ -1819,10 +1882,23 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     const x = Math.max(margin, Math.min(event.clientX, window.innerWidth - width - margin));
     const y = Math.max(margin, Math.min(event.clientY, window.innerHeight - height - margin));
     this.contextMenu.set({ x, y, track, queue });
+    // `role="menu"` promises keyboard operation; put the user inside it.
+    queueMicrotask(() => {
+      const first = document.querySelector<HTMLButtonElement>('.context-menu button:not(.context-close)');
+      first?.focus({ preventScroll: true });
+    });
   }
 
   protected closeContextMenu(): void {
     this.contextMenu.set(null);
+    const trigger = this.contextTrigger;
+    this.contextTrigger = null;
+    queueMicrotask(() => trigger?.focus({ preventScroll: true }));
+  }
+
+  @HostListener('document:keydown.escape')
+  protected onEscape(): void {
+    if (this.contextMenu()) this.closeContextMenu();
   }
 
   protected toggleSelectMode(): void {
@@ -1883,7 +1959,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected toggleDownload(track: Track): void {
     if (this.downloads.isDownloaded()(track.id)) {
-      void this.downloads.remove(track.id, track.title);
+      if (window.confirm(`Remove the downloaded copy of “${track.title}”?`)) {
+        void this.downloads.remove(track.id, track.title);
+      }
     } else {
       void this.downloads.download(track.id, track.title);
     }
