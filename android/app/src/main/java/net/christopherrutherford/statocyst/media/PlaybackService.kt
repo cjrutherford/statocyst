@@ -101,6 +101,10 @@ class PlaybackService : MediaLibraryService() {
                 true,
             )
             setHandleAudioBecomingNoisy(true)
+            // Hold a wake lock only while the service is actually playing.
+            // The old activity-level partial lock kept the CPU awake (and the
+            // WebView rendering) even when no audio was playing.
+            setWakeMode(C.WAKE_MODE_NETWORK)
             setWakeMode(C.WAKE_MODE_NETWORK)
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
