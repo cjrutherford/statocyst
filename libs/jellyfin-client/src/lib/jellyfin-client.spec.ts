@@ -175,7 +175,7 @@ describe('listAudioItems', () => {
             IndexNumber: 1,
             ParentIndexNumber: 1,
             Genres: ['Ambient'],
-            MediaSources: [{ Container: 'mp3', Bitrate: 192000 }],
+            MediaSources: [{ Container: 'mp3', Bitrate: 192000, Size: 5760000 }],
             ImageTags: { Primary: 'abc123' },
           },
         ],
@@ -206,6 +206,7 @@ describe('listAudioItems', () => {
       genres: ['Ambient'],
       container: 'mp3',
       bitrate: 192000,
+      size: 5760000,
       imageTag: 'abc123',
     });
   });

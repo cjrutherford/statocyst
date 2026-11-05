@@ -1151,6 +1151,8 @@ class StatocystPlugin : Plugin() {
         .put("year", t.year)
         .put("genre", t.genre)
         .put("format", t.format)
+        .put("sizeBytes", t.sizeBytes)
+        .put("bitrate", t.bitrate)
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)
         .put("artworkUrl", artworkFor(t))
@@ -1245,7 +1247,7 @@ class StatocystPlugin : Plugin() {
             pathKey = "jellyfin:" + item.optString("Id"),
             fileName = item.optString("Name"),
             ext = source?.optString("Container") ?: "audio",
-            sizeBytes = 0,
+            sizeBytes = source?.optLong("Size") ?: 0,
             mtimeMs = 0,
             title = item.optString("Name"),
             artist = item.optJSONArray("Artists")?.optString(0) ?: item.optString("AlbumArtist", "Unknown artist"),

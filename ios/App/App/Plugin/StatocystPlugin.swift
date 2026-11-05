@@ -1066,6 +1066,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "year": t.year as Any,
             "genre": t.genre as Any,
             "format": t.format as Any,
+            "sizeBytes": t.sizeBytes,
+            "bitrate": t.bitrate as Any,
             "jellyfinImageTag": t.jellyfinImageTag as Any,
             "albumId": t.albumId as Any,
             "artworkUrl": artworkFor(t) as Any,
@@ -1155,6 +1157,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         let container = (source?["Container"] as? String) ?? "audio"
         let codec = source?["Codec"] as? String
         let bitrate = (source?["Bitrate"] as? Int).flatMap { $0 > 0 ? $0 : nil }
+        let sizeBytes = (source?["Size"] as? NSNumber)?.int64Value ?? 0
         let ticks = (item["RunTimeTicks"] as? NSNumber)?.int64Value ?? 0
         let durationMs = ticks / 10_000
         let genres = (item["Genres"] as? [String])?.joined(separator: ", ")
@@ -1170,7 +1173,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             pathKey: "jellyfin:\(id)",
             fileName: name,
             ext: container,
-            sizeBytes: 0,
+            sizeBytes: sizeBytes,
             mtimeMs: 0,
             title: name,
             artist: artist,

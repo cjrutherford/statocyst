@@ -736,6 +736,8 @@ export class CapacitorBridge {
       year: (raw['year'] as number | null) ?? null,
       genre: (raw['genre'] as string | null) ?? null,
       format: (raw['format'] as string | null) ?? null,
+      sizeBytes: Number(raw['sizeBytes'] ?? 0),
+      bitrate: raw['bitrate'] == null ? null : Number(raw['bitrate']),
       missing: Boolean(raw['missing']),
       ...(Array.isArray(raw['aliases']) && raw['aliases'].length > 0
         ? { aliases: (raw['aliases'] as unknown[]).map(String) }

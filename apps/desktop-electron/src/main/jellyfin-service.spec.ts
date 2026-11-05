@@ -202,6 +202,7 @@ describe('JellyfinService', () => {
           genres: ['Ambient'],
           container: 'mp3',
           bitrate: 192_000,
+          size: 5_760_000,
           imageTag: 'abc',
         },
         {
@@ -217,6 +218,7 @@ describe('JellyfinService', () => {
           genres: ['Ambient'],
           container: 'flac',
           bitrate: null,
+          size: 24_000_000,
           imageTag: null,
         },
       ],
