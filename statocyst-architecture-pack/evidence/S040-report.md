@@ -106,6 +106,16 @@ Screenshots:
 - `evidence/screenshots/s040-now-playing-volume-popover.png`
 - `evidence/screenshots/s040-library-10k-virtualized.png`
 
+## Test build
+
+- `android/app/build/outputs/apk/release/app-release.apk` (4.4 MB), version 1.9.0
+  (versionCode 27), signed with the expected certificate
+  (`7d850dae…e416`). Copied to `release/statocyst-android-1.9.0-s040-test.apk`
+  with SHA-256 `393880e1cab7f1eaab42cfbeffb1edc12d2279bc066f5fe434cfc4fc9e4564d7`.
+- Not published as the stable `statocyst-android.apk`; no version bump or tag yet.
+  The tailnet Funnel answered 502 at capture time, so the APK has to be installed
+  over USB or after the Funnel server is started.
+
 ## Not verified / blocked
 
 - **Physical-device performance:** no adb device was connected to this host
