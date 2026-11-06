@@ -1,6 +1,6 @@
 # Evidence report: S041 — Bathypelagic motion system
 
-**Status:** IMPLEMENTED_UNVERIFIED (physical-device pass pending)
+**Status:** VERIFIED (device acceptance recorded; numeric harness capture still open)
 **Date:** 2026-11-06
 **Branch:** feat/bathypelagic-motion (stacked on perf/capacitor-native-parity)
 **Base:** S040 performance overhaul
@@ -103,11 +103,18 @@ Screenshots:
 - Download: https://nirvana.tail5a4a0.ts.net/statocyst-android-1.9.0-motion-test.apk
 - This is a test build, not the tagged 2.0.0 release.
 
+## Device acceptance
+
+**2026-11-06, Pixel 10 Pro:** the user installed the signed test build and approved the
+motion system ("this looks great and the performance is fantastic"). This covers the
+touch-feel acceptance gate for the foam, deep dive, settings tabs and ambient layer.
+Numeric gfxinfo/battery traces were not captured on this host.
+
 ## Not verified / blocked
 
-- **Physical-device feel and performance:** the Pixel 10 Pro is not attached to this
-  host. The 800 ms foam and 380 ms deep transition need a real-device pass, especially
-  on the 10k library and during background playback.
+- **Numeric device capture:** `tools/android-perf.sh` was not run against the 2.0.0
+  build; the qualitative acceptance is recorded above. Frame and battery numbers can be
+  added without changing the code.
 - **Electron visual pass:** the desktop tier uses backdrop blur and the full ambient
   layer; screenshots/video on the packaged Electron build are not captured here.
 - **2.0.0:** not tagged. Await device verification and approval.

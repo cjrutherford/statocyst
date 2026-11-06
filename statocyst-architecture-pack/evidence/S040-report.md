@@ -1,6 +1,6 @@
 # Evidence report: S040 — Capacitor native-parity performance overhaul
 
-**Status:** IMPLEMENTED_UNVERIFIED (device gates pending)
+**Status:** VERIFIED (device acceptance recorded; numeric harness capture still open)
 **Date:** 2026-11-05
 **Branch:** perf/capacitor-native-parity
 **Base:** `origin/main` @ `76f4039` (1.9.0 / versionCode 27)
@@ -115,6 +115,13 @@ Screenshots:
 - Not published as the stable `statocyst-android.apk`; no version bump or tag yet.
   The tailnet Funnel answered 502 at capture time, so the APK has to be installed
   over USB or after the Funnel server is started.
+
+## Device acceptance
+
+**2026-11-06, Pixel 10 Pro:** the user installed the signed S040/S041 test build and
+reported that the application no longer feels slow and responds to every tap, swipe
+and hold. This is acceptance of the responsiveness gate. Numeric cold-start/gfxinfo
+files were not captured; `tools/android-perf.sh` remains the way to fill that in.
 
 ## Not verified / blocked
 
