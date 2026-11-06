@@ -9,6 +9,8 @@ import {
 import type { AppInfo } from '@statocyst/contracts';
 import { IconComponent, type IconName } from './components/icon.component';
 import { PlayerBarComponent } from './components/player-bar.component';
+import { TransitionFoamComponent } from './components/transition-foam.component';
+import { UnderwaterBackdropComponent } from './components/underwater-backdrop.component';
 import { AudioEngineService } from './core/audio-engine.service';
 import { bridge, bridgeAvailable, isNativePlatform } from './core/bridge';
 import { LibraryStore } from './core/library.store';
@@ -18,6 +20,7 @@ import { PlaylistsStore } from './core/playlists.store';
 import { JellyfinStore } from './core/jellyfin.store';
 import { NavigationStore, type View } from './core/navigation.store';
 import { PlaybackStore } from './core/playback.store';
+import { ScreenTransitionService } from './core/screen-transition.service';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
 import { LibraryViewComponent } from './views/library-view.component';
@@ -40,6 +43,8 @@ interface NavItem {
     DownloadStatusComponent,
     IconComponent,
     PlayerBarComponent,
+    TransitionFoamComponent,
+    UnderwaterBackdropComponent,
     LibraryViewComponent,
     NowPlayingViewComponent,
     OfflineViewComponent,
@@ -61,6 +66,8 @@ interface NavItem {
         </p>
       </div>
     } @else {
+      <sc-underwater-backdrop />
+
       @if (!online()) {
         <button type="button" class="offline-chip" (click)="navigate('offline')" aria-live="polite">
           <sc-icon name="offline" />
@@ -120,32 +127,37 @@ interface NavItem {
         </aside>
 
         <main id="main-content" class="main" tabindex="-1">
-          @switch (navigation.view()) {            @case ('library') {
-              <sc-library-view />
+          <div class="view-host">
+            @switch (navigation.view()) {
+              @case ('library') {
+                <sc-library-view />
+              }
+              @case ('offline') {
+                <sc-offline-view />
+              }
+              @case ('playlists') {
+                <sc-playlists-view />
+              }
+              @case ('now') {
+                <sc-now-playing (openQueue)="navigate('queue')" />
+              }
+              @case ('queue') {
+                <sc-queue-view (openLibrary)="navigate('library')" />
+              }
+              @case ('settings') {
+                <sc-settings-view />
+              }
             }
-            @case ('offline') {
-              <sc-offline-view />
-            }
-            @case ('playlists') {
-              <sc-playlists-view />
-            }
-            @case ('now') {
-              <sc-now-playing (openQueue)="navigation.navigate('queue')" />
-            }
-            @case ('queue') {
-              <sc-queue-view (openLibrary)="navigation.navigate('library')" />
-            }
-            @case ('settings') {
-              <sc-settings-view />
-            }
-          }
+          </div>
         </main>
+
+        <sc-transition-foam class="transition-foam" />
 
         <sc-player-bar
           class="player-slot"
           [class.player-slot--hidden-phone]="navigation.view() === 'now'"
-          (openNow)="navigation.navigate('now')"
-          (openQueue)="navigation.navigate('queue')"
+          (openNow)="navigate('now')"
+          (openQueue)="navigate('queue')"
         />
       </div>
 
@@ -193,6 +205,8 @@ interface NavItem {
         height: 100%;
       }
       .app {
+        position: relative;
+        z-index: 1;
         display: grid;
         grid-template-columns: 236px minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr) auto;
@@ -200,6 +214,8 @@ interface NavItem {
         height: 100dvh;
         padding-top: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
         padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
         box-sizing: border-box;
       }
       .app.is-offline {
@@ -370,6 +386,11 @@ interface NavItem {
       .player-slot {
         grid-column: 1 / -1;
         grid-row: 2;
+      }
+      .transition-foam {
+        grid-column: 2;
+        grid-row: 1;
+        min-height: 0;
       }
       .boot {
         position: fixed;
@@ -595,6 +616,10 @@ interface NavItem {
           grid-column: 1;
           grid-row: 2;
         }
+        .transition-foam {
+          grid-column: 1;
+          grid-row: 1;
+        }
       }
       /* Now Playing already carries full transport; don't stack a mini-player over it. On a short
          screen its controls fall below the fold, so keep the mini-player there instead. */
@@ -628,6 +653,7 @@ export class AppComponent {
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly toasts = inject(ToastStore);
   protected readonly navigation = inject(NavigationStore);
+  private readonly transitions = inject(ScreenTransitionService);
   protected readonly bridgeAvailable = bridgeAvailable;
   private readonly audio = inject(AudioEngineService);
 
@@ -663,9 +689,10 @@ export class AppComponent {
    * reader users land in the new content instead of staying on the nav button.
    */
   protected navigate(view: View): void {
-    this.navigation.navigate(view);
-    queueMicrotask(() => {
-      document.getElementById('main-content')?.focus();
+    void this.transitions.go(view).then(() => {
+      queueMicrotask(() => {
+        document.getElementById('main-content')?.focus();
+      });
     });
   }
 
@@ -686,31 +713,32 @@ export class AppComponent {
     if (!isNativePlatform()) return;
     void import('@capacitor/app').then(({ App }) => {
       App.addListener('backButton', () => {
-        if (!this.navigation.back()) void App.exitApp();
+        if (!this.transitions.back()) void App.exitApp();
       });
     });
   }
 
   private async bootstrap(): Promise<void> {
     if (!bridgeAvailable()) return;
-    try {
-      await this.settingsStore.init();
-    } catch {
-      // Settings failures are non-fatal; defaults are already applied.
-    }
+    performance.mark('statocyst:boot-start');
     this.audio.start();
-    await this.playback.init();
-    await this.library.init();
-    await this.downloads.init();
+    // Downloads only decorate rows with an offline badge; do not hold first
+    // paint for them. Settings, playback and the library are the critical path.
+    void this.downloads.init();
+    await Promise.all([
+      this.settingsStore.init().catch(() => undefined),
+      this.playback.init(),
+      this.library.init(),
+    ]);
     // Server health is a network probe. It updates the badge when it answers,
     // but the app has to be usable offline, so it never blocks the shell.
     void this.jellyfin.init();
-    try {
-      this.info.set(await bridge().app.info());
-    } catch {
-      // Informational only.
-    }
     this.ready.set(true);
+    performance.mark('statocyst:shell-interactive');
+    void bridge()
+      .app.info()
+      .then((info) => this.info.set(info))
+      .catch(() => undefined);
   }
 
   protected statusLabel(): string {
@@ -777,7 +805,7 @@ export class AppComponent {
         break;
       case '/':
         event.preventDefault();
-        this.navigation.navigate('library');
+        this.navigate('library');
         setTimeout(() => document.getElementById('library-search')?.focus(), 0);
         break;
     }

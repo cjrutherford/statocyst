@@ -11,7 +11,8 @@
   off-screen row at once.
 
 ## Still open
-- Real virtualization / paging for very large libraries.
+- Real virtualization / paging for very large libraries — landed under S040
+  (`perf/capacitor-native-parity`), pending physical-device verification.
 - Swipe actions, a sticky download action with size, and a compact phone player bar.
 - First-run connect + "pin an album for the commute".
 - Undo for remove-download and remove-track.

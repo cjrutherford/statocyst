@@ -71,6 +71,7 @@ export class CapacitorBridge {
   }
 
   private queue: QueueModel = createQueue();
+  private settingsCache: Settings | null = null;
   private snapshot: PlaybackSnapshot = {
     state: 'idle',
     currentEntryId: null,
@@ -636,6 +637,22 @@ export class CapacitorBridge {
   }
 
   async stats(): Promise<LibraryStats> {
+    // Use the native aggregate so a cold start does not unmarshal the complete
+    // catalog a second time just to count it.
+    try {
+      const raw = await this.plugin()?.libraryStats?.();
+      if (raw && typeof raw.tracks === 'number') {
+        return {
+          tracks: Number(raw.tracks ?? 0),
+          albums: Number(raw.albums ?? 0),
+          artists: Number(raw.artists ?? 0),
+          durationMs: Number(raw.durationMs ?? 0),
+          missing: Number(raw.missing ?? 0),
+        };
+      }
+    } catch {
+      /* fall through to the catalog we already have */
+    }
     const tracks = await this.listTracks();
     const albums = new Set(tracks.map((t) => t.album));
     const artists = new Set(tracks.map((t) => t.artist));
@@ -650,6 +667,7 @@ export class CapacitorBridge {
 
   // Settings — persisted via Capacitor Preferences on Android
   async getSettings(): Promise<Settings> {
+    if (this.settingsCache) return this.settingsCache;
     const prefs = (window as any).Capacitor?.Plugins?.Preferences;
     const getPref = async (key: string) => {
       try {
@@ -659,19 +677,44 @@ export class CapacitorBridge {
         return null;
       }
     };
-    const theme = (await getPref('theme')) ?? 'system';
-    const density = (await getPref('density')) ?? 'comfortable';
-    const volume = parseFloat((await getPref('volume')) ?? '0.85');
-    const muted = (await getPref('muted')) === 'true';
-    const quality = ((await getPref('quality')) ?? 'lossless') as Settings['quality'];
-    const budget = Number((await getPref('cacheBudgetBytes')) ?? 2 * 1024 * 1024 * 1024);
-    const listeningHistory = (await getPref('listeningHistory')) === 'true';
-    const downloadWifiOnly = (await getPref('downloadWifiOnly')) !== 'false';
-    const quota = Number((await getPref('downloadQuotaBytes')) ?? 0);
-    const qualityRaw = (await getPref('downloadQuality')) ?? 'original';
+    // Preferences round-trips are independent; asking for them together keeps
+    // cold start from paying a sequential bridge cost for every setting.
+    const [
+      themeRaw,
+      densityRaw,
+      volumeRaw,
+      mutedRaw,
+      qualityRaw,
+      budgetRaw,
+      listeningHistoryRaw,
+      downloadWifiOnlyRaw,
+      quotaRaw,
+      downloadQualityRaw,
+    ] = await Promise.all([
+      getPref('theme'),
+      getPref('density'),
+      getPref('volume'),
+      getPref('muted'),
+      getPref('quality'),
+      getPref('cacheBudgetBytes'),
+      getPref('listeningHistory'),
+      getPref('downloadWifiOnly'),
+      getPref('downloadQuotaBytes'),
+      getPref('downloadQuality'),
+    ]);
+    const theme = themeRaw ?? 'system';
+    const density = densityRaw ?? 'comfortable';
+    const volume = parseFloat(volumeRaw ?? '0.85');
+    const muted = mutedRaw === 'true';
+    const quality = (qualityRaw ?? 'lossless') as Settings['quality'];
+    const budget = Number(budgetRaw ?? 2 * 1024 * 1024 * 1024);
+    const listeningHistory = listeningHistoryRaw === 'true';
+    const downloadWifiOnly = downloadWifiOnlyRaw !== 'false';
+    const quota = Number(quotaRaw ?? 0);
+    const qualityValue = downloadQualityRaw ?? 'original';
     const downloadQuality: Settings['downloadQuality'] =
-      qualityRaw === 'balanced' || qualityRaw === 'saver' ? qualityRaw : 'original';
-    return {
+      qualityValue === 'balanced' || qualityValue === 'saver' ? qualityValue : 'original';
+    const settings: Settings = {
       theme: theme as Settings['theme'],
       density: density as Settings['density'],
       volume,
@@ -683,6 +726,8 @@ export class CapacitorBridge {
       downloadQuotaBytes: Number.isFinite(quota) && quota >= 0 ? quota : 0,
       downloadQuality,
     };
+    this.settingsCache = settings;
+    return settings;
   }
   async setSettings(patch: Partial<Settings>): Promise<Settings> {
     const prefs = (window as any).Capacitor?.Plugins?.Preferences;
@@ -693,7 +738,8 @@ export class CapacitorBridge {
         /* ignore */
       }
     };
-    const next = { ...await this.getSettings(), ...patch };
+    const next = { ...(this.settingsCache ?? (await this.getSettings())), ...patch };
+    this.settingsCache = next;
     if (patch.theme !== undefined) await setPref('theme', String(next.theme));
     if (patch.density !== undefined) await setPref('density', String(next.density));
     if (patch.volume !== undefined) await setPref('volume', String(next.volume));
@@ -760,6 +806,7 @@ export class CapacitorBridge {
       artistArtworkUrl,
       sourceId: String(raw['sourceId'] ?? sourceKind),
       sourceLabel,
+      sourceKind,
       trackNo: (raw['trackNo'] as number | null) ?? null,
       year: (raw['year'] as number | null) ?? null,
       genre: (raw['genre'] as string | null) ?? null,

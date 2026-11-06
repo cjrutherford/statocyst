@@ -53,7 +53,6 @@ function toTrack(stored: StoredTrack): Track {
     updatedAt: _updatedAt,
     lastPlayedAt: _lastPlayedAt,
     playCount: _playCount,
-    sourceKind: _sourceKind,
     ...track
   } = stored;
   return track;

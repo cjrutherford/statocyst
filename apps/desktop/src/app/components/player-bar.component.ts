@@ -70,10 +70,11 @@ import { formatDuration } from '../core/format';
             type="button"
             class="player__play"
             [class.is-live]="playback.isPlaying()"
+            [class.is-pulsing]="pulsing()"
             [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
             title="Play or pause (Space)"
             [disabled]="idle()"
-            (click)="playback.toggle()"
+            (click)="togglePlay()"
           >
             <sc-icon [name]="playback.isPlaying() ? 'pause' : 'play'" />
           </button>
@@ -261,6 +262,7 @@ import { formatDuration } from '../core/format';
         cursor: default;
       }
       .player__play {
+        position: relative;
         width: 46px;
         height: 46px;
         display: grid;
@@ -287,6 +289,32 @@ import { formatDuration } from '../core/format';
       }
       .player__play.is-live {
         animation: play-pulse 2.8s ease-in-out infinite;
+      }
+      .player__play::before,
+      .player__play::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .player__play.is-pulsing::before {
+        animation: player-sonar 900ms var(--ease-tide) both;
+      }
+      .player__play.is-pulsing::after {
+        animation: player-sonar 900ms var(--ease-tide) 160ms both;
+      }
+      @keyframes player-sonar {
+        0% {
+          opacity: 0.7;
+          transform: scale(0.9);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(2.2);
+        }
       }
       @keyframes play-pulse {
         0%,
@@ -449,21 +477,29 @@ export class PlayerBarComponent {
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
+  protected readonly pulsing = signal(false);
 
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(
     () => !this.playback.track() && this.playback.queue().entries.length === 0,
   );
   protected readonly displayPosition = computed(() =>
-    this.dragging() ? this.dragValue() : this.playback.snapshot().positionMs,
+    this.dragging() ? this.dragValue() : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
-    Math.max(1, this.playback.snapshot().durationMs),
+    Math.max(1, this.playback.durationMs()),
   );
   protected readonly progressPercent = computed(() =>
     Math.min(100, (this.displayPosition() / this.displayDuration()) * 100),
   );
   protected readonly volumePercent = computed(() => this.playback.snapshot().volume * 100);
+
+  protected togglePlay(): void {
+    void this.playback.toggle();
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    this.pulsing.set(true);
+    setTimeout(() => this.pulsing.set(false), 1000);
+  }
 
   protected onSeekInput(event: Event): void {
     this.dragging.set(true);

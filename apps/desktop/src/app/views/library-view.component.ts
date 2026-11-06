@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   OnDestroy,
+  afterRenderEffect,
   computed,
   HostListener,
   inject,
@@ -234,7 +235,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                 type="search"
                 placeholder="Search title, artist or album"
                 [value]="search()"
-                (input)="search.set($any($event.target).value)"
+                (input)="onSearchInput($event)"
               />
             </label>
             @if (downloads.supported) {
@@ -253,7 +254,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             }
             <label class="sort">
               <span>Sort</span>
-              <select [value]="sort()" (change)="sort.set($any($event.target).value)">
+              <select [value]="sort()" (change)="onSortChange($event)">
                 <option value="artist">Artist</option>
                 <option value="title">Title</option>
                 <option value="album">Album</option>
@@ -323,8 +324,13 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                     <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody>
-                  @for (track of filtered(); track track.id; let index = $index) {
+                <tbody #tbody>
+                  @if (topSpacer() > 0) {
+                    <tr class="row-spacer" aria-hidden="true">
+                      <td [attr.colspan]="selectMode() ? 7 : 6" [style.height.px]="topSpacer()"></td>
+                    </tr>
+                  }
+                  @for (track of visibleTracks(); track track.id; let index = $index) {
                     <tr
                       class="track-row"
                       [class.is-current]="playback.track()?.id === track.id"
@@ -354,7 +360,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                             <i></i><i></i><i></i>
                           </span>
                         } @else {
-                          <span class="index">{{ (track.trackNo ?? index + 1) }}</span>
+                          <span class="index">{{ (track.trackNo ?? startIndex() + index + 1) }}</span>
                         }
                       </td>
                       <td>
@@ -413,6 +419,11 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                           }
                         </div>
                       </td>
+                    </tr>
+                  }
+                  @if (bottomSpacer() > 0) {
+                    <tr class="row-spacer" aria-hidden="true">
+                      <td [attr.colspan]="selectMode() ? 7 : 6" [style.height.px]="bottomSpacer()"></td>
                     </tr>
                   }
                 </tbody>
@@ -1167,10 +1178,16 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         z-index: 1;
       }
       .track-row {
+        height: 61px;
         transition: background 120ms ease;
         /* Long libraries (2k+ rows) render only what is near the viewport. */
         content-visibility: auto;
-        contain-intrinsic-size: auto 64px;
+        contain-intrinsic-size: auto 61px;
+      }
+      .row-spacer td {
+        padding: 0;
+        border: 0;
+        line-height: 0;
       }
       .track-row:hover {
         background: var(--surface-row-hover);
@@ -1346,6 +1363,9 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       }
       .equalizer i {
         width: 3px;
+        height: 13px;
+        transform-origin: bottom;
+        transform: scaleY(0.31);
         background: var(--cyan);
         border-radius: 2px;
         animation: eq 900ms ease-in-out infinite;
@@ -1359,10 +1379,10 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
       @keyframes eq {
         0%,
         100% {
-          height: 4px;
+          transform: scaleY(0.31);
         }
         50% {
-          height: 13px;
+          transform: scaleY(1);
         }
       }
       .selection-bar {
@@ -1542,17 +1562,109 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
   ],
 })
 export class LibraryViewComponent implements AfterViewInit, OnDestroy {
+  private static readonly VIRTUAL_THRESHOLD = 200;
+  private static readonly OVERSCAN = 10;
+  /** Must match `.track-row` in the component styles; used for spacer math. */
+  private static readonly ROW_HEIGHT = 61;
   private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
+  private readonly tbody = viewChild<ElementRef<HTMLTableSectionElement>>('tbody');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private scrollParent: HTMLElement | null = null;
+  private scrollFrame = 0;
+  private resizeObserver: ResizeObserver | null = null;
+  private tbodyObserver: ResizeObserver | null = null;
+  private observedTbody: HTMLElement | null = null;
+  private readonly scrollTop = signal(0);
+  private readonly viewportHeight = signal(0);
+  private readonly tbodyTop = signal(0);
+  private readonly measureEffect = afterRenderEffect(() => {
+    // Measure after the DOM has settled whenever the row set or view changes.
+    this.filtered();
+    this.mode();
+    this.detail();
+    this.syncTableObserver();
+    this.measureAfterPaint();
+  });
 
   // The menu is position:fixed, but an animated ancestor makes it relative to (and clipped by)
   // the scroll area, hiding it behind the mini-player. Hosting it on <body> avoids that.
   ngAfterViewInit(): void {
     document.body.appendChild(this.contextLayer().nativeElement);
+    this.scrollParent = this.host.nativeElement.closest('.main') as HTMLElement | null;
+    if (this.scrollParent) {
+      this.scrollParent.addEventListener('scroll', this.onScroll, { passive: true });
+      this.viewportHeight.set(this.scrollParent.clientHeight);
+      this.scrollTop.set(this.scrollParent.scrollTop);
+      if (typeof ResizeObserver !== 'undefined') {
+        this.resizeObserver = new ResizeObserver(() => {
+          if (!this.scrollParent) return;
+          this.viewportHeight.set(this.scrollParent.clientHeight);
+          this.measure();
+        });
+        this.resizeObserver.observe(this.scrollParent);
+      }
+    }
+    this.measure();
   }
 
   ngOnDestroy(): void {
+    if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
+    this.scrollParent?.removeEventListener('scroll', this.onScroll);
+    this.resizeObserver?.disconnect();
+    this.tbodyObserver?.disconnect();
     this.contextLayer().nativeElement.remove();
+  }
+
+  private readonly onScroll = (): void => {
+    if (this.scrollFrame) return;
+    this.scrollFrame = requestAnimationFrame(() => {
+      this.scrollFrame = 0;
+      // Re-measuring here also corrects a table offset that settled after the
+      // first render (fonts, header, an async library load).
+      this.measure();
+      this.scrollTop.set(this.scrollParent?.scrollTop ?? 0);
+    });
+  };
+
+  private measureAfterPaint(): void {
+    requestAnimationFrame(() => {
+      this.measure();
+      // One more frame catches a layout swap that needs a paint to settle, such
+      // as the empty state being replaced by the track table.
+      requestAnimationFrame(() => this.measure());
+    });
+  }
+
+  /**
+   * The table is inserted after the library loads, long after ngAfterViewInit.
+   * Observing it lets the offset be re-measured when that layout swap lands
+   * instead of trusting a value captured while the empty state was on screen.
+   */
+  private syncTableObserver(): void {
+    const tbody = this.tbody()?.nativeElement ?? null;
+    if (!tbody || tbody === this.observedTbody) return;
+    this.tbodyObserver?.disconnect();
+    this.observedTbody = tbody;
+    if (typeof ResizeObserver !== 'undefined') {
+      this.tbodyObserver = new ResizeObserver(() => this.measure());
+      this.tbodyObserver.observe(tbody);
+    }
+    this.measure();
+  }
+
+  private measure(): void {
+    const parent = this.scrollParent;
+    const tbody = this.tbody()?.nativeElement;
+    if (!parent || !tbody) return;
+    const parentRect = parent.getBoundingClientRect();
+    const tbodyRect = tbody.getBoundingClientRect();
+    this.viewportHeight.set(parent.clientHeight);
+    this.tbodyTop.set(tbodyRect.top - parentRect.top + parent.scrollTop);
+  }
+
+  private resetScroll(): void {
+    this.scrollTop.set(0);
+    this.scrollParent?.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   @HostListener('document:click', ['$event'])
@@ -1664,6 +1776,48 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     return sorted;
   });
 
+  /** True when the track table is large enough to window its rows. */
+  protected readonly virtualized = computed(
+    () => this.filtered().length > LibraryViewComponent.VIRTUAL_THRESHOLD,
+  );
+
+  /** First row that should exist in the DOM, with overscan above the viewport. */
+  protected readonly startIndex = computed(() => {
+    const total = this.filtered().length;
+    if (total <= LibraryViewComponent.VIRTUAL_THRESHOLD) return 0;
+    const relative = this.scrollTop() - this.tbodyTop();
+    if (relative <= 0) return 0;
+    const first = Math.floor(relative / Math.max(1, LibraryViewComponent.ROW_HEIGHT));
+    return Math.max(0, Math.min(total - 1, first - LibraryViewComponent.OVERSCAN));
+  });
+
+  /** Exclusive end of the window: viewport plus overscan below. */
+  protected readonly endIndex = computed(() => {
+    const total = this.filtered().length;
+    if (total <= LibraryViewComponent.VIRTUAL_THRESHOLD) return total;
+    const visible = Math.ceil(this.viewportHeight() / Math.max(1, LibraryViewComponent.ROW_HEIGHT));
+    return Math.min(
+      total,
+      this.startIndex() + visible + LibraryViewComponent.OVERSCAN * 2,
+    );
+  });
+
+  protected readonly visibleTracks = computed(() => {
+    const all = this.filtered();
+    if (all.length <= LibraryViewComponent.VIRTUAL_THRESHOLD) return all;
+    return all.slice(this.startIndex(), this.endIndex());
+  });
+
+  protected readonly topSpacer = computed(() =>
+    this.virtualized() ? this.startIndex() * LibraryViewComponent.ROW_HEIGHT : 0,
+  );
+
+  protected readonly bottomSpacer = computed(() =>
+    this.virtualized()
+      ? Math.max(0, (this.filtered().length - this.endIndex()) * LibraryViewComponent.ROW_HEIGHT)
+      : 0,
+  );
+
   protected readonly artists = computed(() => {
     const map = new Map<string, { albums: Set<string>; tracks: number; artwork: string | null; photo: string | null }>();
     for (const track of this.library.tracks()) {
@@ -1737,6 +1891,17 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected setMode(mode: 'tracks' | 'albums' | 'artists'): void {
     this.mode.set(mode);
     this.detail.set(null);
+    this.resetScroll();
+  }
+
+  protected onSearchInput(event: Event): void {
+    this.search.set((event.target as HTMLInputElement).value);
+    this.resetScroll();
+  }
+
+  protected onSortChange(event: Event): void {
+    this.sort.set((event.target as HTMLSelectElement).value as SortKey);
+    this.resetScroll();
   }
 
   protected openAlbum(album: string, artist: string, viaArtist: boolean): void {
@@ -1758,6 +1923,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected clearFilters(): void {
     this.search.set('');
+    this.resetScroll();
   }
 
   private scrollToTop(): void {

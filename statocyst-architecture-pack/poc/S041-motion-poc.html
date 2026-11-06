@@ -1,0 +1,2052 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-tier="full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
+    <title>Statocyst · S041 Motion POC</title>
+    <style>
+      /* ---------------------------------------------------------------------
+         Statocyst S041 — bathypelagic motion proof of concept.
+         Four primitives (Current, Dive/Surface, Sonar, Buoyancy) plus a foam wipe.
+         Single file, no dependencies. Everything animates transform/opacity
+         except the deliberate Full-tier glass blur.
+      --------------------------------------------------------------------- */
+
+      :root {
+        --bg: #03070f;
+        --bg-2: #050a18;
+        --panel: rgba(8, 18, 34, 0.72);
+        --panel-strong: rgba(10, 21, 41, 0.94);
+        --glass-bg: rgba(7, 16, 32, 0.56);
+        --glass: blur(18px);
+        --line: rgba(148, 197, 255, 0.15);
+        --line-strong: rgba(148, 197, 255, 0.28);
+        --text: #e9f4ff;
+        --muted: #8ea6c4;
+        --cyan: #38e1ff;
+        --cyan-soft: #7fe9ff;
+        --violet: #a78bfa;
+        --pearl: #f2fbff;
+        --danger: #ff6b8a;
+        --success: #4ade80;
+        --shadow: 0 30px 80px rgba(0, 5, 18, 0.55);
+        --ease-tide: cubic-bezier(0.22, 0.61, 0.36, 1);
+        --ease-drift: cubic-bezier(0.4, 0, 0.2, 1);
+        --ease-bubble: cubic-bezier(0.16, 1, 0.3, 1);
+        --page: 320ms;
+        --quick: 160ms;
+        --caustic-1: rgba(56, 225, 255, 0.16);
+        --caustic-2: rgba(167, 139, 250, 0.14);
+        --caustic-3: rgba(255, 255, 255, 0.045);
+        --vignette: rgba(0, 4, 14, 0.62);
+        --mote: rgba(160, 242, 255, 0.68);
+        --foam: rgba(232, 252, 255, 0.96);
+        --foam-2: rgba(56, 225, 255, 0.55);
+        --on-accent: #03121f;
+      }
+
+      html[data-theme='light'] {
+        --bg: #e8f5fb;
+        --bg-2: #dff0f8;
+        --panel: rgba(255, 255, 255, 0.7);
+        --panel-strong: rgba(255, 255, 255, 0.94);
+        --glass-bg: rgba(255, 255, 255, 0.5);
+        --line: rgba(10, 70, 100, 0.16);
+        --line-strong: rgba(10, 70, 100, 0.28);
+        --text: #062033;
+        --muted: #4d6f86;
+        --cyan: #078daf;
+        --cyan-soft: #2bb6d4;
+        --violet: #6f5bd4;
+        --pearl: #ffffff;
+        --danger: #d63d60;
+        --success: #128a4b;
+        --shadow: 0 26px 60px rgba(20, 70, 100, 0.18);
+        --caustic-1: rgba(255, 255, 255, 0.55);
+        --caustic-2: rgba(10, 143, 184, 0.13);
+        --caustic-3: rgba(120, 220, 255, 0.16);
+        --vignette: rgba(18, 80, 100, 0.16);
+        --mote: rgba(0, 108, 140, 0.6);
+        --foam: rgba(255, 255, 255, 0.97);
+        --foam-2: rgba(8, 120, 155, 0.45);
+        color-scheme: light;
+      }
+
+      html[data-tier='native'] {
+        --glass: blur(0px);
+        --glass-bg: rgba(7, 16, 32, 0.9);
+        --page: 300ms;
+      }
+      html[data-theme='light'][data-tier='native'] {
+        --glass-bg: rgba(255, 255, 255, 0.9);
+      }
+      html[data-tier='reduced'] {
+        --glass: blur(0px);
+        --glass-bg: var(--panel-strong);
+        --page: 120ms;
+      }
+      html[data-tier='reduced'] .caustic,
+      html[data-tier='reduced'] .motes {
+        display: none;
+      }
+      html[data-tier='reduced'] .mote {
+        animation: none;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        min-height: 100%;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--cyan);
+        outline-offset: 2px;
+      }
+
+      /* ---------------------------------------------------------------- ambient */
+      .ambient {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .caustic {
+        position: absolute;
+        inset: -30%;
+        background:
+          radial-gradient(ellipse 38% 30% at 30% 18%, var(--caustic-1), transparent 72%),
+          radial-gradient(ellipse 34% 42% at 78% 58%, var(--caustic-2), transparent 74%),
+          radial-gradient(ellipse 55% 30% at 48% 96%, var(--caustic-3), transparent 72%);
+        opacity: 0.85;
+        mix-blend-mode: screen;
+        animation: caustic-drift 34s var(--ease-drift) infinite alternate;
+        will-change: transform;
+      }
+      .caustic--b {
+        opacity: 0.5;
+        animation-duration: 52s;
+        animation-direction: alternate-reverse;
+      }
+      html[data-tier='native'] .caustic--b {
+        display: none;
+      }
+      html[data-tier='native'] .caustic {
+        mix-blend-mode: normal;
+      }
+      html[data-ambient-paused] .caustic,
+      html[data-ambient-paused] .mote {
+        animation-play-state: paused;
+      }
+      html[data-theme='light'] .caustic {
+        mix-blend-mode: normal;
+      }
+      @keyframes caustic-drift {
+        0% {
+          transform: translate3d(-3%, -2%, 0) rotate(-4deg) scale(1.04);
+        }
+        100% {
+          transform: translate3d(4%, 3%, 0) rotate(3deg) scale(1.12);
+        }
+      }
+
+      .motes {
+        position: absolute;
+        inset: 0;
+      }
+      .mote {
+        position: absolute;
+        bottom: -12vh;
+        left: var(--x, 50%);
+        width: var(--s, 4px);
+        height: var(--s, 4px);
+        border-radius: 50%;
+        background: radial-gradient(circle at 34% 30%, #fff, var(--mote) 42%, transparent 72%);
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        box-shadow: 0 0 12px var(--mote);
+        opacity: 0;
+        animation: mote-rise var(--dur, 24s) linear infinite;
+        animation-delay: var(--delay, 0s);
+      }
+      html[data-tier='native'] .mote:nth-child(n + 9) {
+        display: none;
+      }
+      html[data-theme='light'] .mote {
+        width: calc(var(--s, 4px) * 1.9);
+        height: calc(var(--s, 4px) * 1.9);
+        border-color: rgba(0, 80, 105, 0.3);
+        box-shadow: 0 0 14px rgba(0, 110, 145, 0.4);
+        animation-name: mote-rise-light;
+      }
+      @keyframes mote-rise-light {
+        0% {
+          opacity: 0;
+          transform: translate3d(0, 0, 0) scale(0.7);
+        }
+        12% {
+          opacity: 0.82;
+        }
+        78% {
+          opacity: 0.6;
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--drift, 10px), -118vh, 0) scale(1.05);
+        }
+      }
+      html[data-theme='light'] .foam-bubble {
+        border-color: rgba(2, 80, 105, 0.3);
+        box-shadow: 0 0 14px rgba(2, 100, 130, 0.35);
+      }
+      @keyframes mote-rise {
+        0% {
+          opacity: 0;
+          transform: translate3d(0, 0, 0) scale(0.7);
+        }
+        12% {
+          opacity: 0.7;
+        }
+        78% {
+          opacity: 0.45;
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--drift, 10px), -118vh, 0) scale(1.05);
+        }
+      }
+      .vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 50% 42%, transparent 32%, var(--vignette) 100%);
+        transition: background 600ms var(--ease-drift);
+      }
+
+      /* ---------------------------------------------------------------- shell */
+      .lab {
+        position: relative;
+        z-index: 1;
+        width: min(1160px, 100%);
+        margin: 0 auto;
+        padding: clamp(16px, 3vw, 34px);
+        padding-top: max(16px, env(safe-area-inset-top, 0px));
+        padding-bottom: max(34px, env(safe-area-inset-bottom, 0px));
+      }
+      .lab__head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: clamp(16px, 2.4vw, 26px);
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        min-width: 0;
+      }
+      .brand__mark {
+        width: 48px;
+        height: 48px;
+        flex: none;
+        filter: drop-shadow(0 0 16px rgba(56, 225, 255, 0.35));
+      }
+      .eyebrow {
+        margin: 0;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        opacity: 0.9;
+      }
+      h1 {
+        margin: 3px 0 0;
+        font-size: clamp(1.35rem, 2.6vw, 2rem);
+        letter-spacing: -0.02em;
+        line-height: 1.05;
+        font-weight: 650;
+      }
+      .lede {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        max-width: 56ch;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        backdrop-filter: var(--glass);
+        -webkit-backdrop-filter: var(--glass);
+      }
+      .seg button {
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        padding: 7px 11px;
+        border-radius: 9px;
+        cursor: pointer;
+        min-height: 30px;
+        transition: color var(--quick) ease, background var(--quick) ease;
+      }
+      .seg button:hover {
+        color: var(--text);
+      }
+      .seg button[aria-pressed='true'] {
+        color: var(--on-accent);
+        background: linear-gradient(140deg, var(--cyan), var(--cyan-soft));
+      }
+      .seg__label {
+        font-size: 0.58rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding-left: 6px;
+      }
+
+      .lab__grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 15px;
+      }
+      @media (max-width: 880px) {
+        .lab__grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        position: relative;
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: linear-gradient(160deg, var(--panel), var(--glass-bg));
+        box-shadow: var(--shadow);
+        backdrop-filter: var(--glass);
+        -webkit-backdrop-filter: var(--glass);
+        overflow: hidden;
+      }
+      .card__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .card__no {
+        display: block;
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        color: var(--cyan);
+        text-transform: uppercase;
+      }
+      .card h2 {
+        margin: 3px 0 2px;
+        font-size: 1.02rem;
+        letter-spacing: -0.01em;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.73rem;
+        line-height: 1.5;
+      }
+      .tag {
+        flex: none;
+        font-size: 0.55rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 8px;
+      }
+      .stage {
+        position: relative;
+        min-height: 230px;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: rgba(2, 8, 20, 0.32);
+        overflow: hidden;
+        isolation: isolate;
+      }
+      html[data-theme='light'] .stage {
+        background: rgba(255, 255, 255, 0.36);
+      }
+      .hint {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.64rem;
+        letter-spacing: 0.03em;
+      }
+      .hint b {
+        color: var(--cyan);
+        font-weight: 600;
+      }
+
+      /* ---------------------------------------------------------------- current */
+      .carousel {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 10px;
+        padding: 12px;
+        touch-action: pan-y;
+        cursor: grab;
+        user-select: none;
+      }
+      .carousel.is-dragging {
+        cursor: grabbing;
+      }
+      .carousel__viewport {
+        overflow: hidden;
+        padding: 4px 0;
+      }
+      .carousel__track {
+        display: flex;
+        gap: 14px;
+        will-change: transform;
+        transition: transform var(--page) var(--ease-tide);
+      }
+      .album {
+        flex: 0 0 74%;
+        min-width: 0;
+        padding: 9px;
+        border-radius: 15px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        opacity: 0.5;
+        transform: scale(0.94);
+        transition: opacity 260ms ease, transform 320ms var(--ease-tide), border-color 260ms ease;
+      }
+      .album.is-active {
+        opacity: 1;
+        transform: scale(1);
+        border-color: rgba(56, 225, 255, 0.42);
+        box-shadow: 0 0 34px rgba(56, 225, 255, 0.13);
+      }
+      .album__art {
+        position: relative;
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1.6;
+        border-radius: 11px;
+        overflow: hidden;
+        margin-bottom: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .album:nth-child(1) .album__art {
+        background:
+          radial-gradient(circle at 32% 24%, rgba(56, 225, 255, 0.42), transparent 58%),
+          linear-gradient(145deg, #0a2a44, #071127 68%);
+      }
+      .album:nth-child(2) .album__art {
+        background:
+          radial-gradient(circle at 68% 30%, rgba(167, 139, 250, 0.42), transparent 58%),
+          linear-gradient(145deg, #1a1238, #081127 68%);
+      }
+      .album:nth-child(3) .album__art {
+        background:
+          radial-gradient(circle at 50% 66%, rgba(255, 107, 138, 0.34), transparent 58%),
+          linear-gradient(145deg, #2a1024, #081127 68%);
+      }
+      .album__art svg {
+        width: 52%;
+        height: 52%;
+        opacity: 0.9;
+      }
+      .album__now {
+        position: absolute;
+        top: 7px;
+        left: 7px;
+        font-size: 0.48rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 3px 6px;
+        border-radius: 999px;
+        color: var(--on-accent);
+        background: var(--cyan);
+        font-weight: 700;
+      }
+      .album__title {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 650;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .album__artist {
+        display: block;
+        font-size: 0.64rem;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .carousel__ctl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .round-btn {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        transition: transform var(--quick) var(--ease-bubble), border-color var(--quick) ease;
+      }
+      .round-btn:active {
+        transform: scale(0.94);
+      }
+      .round-btn:hover {
+        border-color: var(--line-strong);
+      }
+      .dots {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--line-strong);
+        transition: background var(--quick) ease, transform var(--quick) var(--ease-bubble);
+      }
+      .dot.is-active {
+        background: var(--cyan);
+        transform: scale(1.3);
+        box-shadow: 0 0 10px var(--cyan);
+      }
+
+      /* ---------------------------------------------------------------- dive */
+      .dive-stage {
+        position: absolute;
+        inset: 0;
+        padding: 14px;
+        view-transition-name: dive-stage;
+        background:
+          radial-gradient(circle at 20% 0%, rgba(56, 225, 255, 0.1), transparent 54%),
+          linear-gradient(170deg, rgba(8, 20, 40, 0.5), rgba(2, 7, 16, 0.5));
+      }
+      html[data-theme='light'] .dive-stage {
+        background:
+          radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.55), transparent 54%),
+          linear-gradient(170deg, rgba(255, 255, 255, 0.4), rgba(180, 225, 240, 0.25));
+      }
+      .dive-depth {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(ellipse at 50% 35%, transparent 20%, rgba(0, 3, 10, 0.62) 100%);
+        opacity: 0.15;
+        transition: opacity 650ms var(--ease-drift);
+      }
+      .dive-stage[data-view='now'] .dive-depth {
+        opacity: 1;
+      }
+      .dive-view {
+        position: absolute;
+        inset: 0;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .dive-view[hidden] {
+        display: none;
+      }
+      .dive-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.55rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .mini-link {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 0.58rem;
+        color: var(--text);
+        cursor: pointer;
+        min-height: 28px;
+      }
+      .mini-link:active {
+        transform: scale(0.96);
+      }
+      .dive-feature {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .dive-feature:active {
+        transform: scale(0.985);
+      }
+      .dive-art {
+        width: 54px;
+        height: 54px;
+        flex: none;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 32% 22%, rgba(56, 225, 255, 0.45), transparent 58%),
+          linear-gradient(145deg, #0a2a44, #071127 70%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .dive-art svg {
+        width: 62%;
+        height: 62%;
+      }
+      .dive-feature__title {
+        display: block;
+        font-size: 0.78rem;
+        font-weight: 650;
+      }
+      .dive-feature__sub {
+        display: block;
+        font-size: 0.62rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .dive-list {
+        display: grid;
+        gap: 5px;
+        margin-top: auto;
+      }
+      .dive-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: 9px;
+        background: rgba(148, 197, 255, 0.045);
+        font-size: 0.65rem;
+        color: var(--muted);
+      }
+      .dive-row i {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--cyan);
+        opacity: 0.7;
+      }
+      .dive-now {
+        display: grid;
+        grid-template-columns: 76px minmax(0, 1fr);
+        gap: 11px;
+        align-items: center;
+      }
+      .dive-now__art {
+        aspect-ratio: 1;
+        border-radius: 13px;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 32% 22%, rgba(56, 225, 255, 0.45), transparent 58%),
+          linear-gradient(145deg, #0a2a44, #071127 70%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .dive-now__art svg {
+        width: 68%;
+        height: 68%;
+      }
+      .dive-now__title {
+        margin: 0;
+        font-size: 0.92rem;
+        line-height: 1.1;
+      }
+      .dive-now__artist {
+        margin: 2px 0 0;
+        font-size: 0.66rem;
+        color: var(--cyan);
+      }
+      .dive-progress {
+        margin-top: 14px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 197, 255, 0.16);
+        overflow: hidden;
+      }
+      .dive-progress span {
+        display: block;
+        height: 100%;
+        width: 42%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+        box-shadow: 0 0 12px rgba(56, 225, 255, 0.55);
+      }
+      .dive-transport {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        margin-top: auto;
+        padding-bottom: 2px;
+      }
+      .dive-play {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        background:
+          radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.36), transparent 48%),
+          linear-gradient(160deg, #61ebff, #22a6dc 52%, #7c6bf7);
+        color: var(--on-accent);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+      .dive-play svg {
+        width: 18px;
+        height: 18px;
+      }
+      .dive-play::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .dive-play.is-pulsing::before {
+        animation: sonar-ring 800ms var(--ease-tide) both;
+      }
+      .dive-icon {
+        color: var(--muted);
+        font-size: 1rem;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        padding: 4px;
+      }
+      .dive-icon:active {
+        transform: scale(0.92);
+      }
+
+      /* View Transitions: only the dive stage morphs; the lab stays put. */
+      ::view-transition-old(root),
+      ::view-transition-new(root) {
+        animation: none;
+      }
+      ::view-transition-old(dive-stage) {
+        animation: dive-out var(--page) var(--ease-tide) both;
+      }
+      ::view-transition-new(dive-stage) {
+        animation: dive-in var(--page) var(--ease-tide) both;
+      }
+      html[data-transition='surface']::view-transition-old(dive-stage) {
+        animation-name: surface-out;
+      }
+      html[data-transition='surface']::view-transition-new(dive-stage) {
+        animation-name: surface-in;
+      }
+      @keyframes dive-in {
+        from {
+          opacity: 0.2;
+          transform: scale(0.94) translateY(16px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes dive-out {
+        from {
+          opacity: 1;
+          transform: none;
+        }
+        to {
+          opacity: 0.15;
+          transform: scale(1.06) translateY(-10px);
+        }
+      }
+      @keyframes surface-in {
+        from {
+          opacity: 0.2;
+          transform: scale(1.06) translateY(-14px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes surface-out {
+        from {
+          opacity: 1;
+          transform: none;
+        }
+        to {
+          opacity: 0.15;
+          transform: scale(0.94) translateY(12px);
+        }
+      }
+      .dive-view.is-entering {
+        animation: dive-in var(--page) var(--ease-tide) both;
+      }
+      .dive-view.is-entering[data-view='now'] {
+        animation-name: dive-in;
+      }
+
+      /* ---------------------------------------------------------------- sonar */
+      .sonar-stage {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        gap: 0;
+      }
+      .sonar-wrap {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+      }
+      .sonar-play {
+        position: relative;
+        width: 82px;
+        height: 82px;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        background:
+          radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.38), transparent 48%),
+          linear-gradient(160deg, #61ebff, #22a6dc 52%, #7c6bf7);
+        color: var(--on-accent);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        box-shadow:
+          0 0 38px rgba(56, 225, 255, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.45);
+        transition: transform var(--quick) var(--ease-bubble);
+      }
+      .sonar-play:active {
+        transform: scale(0.95);
+      }
+      .sonar-play svg {
+        width: 30px;
+        height: 30px;
+        grid-area: 1 / 1;
+      }
+      .sonar-play .icon-pause {
+        display: none;
+      }
+      .sonar-play.is-playing .icon-play {
+        display: none;
+      }
+      .sonar-play.is-playing .icon-pause {
+        display: block;
+      }
+      .sonar-play::before,
+      .sonar-play::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .sonar-play.is-pulsing::before {
+        animation: sonar-ring 900ms var(--ease-tide) both;
+      }
+      .sonar-play.is-pulsing::after {
+        animation: sonar-ring 900ms var(--ease-tide) 160ms both;
+      }
+      @keyframes sonar-ring {
+        0% {
+          opacity: 0.75;
+          transform: scale(0.9);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(2.6);
+        }
+      }
+      .sonar-meta {
+        text-align: center;
+        min-width: 180px;
+      }
+      .sonar-meta strong {
+        display: block;
+        font-size: 0.78rem;
+      }
+      .sonar-meta span {
+        display: block;
+        margin-top: 2px;
+        font-size: 0.64rem;
+        color: var(--muted);
+      }
+      .sonar-next {
+        margin-top: 2px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 999px;
+        padding: 6px 12px;
+        font-size: 0.64rem;
+        cursor: pointer;
+        min-height: 30px;
+      }
+      .sonar-next:active {
+        transform: scale(0.96);
+      }
+
+      /* ---------------------------------------------------------------- buoyancy */
+      .buoyancy-stage {
+        position: absolute;
+        inset: 0;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+      .buoy-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .heart-wrap {
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
+      .heart-btn {
+        width: 62px;
+        height: 62px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        transition: color var(--quick) ease, background var(--quick) ease, border-color var(--quick) ease;
+      }
+      .heart-btn svg {
+        width: 28px;
+        height: 28px;
+      }
+      .heart-btn.is-fav {
+        color: var(--danger);
+        border-color: rgba(255, 107, 138, 0.4);
+        background: rgba(255, 107, 138, 0.12);
+      }
+      .heart-btn.is-bursting {
+        animation: heart-pop 480ms var(--ease-bubble);
+      }
+      @keyframes heart-pop {
+        0% {
+          transform: scale(1);
+        }
+        32% {
+          transform: scale(1.18);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+      .bubble {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: var(--size, 7px);
+        height: var(--size, 7px);
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #fff, rgba(127, 233, 255, 0.8) 45%, transparent 72%);
+        box-shadow: 0 0 10px rgba(127, 233, 255, 0.7);
+        pointer-events: none;
+        animation: bubble-rise 760ms var(--ease-bubble) forwards;
+        animation-delay: var(--delay, 0ms);
+      }
+      @keyframes bubble-rise {
+        0% {
+          opacity: 0.95;
+          transform: translate(-50%, -50%) scale(0.4);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% - 86px)) scale(1.1);
+        }
+      }
+      .dl-btn {
+        position: relative;
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid rgba(56, 225, 255, 0.34);
+        border-radius: 999px;
+        padding: 10px 14px;
+        background: rgba(56, 225, 255, 0.08);
+        color: var(--cyan);
+        font-size: 0.7rem;
+        font-weight: 650;
+        cursor: pointer;
+        min-height: 40px;
+        isolation: isolate;
+      }
+      .dl-btn svg {
+        width: 16px;
+        height: 16px;
+        position: relative;
+        z-index: 1;
+      }
+      .dl-btn__label {
+        position: relative;
+        z-index: 1;
+        white-space: nowrap;
+      }
+      .dl-btn__fill {
+        position: absolute;
+        inset: 0;
+        transform-origin: left;
+        transform: scaleX(var(--p, 0));
+        background: linear-gradient(90deg, rgba(56, 225, 255, 0.12), rgba(56, 225, 255, 0.42));
+        transition: transform 1400ms linear, background 240ms ease;
+        z-index: 0;
+      }
+      .dl-btn.is-done {
+        color: var(--success);
+        border-color: rgba(74, 222, 128, 0.4);
+        background: rgba(74, 222, 128, 0.08);
+      }
+      .dl-btn.is-done .dl-btn__fill {
+        background: rgba(74, 222, 128, 0.22);
+      }
+      .dl-btn.is-done::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        border: 1px solid rgba(74, 222, 128, 0.6);
+        animation: bloom 700ms var(--ease-tide) both;
+        pointer-events: none;
+      }
+      @keyframes bloom {
+        0% {
+          opacity: 0.8;
+          transform: scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.5);
+        }
+      }
+      .buoy-caption {
+        text-align: center;
+        font-size: 0.62rem;
+        color: var(--muted);
+        max-width: 28ch;
+        line-height: 1.45;
+      }
+
+
+      /* ---------------------------------------------------------------- foam */
+      .card--wide {
+        grid-column: 1 / -1;
+      }
+      .stage--foam {
+        min-height: 266px;
+      }
+      .foam-stage {
+        position: absolute;
+        inset: 0;
+      }
+      .foam-page {
+        position: absolute;
+        inset: 0;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .foam-page[hidden] {
+        display: none;
+      }
+      .foam-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.55rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .foam-layout {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+      .foam-art {
+        width: 94px;
+        height: 94px;
+        flex: none;
+        border-radius: 15px;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 32% 22%, rgba(56, 225, 255, 0.45), transparent 58%),
+          linear-gradient(145deg, #0a2a44, #071127 70%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 12px 28px rgba(0, 6, 20, 0.32);
+      }
+      .foam-art svg {
+        width: 66%;
+        height: 66%;
+      }
+      .foam-title {
+        margin: 0;
+        font-size: clamp(1rem, 2.4vw, 1.4rem);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+      }
+      .foam-artist {
+        margin: 3px 0 0;
+        font-size: 0.72rem;
+        color: var(--cyan);
+      }
+      .foam-chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 7px;
+      }
+      .foam-chip {
+        font-size: 0.55rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 7px;
+      }
+      .foam-list {
+        display: grid;
+        gap: 5px;
+        margin-top: auto;
+      }
+      .foam-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: 8px;
+        background: rgba(148, 197, 255, 0.045);
+        font-size: 0.64rem;
+        color: var(--muted);
+      }
+      .foam-row i {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--cyan);
+        opacity: 0.7;
+      }
+      .foam-progress {
+        margin-top: 12px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 197, 255, 0.16);
+        overflow: hidden;
+      }
+      .foam-progress span {
+        display: block;
+        height: 100%;
+        width: 44%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+      }
+      .foam-transport {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        margin-top: auto;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .foam-transport .foam-play {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        background:
+          radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.36), transparent 48%),
+          linear-gradient(160deg, #61ebff, #22a6dc 52%, #7c6bf7);
+        color: var(--on-accent);
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+      }
+      .foam-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .foam-wash {
+        position: absolute;
+        inset: -18%;
+        opacity: 0;
+        transform: scale(0.35);
+        transform-origin: 50% 104%;
+        background:
+          radial-gradient(circle at 50% 104%, var(--foam) 0 32%, var(--foam-2) 54%, transparent 76%),
+          radial-gradient(circle at 30% 80%, rgba(255, 255, 255, 0.5), transparent 55%);
+        transition: opacity 180ms ease, transform 300ms var(--ease-bubble);
+      }
+      .foam-layer.is-active .foam-wash {
+        opacity: 0.98;
+        transform: scale(1.15);
+      }
+      .foam-layer.is-revealing .foam-wash {
+        opacity: 0;
+        transform: scale(1.22);
+        transition-duration: 500ms;
+      }
+      .foam-bubbles {
+        position: absolute;
+        inset: 0;
+      }
+      .foam-bubble {
+        position: absolute;
+        left: var(--x, 50%);
+        top: var(--y, 60%);
+        width: var(--s, 16px);
+        height: var(--s, 16px);
+        border-radius: 50%;
+        background: radial-gradient(circle at 34% 30%, #fff, var(--foam-2) 46%, transparent 72%);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        box-shadow: 0 0 12px var(--foam-2);
+        opacity: 0;
+        transform: translate3d(0, 26px, 0) scale(0.3);
+        transition: opacity 240ms ease, transform 300ms var(--ease-bubble);
+        transition-delay: var(--delay, 0ms);
+      }
+      .foam-layer.is-active .foam-bubble {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      .foam-layer.is-revealing .foam-bubble {
+        opacity: 0;
+        transform: translate3d(var(--dx, 0px), var(--dy, 0px), 0) scale(1.12);
+        transition-duration: 500ms;
+        transition-delay: 0ms;
+      }
+      .foam-layer:not(.is-active):not(.is-revealing) .foam-bubble {
+        transition: none;
+      }
+      .foam-ctl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .foam-go {
+        border: 1px solid rgba(56, 225, 255, 0.34);
+        background: rgba(56, 225, 255, 0.08);
+        color: var(--cyan);
+        border-radius: 999px;
+        padding: 9px 14px;
+        font-size: 0.68rem;
+        font-weight: 650;
+        cursor: pointer;
+        min-height: 38px;
+      }
+      .foam-go:active {
+        transform: scale(0.97);
+      }
+      .foam-note {
+        font-size: 0.6rem;
+        color: var(--muted);
+      }
+
+      /* ---------------------------------------------------------------- footer */
+      .lab__foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 0.64rem;
+        padding-top: 16px;
+      }
+      .lab__foot b {
+        color: var(--cyan);
+        font-weight: 600;
+      }
+      @media (max-width: 520px) {
+        .lab {
+          padding-left: max(12px, env(safe-area-inset-left, 0px));
+          padding-right: max(12px, env(safe-area-inset-right, 0px));
+        }
+        .card {
+          padding: 13px;
+          border-radius: 18px;
+        }
+        .stage {
+          min-height: 218px;
+        }
+        .seg button {
+          padding: 7px 9px;
+          min-height: 34px;
+        }
+        .lab__head {
+          align-items: flex-start;
+        }
+        .controls {
+          width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .caustic,
+        .mote {
+          animation: none !important;
+        }
+        .caustic {
+          opacity: 0.25;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+      <defs>
+        <radialGradient id="jelly-bell" cx="38%" cy="28%" r="76%">
+          <stop offset="0" stop-color="#e9fdff" />
+          <stop offset="0.36" stop-color="#7fe9ff" />
+          <stop offset="0.7" stop-color="#38e1ff" />
+          <stop offset="1" stop-color="#5b4bd6" />
+        </radialGradient>
+        <symbol id="jelly" viewBox="0 0 120 120">
+          <path
+            d="M22 55c0-21 17-36 38-36s38 15 38 36c0 8-8 14-18 16-5 1-10 2-20 2s-15-1-20-2c-10-2-18-8-18-16z"
+            fill="url(#jelly-bell)"
+            opacity="0.92"
+          />
+          <path
+            d="M37 70c-2 12 2 21 8 27M50 73c-4 12-2 22 4 28M62 73c4 12 2 22-4 28M75 70c2 12-2 21-8 27"
+            stroke="#a9f2ff"
+            stroke-width="2.4"
+            fill="none"
+            stroke-linecap="round"
+            opacity="0.82"
+          />
+          <circle cx="60" cy="48" r="9" fill="#fff" opacity="0.72" />
+          <circle cx="57" cy="45" r="3" fill="#fff" opacity="0.95" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="ambient" aria-hidden="true">
+      <div class="caustic"></div>
+      <div class="caustic caustic--b"></div>
+      <div class="motes" id="motes"></div>
+      <div class="vignette"></div>
+    </div>
+
+    <div class="lab">
+      <header class="lab__head">
+        <div class="brand">
+          <svg class="brand__mark" aria-hidden="true"><use href="#jelly" /></svg>
+          <div>
+            <p class="eyebrow">Statocyst · S041 proof of concept</p>
+            <h1>Descent</h1>
+            <p class="lede">
+              Four primitives, plus a special foam page wipe, for the 2.0.0 bathypelagic
+              shell. Tap, swipe and hold the samples; switch theme and tier to feel the cost.
+            </p>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="seg" role="group" aria-label="Theme">
+            <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+            <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+          </div>
+          <div class="seg" role="group" aria-label="Motion tier">
+            <button type="button" data-tier-btn="full" aria-pressed="true">Full</button>
+            <button type="button" data-tier-btn="native" aria-pressed="false">Native</button>
+            <button type="button" data-tier-btn="reduced" aria-pressed="false">Reduced</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="lab__grid">
+        <!-- 01 CURRENT -->
+        <section class="card" aria-labelledby="current-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">01 · Current</span>
+              <h2 id="current-heading">Lateral drift</h2>
+              <p>Cards follow a short, weighted current. Drag or use the arrows.</p>
+            </div>
+            <span class="tag">320 ms</span>
+          </div>
+          <div class="stage">
+            <div class="carousel" id="currentCarousel">
+              <div class="carousel__viewport">
+                <div class="carousel__track" id="currentTrack">
+                  <article class="album is-active">
+                    <div class="album__art">
+                      <span class="album__now">Now</span>
+                      <svg aria-hidden="true"><use href="#jelly" /></svg>
+                    </div>
+                    <span class="album__title">Tide Glass</span>
+                    <span class="album__artist">Statocyst Ensemble</span>
+                  </article>
+                  <article class="album">
+                    <div class="album__art"><svg aria-hidden="true"><use href="#jelly" /></svg></div>
+                    <span class="album__title">Sonar Bloom</span>
+                    <span class="album__artist">The Hadal Zone</span>
+                  </article>
+                  <article class="album">
+                    <div class="album__art"><svg aria-hidden="true"><use href="#jelly" /></svg></div>
+                    <span class="album__title">Abyssal Pulse</span>
+                    <span class="album__artist">Bathypelagic Drift</span>
+                  </article>
+                </div>
+              </div>
+              <div class="carousel__ctl">
+                <button type="button" class="round-btn" id="currentPrev" aria-label="Previous album">←</button>
+                <div class="dots" id="currentDots" aria-hidden="true">
+                  <span class="dot is-active"></span><span class="dot"></span><span class="dot"></span>
+                </div>
+                <button type="button" class="round-btn" id="currentNext" aria-label="Next album">→</button>
+              </div>
+            </div>
+          </div>
+          <p class="hint"><b>Swipe</b> the card row or tap the arrows.</p>
+        </section>
+
+        <!-- 02 DIVE / SURFACE -->
+        <section class="card" aria-labelledby="dive-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">02 · Dive &amp; Surface</span>
+              <h2 id="dive-heading">Depth transition</h2>
+              <p>The view sinks into Now Playing and lifts back to the library.</p>
+            </div>
+            <span class="tag" id="diveTag">View Transitions</span>
+          </div>
+          <div class="stage">
+            <div class="dive-stage" id="diveStage" data-view="library">
+              <div class="dive-depth" aria-hidden="true"></div>
+
+              <div class="dive-view dive-view--library" id="diveLibrary">
+                <div class="dive-top">
+                  <span>Library · 3 tracks</span>
+                  <span>Depth 0</span>
+                </div>
+                <button type="button" class="dive-feature" id="diveInto" aria-label="Dive into Now Playing">
+                  <span class="dive-art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <span>
+                    <span class="dive-feature__title">Pressure</span>
+                    <span class="dive-feature__sub">The Hadal Zone · 2026</span>
+                  </span>
+                </button>
+                <div class="dive-list" aria-hidden="true">
+                  <div class="dive-row"><i></i> Tide Glass</div>
+                  <div class="dive-row"><i></i> Sonar Bloom</div>
+                  <div class="dive-row"><i></i> Abyssal Pulse</div>
+                </div>
+              </div>
+
+              <div class="dive-view dive-view--now" id="diveNow" data-view="now" hidden>
+                <div class="dive-top">
+                  <span>Now playing · Depth 3</span>
+                  <button type="button" class="mini-link" id="diveSurface">Surface ↑</button>
+                </div>
+                <div class="dive-now">
+                  <span class="dive-now__art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <div>
+                    <h3 class="dive-now__title">Abyssal Plain</h3>
+                    <p class="dive-now__artist">The Hadal Zone</p>
+                  </div>
+                </div>
+                <div class="dive-progress" aria-hidden="true"><span></span></div>
+                <div class="dive-transport">
+                  <button type="button" class="dive-icon" aria-label="Previous track">⏮</button>
+                  <button type="button" class="dive-play" id="divePlay" aria-label="Play">
+                    <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2l11 6.8-11 6.8z" fill="currentColor" /></svg>
+                    <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true" style="display: none"><rect x="7" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" /><rect x="13.4" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" /></svg>
+                  </button>
+                  <button type="button" class="dive-icon" aria-label="Next track">⏭</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="hint"><b>Tap</b> the album to dive, then <b>Surface</b> to return.</p>
+        </section>
+
+        <!-- 03 SONAR -->
+        <section class="card" aria-labelledby="sonar-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">03 · Sonar</span>
+              <h2 id="sonar-heading">One-shot pulse</h2>
+              <p>A single ring marks playback and track changes. Never loops.</p>
+            </div>
+            <span class="tag">900 ms</span>
+          </div>
+          <div class="stage">
+            <div class="sonar-stage">
+              <div class="sonar-wrap">
+                <button type="button" class="sonar-play" id="sonarPlay" aria-label="Play">
+                  <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2l11 6.8-11 6.8z" fill="currentColor" /></svg>
+                  <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" /><rect x="13.4" y="5" width="3.6" height="14" rx="1.2" fill="currentColor" /></svg>
+                </button>
+                <div class="sonar-meta">
+                  <strong id="sonarTitle">Sonar Bloom</strong>
+                  <span id="sonarArtist">Statocyst Ensemble</span>
+                </div>
+                <button type="button" class="sonar-next" id="sonarNext">Next track →</button>
+              </div>
+            </div>
+          </div>
+          <p class="hint"><b>Tap play</b> or change track to fire the ring.</p>
+        </section>
+
+        <!-- 04 BUOYANCY -->
+        <section class="card" aria-labelledby="buoyancy-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">04 · Buoyancy</span>
+              <h2 id="buoyancy-heading">Burst &amp; bloom</h2>
+              <p>Favorite and download feedback rises like bubbles, then settles.</p>
+            </div>
+            <span class="tag">one-shot</span>
+          </div>
+          <div class="stage">
+            <div class="buoyancy-stage">
+              <div class="buoy-actions">
+                <div class="heart-wrap" id="heartWrap">
+                  <button type="button" class="heart-btn" id="heartBtn" aria-label="Add to favorites" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M12 20.2S4.8 15.7 4.8 10.2A4.4 4.4 0 0 1 12 7.1a4.4 4.4 0 0 1 7.2 3.1c0 5.5-7.2 10-7.2 10z"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </button>
+                </div>
+                <button type="button" class="dl-btn" id="downloadBtn" aria-label="Download for offline">
+                  <span class="dl-btn__fill" aria-hidden="true"></span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 11l4.5 4.5L16.5 11M4.5 19.5h15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <span class="dl-btn__label" id="downloadLabel">Download</span>
+                </button>
+              </div>
+              <p class="buoy-caption">
+                Tap the heart for a bubble burst. Tap download for a filling bubble and a bloom.
+              </p>
+            </div>
+          </div>
+          <p class="hint"><b>Tap</b> the heart and download, then tap download again to reset.</p>
+        </section>
+
+        <!-- 05 FOAM -->
+        <section class="card card--wide" id="foam" aria-labelledby="foam-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">05 · Foam</span>
+              <h2 id="foam-heading">Bubble wipe</h2>
+              <p>A foam bloom rises over the swap, then clears to the next page.</p>
+            </div>
+            <span class="tag">800 ms · special</span>
+          </div>
+          <div class="stage stage--foam">
+            <div class="foam-stage" id="foamStage" data-view="library">
+              <div class="foam-page" id="foamLibrary">
+                <div class="foam-top">
+                  <span>Library · 3 tracks</span>
+                  <span>Depth 0</span>
+                </div>
+                <div class="foam-layout">
+                  <span class="foam-art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <div>
+                    <h3 class="foam-title">Pressure</h3>
+                    <p class="foam-artist">The Hadal Zone</p>
+                    <div class="foam-chips">
+                      <span class="foam-chip">2026</span>
+                      <span class="foam-chip">FLAC</span>
+                      <span class="foam-chip">Jellyfin</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="foam-list" aria-hidden="true">
+                  <div class="foam-row"><i></i> Tide Glass</div>
+                  <div class="foam-row"><i></i> Sonar Bloom</div>
+                  <div class="foam-row"><i></i> Abyssal Pulse</div>
+                </div>
+              </div>
+
+              <div class="foam-page" id="foamNow" hidden>
+                <div class="foam-top">
+                  <span>Now playing · Depth 3</span>
+                  <span>1 of 3</span>
+                </div>
+                <div class="foam-layout">
+                  <span class="foam-art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <div>
+                    <h3 class="foam-title">Abyssal Plain</h3>
+                    <p class="foam-artist">The Hadal Zone</p>
+                    <div class="foam-chips">
+                      <span class="foam-chip">FLAC</span>
+                      <span class="foam-chip">2026</span>
+                      <span class="foam-chip">1 of 3</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="foam-progress" aria-hidden="true"><span></span></div>
+                <div class="foam-transport" aria-hidden="true">
+                  <span>⏮</span><span class="foam-play">▶</span><span>⏭</span>
+                </div>
+              </div>
+
+              <div class="foam-layer" id="foamLayer" aria-hidden="true">
+                <div class="foam-wash"></div>
+                <div class="foam-bubbles" id="foamBubbles"></div>
+              </div>
+            </div>
+          </div>
+          <div class="foam-ctl">
+            <button type="button" class="foam-go" id="foamGo">Foam dive →</button>
+            <span class="foam-note">Cover at 300 ms · reveal by 800 ms</span>
+          </div>
+          <p class="hint"><b>Tap</b> the foam button to dive, then again to surface.</p>
+        </section>
+      </main>
+
+      <footer class="lab__foot">
+        <span><b>Statocyst</b> · S041 motion POC · CSS transforms, opacity and View Transitions</span>
+        <span>No dependencies · reduced motion respected</span>
+      </footer>
+    </div>
+
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const osReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        let reduced = osReduced;
+
+        // ---------------------------------------------------------------- motes
+        const motes = document.getElementById('motes');
+        for (let i = 0; i < 16; i += 1) {
+          const mote = document.createElement('span');
+          mote.className = 'mote';
+          mote.style.setProperty('--x', `${(i * 37 + 11) % 100}%`);
+          mote.style.setProperty('--s', `${2 + (i % 5)}px`);
+          mote.style.setProperty('--dur', `${18 + (i % 7) * 4}s`);
+          mote.style.setProperty('--delay', `${-((i * 1.7) % 20)}s`);
+          mote.style.setProperty('--drift', `${-24 + (i % 7) * 8}px`);
+          motes.appendChild(mote);
+        }
+
+        // ---------------------------------------------------------------- theme / tier
+        const themeButtons = [...document.querySelectorAll('[data-theme-btn]')];
+        const tierButtons = [...document.querySelectorAll('[data-tier-btn]')];
+
+        function setTheme(theme) {
+          root.dataset.theme = theme;
+          themeButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.themeBtn === theme));
+          });
+        }
+
+        function setTier(tier) {
+          root.dataset.tier = tier;
+          reduced = tier === 'reduced';
+          tierButtons.forEach((button) => {
+            button.setAttribute('aria-pressed', String(button.dataset.tierBtn === tier));
+          });
+        }
+
+        themeButtons.forEach((button) => {
+          button.addEventListener('click', () => setTheme(button.dataset.themeBtn));
+        });
+        tierButtons.forEach((button) => {
+          button.addEventListener('click', () => setTier(button.dataset.tierBtn));
+        });
+
+        // Start on the reduced tier when the OS asks for it, but let the lab
+        // override it so the samples remain reviewable.
+        setTheme('dark');
+        setTier(osReduced ? 'reduced' : 'full');
+
+        // ---------------------------------------------------------------- current
+        const carousel = document.getElementById('currentCarousel');
+        const track = document.getElementById('currentTrack');
+        const slides = [...track.children];
+        const dots = [...document.getElementById('currentDots').children];
+        let index = 0;
+        let offset = 0;
+        let dragging = false;
+        let dragStart = 0;
+        let dragBase = 0;
+        let dragDelta = 0;
+
+        function measureCurrent() {
+          const card = slides[0];
+          const gap = 14;
+          const viewport = carousel.querySelector('.carousel__viewport').clientWidth;
+          const width = card.getBoundingClientRect().width;
+          offset = (viewport - width) / 2 - index * (width + gap);
+        }
+
+        function paintCurrent(animate = true) {
+          track.style.transition = animate ? '' : 'none';
+          track.style.transform = `translate3d(${offset}px, 0, 0)`;
+          slides.forEach((slide, slideIndex) => {
+            slide.classList.toggle('is-active', slideIndex === index);
+          });
+          dots.forEach((dot, dotIndex) => {
+            dot.classList.toggle('is-active', dotIndex === index);
+          });
+        }
+
+        function goCurrent(delta) {
+          index = Math.max(0, Math.min(slides.length - 1, index + delta));
+          measureCurrent();
+          paintCurrent(true);
+        }
+
+        let resizeFrame = 0;
+        function onResize() {
+          if (resizeFrame) return;
+          resizeFrame = requestAnimationFrame(() => {
+            resizeFrame = 0;
+            measureCurrent();
+            paintCurrent(false);
+          });
+        }
+
+        document.getElementById('currentPrev').addEventListener('click', () => goCurrent(-1));
+        document.getElementById('currentNext').addEventListener('click', () => goCurrent(1));
+        window.addEventListener('resize', onResize, { passive: true });
+
+        carousel.addEventListener('pointerdown', (event) => {
+          if (event.button !== undefined && event.button !== 0) return;
+          // Keep the arrow buttons clickable: capturing their pointer would
+          // retarget pointerup to the carousel and suppress the click.
+          if (event.target.closest('button')) return;
+          dragging = true;
+          dragStart = event.clientX;
+          dragBase = offset;
+          dragDelta = 0;
+          track.style.transition = 'none';
+          carousel.classList.add('is-dragging');
+          carousel.setPointerCapture?.(event.pointerId);
+        });
+        carousel.addEventListener('pointermove', (event) => {
+          if (!dragging) return;
+          dragDelta = event.clientX - dragStart;
+          offset = dragBase + dragDelta;
+          track.style.transform = `translate3d(${offset}px, 0, 0)`;
+        });
+        function endDrag() {
+          if (!dragging) return;
+          dragging = false;
+          carousel.classList.remove('is-dragging');
+          if (Math.abs(dragDelta) > 40) goCurrent(dragDelta < 0 ? 1 : -1);
+          else {
+            measureCurrent();
+            paintCurrent(true);
+          }
+        }
+        carousel.addEventListener('pointerup', endDrag);
+        carousel.addEventListener('pointercancel', endDrag);
+        carousel.addEventListener('pointerleave', (event) => {
+          if (dragging && event.buttons === 0) endDrag();
+        });
+
+        measureCurrent();
+        paintCurrent(false);
+
+        // ---------------------------------------------------------------- dive
+        const diveStage = document.getElementById('diveStage');
+        const diveLibrary = document.getElementById('diveLibrary');
+        const diveNow = document.getElementById('diveNow');
+        const diveTag = document.getElementById('diveTag');
+        let diveView = 'library';
+
+        function renderDive(view) {
+          diveView = view;
+          diveStage.dataset.view = view;
+          diveLibrary.hidden = view !== 'library';
+          diveNow.hidden = view !== 'now';
+        }
+
+        function transitionDive(view, direction) {
+          if (reduced) {
+            renderDive(view);
+            return;
+          }
+          if (!document.startViewTransition) {
+            renderDive(view);
+            const active = view === 'now' ? diveNow : diveLibrary;
+            active.classList.remove('is-entering');
+            void active.offsetWidth;
+            active.classList.add('is-entering');
+            setTimeout(() => active.classList.remove('is-entering'), 380);
+            diveTag.textContent = 'CSS fallback';
+            return;
+          }
+          root.dataset.transition = direction;
+          diveTag.textContent = 'View Transitions';
+          const transition = document.startViewTransition(() => renderDive(view));
+          transition.finished.finally(() => {
+            delete root.dataset.transition;
+          });
+        }
+
+        document.getElementById('diveInto').addEventListener('click', () => transitionDive('now', 'dive'));
+        document.getElementById('diveSurface').addEventListener('click', () => transitionDive('library', 'surface'));
+        diveNow.classList.remove('is-entering');
+
+        // ---------------------------------------------------------------- sonar
+        const sonarPlay = document.getElementById('sonarPlay');
+        const sonarTitle = document.getElementById('sonarTitle');
+        const sonarArtist = document.getElementById('sonarArtist');
+        let sonarPlaying = false;
+        let sonarIndex = 0;
+        const sonarTracks = [
+          ['Sonar Bloom', 'Statocyst Ensemble'],
+          ['Tide Glass', 'The Hadal Zone'],
+          ['Abyssal Pulse', 'Bathypelagic Drift'],
+        ];
+
+        function pulseSonar() {
+          if (reduced) return;
+          sonarPlay.classList.remove('is-pulsing');
+          void sonarPlay.offsetWidth;
+          sonarPlay.classList.add('is-pulsing');
+          setTimeout(() => sonarPlay.classList.remove('is-pulsing'), 1100);
+        }
+
+        function paintSonar() {
+          sonarPlay.classList.toggle('is-playing', sonarPlaying);
+          sonarPlay.setAttribute('aria-label', sonarPlaying ? 'Pause' : 'Play');
+        }
+
+        sonarPlay.addEventListener('click', () => {
+          sonarPlaying = !sonarPlaying;
+          paintSonar();
+          pulseSonar();
+        });
+        document.getElementById('sonarNext').addEventListener('click', () => {
+          sonarIndex = (sonarIndex + 1) % sonarTracks.length;
+          sonarTitle.textContent = sonarTracks[sonarIndex][0];
+          sonarArtist.textContent = sonarTracks[sonarIndex][1];
+          pulseSonar();
+        });
+        paintSonar();
+
+        // The dive view has its own play control; reuse the same one-shot language.
+        const divePlay = document.getElementById('divePlay');
+        let divePlaying = false;
+        divePlay.addEventListener('click', () => {
+          divePlaying = !divePlaying;
+          divePlay.querySelector('.icon-play').style.display = divePlaying ? 'none' : 'block';
+          divePlay.querySelector('.icon-pause').style.display = divePlaying ? 'block' : 'none';
+          divePlay.setAttribute('aria-label', divePlaying ? 'Pause' : 'Play');
+          if (reduced) return;
+          divePlay.classList.remove('is-pulsing');
+          void divePlay.offsetWidth;
+          divePlay.classList.add('is-pulsing');
+          setTimeout(() => divePlay.classList.remove('is-pulsing'), 900);
+        });
+
+        // ---------------------------------------------------------------- buoyancy
+        const heartBtn = document.getElementById('heartBtn');
+        const heartWrap = document.getElementById('heartWrap');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadLabel = document.getElementById('downloadLabel');
+        let favorite = false;
+        let downloadState = 'idle';
+
+        function burstBubbles() {
+          if (reduced) return;
+          for (let i = 0; i < 6; i += 1) {
+            const bubble = document.createElement('span');
+            bubble.className = 'bubble';
+            bubble.style.setProperty('--dx', `${-30 + i * 12}px`);
+            bubble.style.setProperty('--delay', `${i * 35}ms`);
+            bubble.style.setProperty('--size', `${5 + (i % 3) * 3}px`);
+            heartWrap.appendChild(bubble);
+            setTimeout(() => bubble.remove(), 900);
+          }
+        }
+
+        heartBtn.addEventListener('click', () => {
+          favorite = !favorite;
+          heartBtn.classList.toggle('is-fav', favorite);
+          heartBtn.setAttribute('aria-pressed', String(favorite));
+          heartBtn.setAttribute('aria-label', favorite ? 'Remove from favorites' : 'Add to favorites');
+          heartBtn.classList.remove('is-bursting');
+          void heartBtn.offsetWidth;
+          heartBtn.classList.add('is-bursting');
+          setTimeout(() => heartBtn.classList.remove('is-bursting'), 520);
+          if (favorite) burstBubbles();
+        });
+
+        function setDownload(state) {
+          downloadState = state;
+          downloadBtn.classList.toggle('is-done', state === 'done');
+          downloadBtn.style.setProperty('--p', state === 'done' ? 1 : 0);
+          downloadLabel.textContent =
+            state === 'done' ? 'Saved offline' : state === 'running' ? 'Downloading…' : 'Download';
+          downloadBtn.setAttribute(
+            'aria-label',
+            state === 'done' ? 'Remove download' : state === 'running' ? 'Downloading' : 'Download for offline',
+          );
+        }
+
+        downloadBtn.addEventListener('click', () => {
+          if (downloadState === 'running') return;
+          if (downloadState === 'done') {
+            setDownload('idle');
+            return;
+          }
+          setDownload('running');
+          // scaleX is compositor-friendly; the duration is deliberate for the demo.
+          requestAnimationFrame(() => downloadBtn.style.setProperty('--p', 1));
+          setTimeout(() => setDownload('done'), reduced ? 300 : 1450);
+        });
+
+        // ---------------------------------------------------------------- foam
+        const foamStage = document.getElementById('foamStage');
+        const foamLayer = document.getElementById('foamLayer');
+        const foamBubbles = document.getElementById('foamBubbles');
+        const foamGo = document.getElementById('foamGo');
+        const foamLibrary = document.getElementById('foamLibrary');
+        const foamNow = document.getElementById('foamNow');
+        let foamView = 'library';
+        let foamBusy = false;
+
+        for (let i = 0; i < 34; i += 1) {
+          const bubble = document.createElement('span');
+          bubble.className = 'foam-bubble';
+          const x = (i * 29 + 8) % 100;
+          const y = 18 + ((i * 47) % 78);
+          const cx = x - 50;
+          const cy = y - 50;
+          const length = Math.hypot(cx, cy) || 1;
+          const speed = 70 + (i % 6) * 28;
+          bubble.style.setProperty('--x', `${x}%`);
+          bubble.style.setProperty('--y', `${y}%`);
+          bubble.style.setProperty('--s', `${8 + ((i * 13) % 54)}px`);
+          bubble.style.setProperty('--delay', `${(i % 7) * 14}ms`);
+          bubble.style.setProperty('--dx', `${Math.round((cx / length) * speed)}px`);
+          bubble.style.setProperty('--dy', `${Math.round((cy / length) * speed)}px`);
+          foamBubbles.appendChild(bubble);
+        }
+
+        function renderFoam(view) {
+          foamView = view;
+          foamStage.dataset.view = view;
+          foamLibrary.hidden = view !== 'library';
+          foamNow.hidden = view !== 'now';
+          foamGo.textContent = view === 'library' ? 'Foam dive →' : 'Foam surface ↑';
+        }
+
+        foamGo.addEventListener('click', () => {
+          if (foamBusy) return;
+          const next = foamView === 'library' ? 'now' : 'library';
+          if (reduced) {
+            renderFoam(next);
+            return;
+          }
+          foamBusy = true;
+          foamLayer.classList.remove('is-active', 'is-revealing');
+          void foamLayer.offsetWidth;
+          foamLayer.classList.add('is-active');
+          setTimeout(() => {
+            renderFoam(next);
+            foamLayer.classList.add('is-revealing');
+          }, 300);
+          setTimeout(() => {
+            foamLayer.classList.remove('is-active', 'is-revealing');
+            foamBusy = false;
+          }, 800);
+        });
+
+        // Pause ambient work when the tab is hidden.
+        document.addEventListener('visibilitychange', () => {
+          root.toggleAttribute('data-ambient-paused', document.hidden);
+        });
+      })();
+    </script>
+  </body>
+</html>

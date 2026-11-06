@@ -29,6 +29,11 @@ export class NavigationStore {
     return true;
   }
 
+  /** The view back would go to, without changing history. */
+  peekBack(): View | null {
+    return this.history.length > 0 ? this.history[this.history.length - 1] : null;
+  }
+
   clearHistory(): void {
     this.history.length = 0;
   }

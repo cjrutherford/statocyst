@@ -202,6 +202,15 @@ class StatocystPlugin : Plugin() {
         super.handleOnDestroy()
     }
 
+    /** The WebView may have been paused while the native player kept going. */
+    override fun handleOnResume() {
+        super.handleOnResume()
+        controller?.let {
+            emitState(it)
+            emitQueue(it)
+        }
+    }
+
     private fun connectController() {
         if (controllerFuture != null) return
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
