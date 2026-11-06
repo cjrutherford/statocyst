@@ -55,6 +55,7 @@ All commands from the repository root.
 | `node_modules/.bin/nx build desktop --skip-nx-cache` | exit 0 |
 | `node_modules/.bin/nx run-many -t typecheck -p contracts playback-core persistence media-library desktop desktop-electron --skip-nx-cache` | exit 0, 6/6 |
 | `node_modules/.bin/nx run-many -t test -p contracts playback-core persistence media-library desktop-electron --skip-nx-cache` | exit 0, 5/5 |
+| `node_modules/.bin/playwright test --config e2e/playwright.config.ts` | 5 passed, 2 failed — both pre-existing Settings tab expectations (see S040) |
 
 Headless app harness (Chromium, mocked Capacitor bridge, 390 × 844):
 
@@ -94,6 +95,14 @@ Screenshots:
 - `evidence/screenshots/s041-app-deep-dive.gif`
 - `evidence/screenshots/s041-poc-light-native.png` (light/native fix)
 
+## Test build
+
+- `release/statocyst-android-1.9.0-motion-test.apk` — signed with the usual release key
+  (`7d850dae…e416`), same version 1.9.0 / versionCode 27 as S040's test build.
+- SHA-256: `8678aac129dc7ea6f25fad11221d0fc1c0762370e07d82b73d0ad1bec1617a88`
+- Download: https://nirvana.tail5a4a0.ts.net/statocyst-android-1.9.0-motion-test.apk
+- This is a test build, not the tagged 2.0.0 release.
+
 ## Not verified / blocked
 
 - **Physical-device feel and performance:** the Pixel 10 Pro is not attached to this
@@ -101,9 +110,9 @@ Screenshots:
   on the 10k library and during background playback.
 - **Electron visual pass:** the desktop tier uses backdrop blur and the full ambient
   layer; screenshots/video on the packaged Electron build are not captured here.
-- **Android release:** no APK rebuild/sync for these web changes yet; S040's test APK
-  predates the motion system.
 - **2.0.0:** not tagged. Await device verification and approval.
+- **Physical device walkthrough:** the MP4s above are headless captures with a mocked bridge;
+  the Pixel still has to confirm touch feel and frame pacing.
 
 ## Next steps
 
