@@ -21,6 +21,7 @@ import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
 import { bridge, isNativePlatform, nativePlatform } from '../core/bridge';
 import { SettingsStore } from '../core/settings.store';
 import { DownloadsStore } from '../core/downloads.store';
+import { ScreenTransitionService } from '../core/screen-transition.service';
 import { LibraryStore } from '../core/library.store';
 import { ToastStore } from '../core/toast.store';
 import { formatBytes } from '../core/format';
@@ -1035,6 +1036,7 @@ export class SettingsViewComponent {
   );
   protected readonly downloads = inject(DownloadsStore);
   private readonly library = inject(LibraryStore);
+  private readonly transitions = inject(ScreenTransitionService);
 
   /** In-flight download, if any, with a rounded percentage when the size is known. */
   protected readonly activeDownload = computed(() => {
@@ -1061,7 +1063,8 @@ export class SettingsViewComponent {
   });
 
   protected selectTab(id: SettingsTab): void {
-    this.tab.set(id);
+    if (id === this.tab()) return;
+    void this.transitions.foamChange(() => this.tab.set(id));
   }
 
   /** Arrow/Home/End move between tabs, as a tablist is expected to. */
@@ -1075,8 +1078,10 @@ export class SettingsViewComponent {
     else if (event.key === 'End') next = ids.length - 1;
     else return;
     event.preventDefault();
-    this.tab.set(ids[next]);
-    document.getElementById(`settings-tab-${ids[next]}`)?.focus();
+    const nextId = ids[next];
+    void this.transitions.foamChange(() => this.tab.set(nextId)).then(() => {
+      document.getElementById(`settings-tab-${nextId}`)?.focus();
+    });
   }
 
   protected readonly info = signal<AppInfo | null>(null);

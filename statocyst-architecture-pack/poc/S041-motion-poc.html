@@ -68,9 +68,9 @@
         --caustic-2: rgba(10, 143, 184, 0.13);
         --caustic-3: rgba(120, 220, 255, 0.16);
         --vignette: rgba(18, 80, 100, 0.16);
-        --mote: rgba(255, 255, 255, 0.8);
+        --mote: rgba(0, 108, 140, 0.6);
         --foam: rgba(255, 255, 255, 0.97);
-        --foam-2: rgba(10, 143, 184, 0.28);
+        --foam-2: rgba(8, 120, 155, 0.45);
         color-scheme: light;
       }
 
@@ -182,13 +182,41 @@
         height: var(--s, 4px);
         border-radius: 50%;
         background: radial-gradient(circle at 34% 30%, #fff, var(--mote) 42%, transparent 72%);
-        box-shadow: 0 0 10px var(--mote);
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        box-shadow: 0 0 12px var(--mote);
         opacity: 0;
         animation: mote-rise var(--dur, 24s) linear infinite;
         animation-delay: var(--delay, 0s);
       }
       html[data-tier='native'] .mote:nth-child(n + 9) {
         display: none;
+      }
+      html[data-theme='light'] .mote {
+        width: calc(var(--s, 4px) * 1.9);
+        height: calc(var(--s, 4px) * 1.9);
+        border-color: rgba(0, 80, 105, 0.3);
+        box-shadow: 0 0 14px rgba(0, 110, 145, 0.4);
+        animation-name: mote-rise-light;
+      }
+      @keyframes mote-rise-light {
+        0% {
+          opacity: 0;
+          transform: translate3d(0, 0, 0) scale(0.7);
+        }
+        12% {
+          opacity: 0.82;
+        }
+        78% {
+          opacity: 0.6;
+        }
+        100% {
+          opacity: 0;
+          transform: translate3d(var(--drift, 10px), -118vh, 0) scale(1.05);
+        }
+      }
+      html[data-theme='light'] .foam-bubble {
+        border-color: rgba(2, 80, 105, 0.3);
+        box-shadow: 0 0 14px rgba(2, 100, 130, 0.35);
       }
       @keyframes mote-rise {
         0% {
@@ -1232,7 +1260,7 @@
         background:
           radial-gradient(circle at 50% 104%, var(--foam) 0 32%, var(--foam-2) 54%, transparent 76%),
           radial-gradient(circle at 30% 80%, rgba(255, 255, 255, 0.5), transparent 55%);
-        transition: opacity 180ms ease, transform 420ms var(--ease-bubble);
+        transition: opacity 180ms ease, transform 300ms var(--ease-bubble);
       }
       .foam-layer.is-active .foam-wash {
         opacity: 0.98;
@@ -1240,8 +1268,8 @@
       }
       .foam-layer.is-revealing .foam-wash {
         opacity: 0;
-        transform: scale(1.3);
-        transition-duration: 380ms;
+        transform: scale(1.22);
+        transition-duration: 500ms;
       }
       .foam-bubbles {
         position: absolute;
@@ -1259,7 +1287,7 @@
         box-shadow: 0 0 12px var(--foam-2);
         opacity: 0;
         transform: translate3d(0, 26px, 0) scale(0.3);
-        transition: opacity 240ms ease, transform 340ms var(--ease-bubble);
+        transition: opacity 240ms ease, transform 300ms var(--ease-bubble);
         transition-delay: var(--delay, 0ms);
       }
       .foam-layer.is-active .foam-bubble {
@@ -1268,8 +1296,8 @@
       }
       .foam-layer.is-revealing .foam-bubble {
         opacity: 0;
-        transform: translate3d(var(--dx, 0px), -36px, 0) scale(1.08);
-        transition-duration: 420ms;
+        transform: translate3d(var(--dx, 0px), var(--dy, 0px), 0) scale(1.12);
+        transition-duration: 500ms;
         transition-delay: 0ms;
       }
       .foam-layer:not(.is-active):not(.is-revealing) .foam-bubble {
@@ -1655,7 +1683,7 @@
           </div>
           <div class="foam-ctl">
             <button type="button" class="foam-go" id="foamGo">Foam dive →</button>
-            <span class="foam-note">Cover at 360 ms · reveal by 800 ms</span>
+            <span class="foam-note">Cover at 300 ms · reveal by 800 ms</span>
           </div>
           <p class="hint"><b>Tap</b> the foam button to dive, then again to surface.</p>
         </section>
@@ -1970,11 +1998,18 @@
         for (let i = 0; i < 34; i += 1) {
           const bubble = document.createElement('span');
           bubble.className = 'foam-bubble';
-          bubble.style.setProperty('--x', `${(i * 29 + 8) % 100}%`);
-          bubble.style.setProperty('--y', `${18 + ((i * 47) % 78)}%`);
+          const x = (i * 29 + 8) % 100;
+          const y = 18 + ((i * 47) % 78);
+          const cx = x - 50;
+          const cy = y - 50;
+          const length = Math.hypot(cx, cy) || 1;
+          const speed = 70 + (i % 6) * 28;
+          bubble.style.setProperty('--x', `${x}%`);
+          bubble.style.setProperty('--y', `${y}%`);
           bubble.style.setProperty('--s', `${8 + ((i * 13) % 54)}px`);
           bubble.style.setProperty('--delay', `${(i % 7) * 14}ms`);
-          bubble.style.setProperty('--dx', `${-18 + (i % 6) * 7}px`);
+          bubble.style.setProperty('--dx', `${Math.round((cx / length) * speed)}px`);
+          bubble.style.setProperty('--dy', `${Math.round((cy / length) * speed)}px`);
           foamBubbles.appendChild(bubble);
         }
 
@@ -2000,11 +2035,11 @@
           setTimeout(() => {
             renderFoam(next);
             foamLayer.classList.add('is-revealing');
-          }, 360);
+          }, 300);
           setTimeout(() => {
             foamLayer.classList.remove('is-active', 'is-revealing');
             foamBusy = false;
-          }, 820);
+          }, 800);
         });
 
         // Pause ambient work when the tab is hidden.

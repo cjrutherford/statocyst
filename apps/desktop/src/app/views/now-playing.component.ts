@@ -7,6 +7,7 @@ import { RadioStore } from '../core/radio.store';
 import { LibraryStore } from '../core/library.store';
 import { FavoritesStore } from '../core/favorites.store';
 import { DownloadsStore } from '../core/downloads.store';
+import { ScreenTransitionService } from '../core/screen-transition.service';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
 
 @Component({
@@ -105,16 +106,27 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
             </div>
 
             <div class="controls">
-              <button
-                type="button"
-                class="icon-btn icon-btn--lg control-favorite"
-                [class.is-active]="favorite()"
-                [attr.aria-pressed]="favorite()"
-                [attr.aria-label]="favorite() ? 'Remove from favorites' : 'Add to favorites'"
-                (click)="toggleFavorite()"
-              >
-                <sc-icon [name]="favorite() ? 'heart-filled' : 'heart'" />
-              </button>
+              <div class="heart-wrap">
+                <button
+                  type="button"
+                  class="icon-btn icon-btn--lg control-favorite"
+                  [class.is-active]="favorite()"
+                  [class.is-bursting]="heartBursting()"
+                  [attr.aria-pressed]="favorite()"
+                  [attr.aria-label]="favorite() ? 'Remove from favorites' : 'Add to favorites'"
+                  (click)="toggleFavorite()"
+                >
+                  <sc-icon [name]="favorite() ? 'heart-filled' : 'heart'" />
+                </button>
+                @for (bubble of heartBubbles(); track $index) {
+                  <span
+                    class="heart-bubble"
+                    [style.--dx]="bubble.dx + 'px'"
+                    [style.--delay]="bubble.delay + 'ms'"
+                    [style.--s]="bubble.size + 'px'"
+                  ></span>
+                }
+              </div>
               <button
                 type="button"
                 class="icon-btn icon-btn--lg"
@@ -136,8 +148,9 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
               <button
                 type="button"
                 class="play"
+                [class.is-pulsing]="pulsing()"
                 [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
-                (click)="playback.toggle()"
+                (click)="togglePlay()"
               >
                 <sc-icon [name]="playback.isPlaying() ? 'pause' : 'play'" />
               </button>
@@ -380,6 +393,7 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         background: var(--surface-2);
       }
       .dl-pill {
+        position: relative;
         cursor: pointer;
         color: var(--cyan);
         border: 1px solid rgba(56, 225, 255, 0.34);
@@ -394,6 +408,25 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         color: var(--success);
         border-color: rgba(74, 222, 128, 0.34);
         background: rgba(74, 222, 128, 0.08);
+      }
+      .dl-pill.is-done::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        border: 1px solid rgba(74, 222, 128, 0.6);
+        animation: dl-bloom 800ms var(--ease-tide) both;
+        pointer-events: none;
+      }
+      @keyframes dl-bloom {
+        0% {
+          opacity: 0.8;
+          transform: scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(1.45);
+        }
       }
       .dl-pill.is-busy {
         color: var(--muted);
@@ -467,12 +500,55 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
         gap: clamp(10px, 1.6vw, 20px);
         margin-top: 8px;
       }
+      .heart-wrap {
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
       .control-favorite.is-active {
         color: var(--danger);
         background: rgba(255, 107, 138, 0.12);
         border-color: rgba(255, 107, 138, 0.28);
       }
+      .control-favorite.is-bursting {
+        animation: heart-pop 480ms var(--ease-bubble);
+      }
+      .heart-bubble {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: var(--s, 7px);
+        height: var(--s, 7px);
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #fff, var(--cyan-soft) 45%, transparent 72%);
+        box-shadow: 0 0 10px var(--cyan);
+        pointer-events: none;
+        animation: heart-bubble-rise 760ms var(--ease-bubble) forwards;
+        animation-delay: var(--delay, 0ms);
+      }
+      @keyframes heart-pop {
+        0% {
+          transform: scale(1);
+        }
+        32% {
+          transform: scale(1.2);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+      @keyframes heart-bubble-rise {
+        0% {
+          opacity: 0.95;
+          transform: translate(-50%, -50%) scale(0.4);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% - 76px)) scale(1.1);
+        }
+      }
       .play {
+        position: relative;
         width: 72px;
         height: 72px;
         border-radius: 50%;
@@ -496,6 +572,32 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
       }
       .play:active {
         transform: scale(0.97);
+      }
+      .play::before,
+      .play::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        opacity: 0;
+        pointer-events: none;
+      }
+      .play.is-pulsing::before {
+        animation: play-sonar 900ms var(--ease-tide) both;
+      }
+      .play.is-pulsing::after {
+        animation: play-sonar 900ms var(--ease-tide) 160ms both;
+      }
+      @keyframes play-sonar {
+        0% {
+          opacity: 0.7;
+          transform: scale(0.9);
+        }
+        100% {
+          opacity: 0;
+          transform: scale(2);
+        }
       }
       .icon-btn--lg {
         font-size: 1.35rem;
@@ -788,6 +890,7 @@ export class NowPlayingViewComponent {
   protected readonly library = inject(LibraryStore);
   protected readonly favorites = inject(FavoritesStore);
   protected readonly downloads = inject(DownloadsStore);
+  private readonly transitions = inject(ScreenTransitionService);
   protected readonly formatDuration = formatDuration;
   protected readonly formatLabel = formatLabel;
   protected readonly pluralize = pluralize;
@@ -797,6 +900,9 @@ export class NowPlayingViewComponent {
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
+  protected readonly pulsing = signal(false);
+  protected readonly heartBursting = signal(false);
+  protected readonly heartBubbles = signal<Array<{ dx: number; delay: number; size: number }>>([]);
 
   protected readonly displayPosition = computed(() =>
     this.dragging() ? this.dragValue() : this.playback.positionMs(),
@@ -868,7 +974,30 @@ export class NowPlayingViewComponent {
 
   protected toggleFavorite(): void {
     const track = this.playback.track();
-    if (track) this.favorites.toggle(track.id);
+    if (!track) return;
+    const wasFavorite = this.favorite();
+    this.favorites.toggle(track.id);
+    if (wasFavorite || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    this.heartBursting.set(false);
+    this.heartBubbles.set(
+      Array.from({ length: 6 }, (_, i) => ({
+        dx: Math.round(-30 + i * 12),
+        delay: i * 35,
+        size: 5 + (i % 3) * 3,
+      })),
+    );
+    requestAnimationFrame(() => this.heartBursting.set(true));
+    setTimeout(() => {
+      this.heartBursting.set(false);
+      this.heartBubbles.set([]);
+    }, 900);
+  }
+
+  protected togglePlay(): void {
+    void this.playback.toggle();
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    this.pulsing.set(true);
+    setTimeout(() => this.pulsing.set(false), 1000);
   }
 
   protected toggleDownload(): void {
@@ -882,7 +1011,7 @@ export class NowPlayingViewComponent {
   }
 
   protected minimize(): void {
-    if (!this.navigation.back()) this.navigation.navigate('library');
+    if (!this.transitions.back()) void this.transitions.go('library');
   }
 
   @HostListener('document:keydown.escape')
