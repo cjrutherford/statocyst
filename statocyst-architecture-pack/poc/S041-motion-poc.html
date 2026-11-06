@@ -9,7 +9,7 @@
     <style>
       /* ---------------------------------------------------------------------
          Statocyst S041 — bathypelagic motion proof of concept.
-         Four primitives: Current, Dive/Surface, Sonar, Buoyancy.
+         Four primitives (Current, Dive/Surface, Sonar, Buoyancy) plus a foam wipe.
          Single file, no dependencies. Everything animates transform/opacity
          except the deliberate Full-tier glass blur.
       --------------------------------------------------------------------- */
@@ -42,6 +42,8 @@
         --caustic-3: rgba(255, 255, 255, 0.045);
         --vignette: rgba(0, 4, 14, 0.62);
         --mote: rgba(160, 242, 255, 0.68);
+        --foam: rgba(232, 252, 255, 0.96);
+        --foam-2: rgba(56, 225, 255, 0.55);
         --on-accent: #03121f;
       }
 
@@ -67,6 +69,8 @@
         --caustic-3: rgba(120, 220, 255, 0.16);
         --vignette: rgba(18, 80, 100, 0.16);
         --mote: rgba(255, 255, 255, 0.8);
+        --foam: rgba(255, 255, 255, 0.97);
+        --foam-2: rgba(10, 143, 184, 0.28);
         color-scheme: light;
       }
 
@@ -1072,6 +1076,231 @@
         line-height: 1.45;
       }
 
+
+      /* ---------------------------------------------------------------- foam */
+      .card--wide {
+        grid-column: 1 / -1;
+      }
+      .stage--foam {
+        min-height: 266px;
+      }
+      .foam-stage {
+        position: absolute;
+        inset: 0;
+      }
+      .foam-page {
+        position: absolute;
+        inset: 0;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .foam-page[hidden] {
+        display: none;
+      }
+      .foam-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 0.55rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .foam-layout {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+      .foam-art {
+        width: 94px;
+        height: 94px;
+        flex: none;
+        border-radius: 15px;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at 32% 22%, rgba(56, 225, 255, 0.45), transparent 58%),
+          linear-gradient(145deg, #0a2a44, #071127 70%);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 12px 28px rgba(0, 6, 20, 0.32);
+      }
+      .foam-art svg {
+        width: 66%;
+        height: 66%;
+      }
+      .foam-title {
+        margin: 0;
+        font-size: clamp(1rem, 2.4vw, 1.4rem);
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+      }
+      .foam-artist {
+        margin: 3px 0 0;
+        font-size: 0.72rem;
+        color: var(--cyan);
+      }
+      .foam-chips {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 7px;
+      }
+      .foam-chip {
+        font-size: 0.55rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 7px;
+      }
+      .foam-list {
+        display: grid;
+        gap: 5px;
+        margin-top: auto;
+      }
+      .foam-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border-radius: 8px;
+        background: rgba(148, 197, 255, 0.045);
+        font-size: 0.64rem;
+        color: var(--muted);
+      }
+      .foam-row i {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--cyan);
+        opacity: 0.7;
+      }
+      .foam-progress {
+        margin-top: 12px;
+        height: 4px;
+        border-radius: 999px;
+        background: rgba(148, 197, 255, 0.16);
+        overflow: hidden;
+      }
+      .foam-progress span {
+        display: block;
+        height: 100%;
+        width: 44%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--cyan), var(--violet));
+      }
+      .foam-transport {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        margin-top: auto;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .foam-transport .foam-play {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.55);
+        background:
+          radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.36), transparent 48%),
+          linear-gradient(160deg, #61ebff, #22a6dc 52%, #7c6bf7);
+        color: var(--on-accent);
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+      }
+      .foam-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .foam-wash {
+        position: absolute;
+        inset: -18%;
+        opacity: 0;
+        transform: scale(0.35);
+        transform-origin: 50% 104%;
+        background:
+          radial-gradient(circle at 50% 104%, var(--foam) 0 32%, var(--foam-2) 54%, transparent 76%),
+          radial-gradient(circle at 30% 80%, rgba(255, 255, 255, 0.5), transparent 55%);
+        transition: opacity 180ms ease, transform 420ms var(--ease-bubble);
+      }
+      .foam-layer.is-active .foam-wash {
+        opacity: 0.98;
+        transform: scale(1.15);
+      }
+      .foam-layer.is-revealing .foam-wash {
+        opacity: 0;
+        transform: scale(1.3);
+        transition-duration: 380ms;
+      }
+      .foam-bubbles {
+        position: absolute;
+        inset: 0;
+      }
+      .foam-bubble {
+        position: absolute;
+        left: var(--x, 50%);
+        top: var(--y, 60%);
+        width: var(--s, 16px);
+        height: var(--s, 16px);
+        border-radius: 50%;
+        background: radial-gradient(circle at 34% 30%, #fff, var(--foam-2) 46%, transparent 72%);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        box-shadow: 0 0 12px var(--foam-2);
+        opacity: 0;
+        transform: translate3d(0, 26px, 0) scale(0.3);
+        transition: opacity 240ms ease, transform 340ms var(--ease-bubble);
+        transition-delay: var(--delay, 0ms);
+      }
+      .foam-layer.is-active .foam-bubble {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      .foam-layer.is-revealing .foam-bubble {
+        opacity: 0;
+        transform: translate3d(var(--dx, 0px), -36px, 0) scale(1.08);
+        transition-duration: 420ms;
+        transition-delay: 0ms;
+      }
+      .foam-layer:not(.is-active):not(.is-revealing) .foam-bubble {
+        transition: none;
+      }
+      .foam-ctl {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .foam-go {
+        border: 1px solid rgba(56, 225, 255, 0.34);
+        background: rgba(56, 225, 255, 0.08);
+        color: var(--cyan);
+        border-radius: 999px;
+        padding: 9px 14px;
+        font-size: 0.68rem;
+        font-weight: 650;
+        cursor: pointer;
+        min-height: 38px;
+      }
+      .foam-go:active {
+        transform: scale(0.97);
+      }
+      .foam-note {
+        font-size: 0.6rem;
+        color: var(--muted);
+      }
+
       /* ---------------------------------------------------------------- footer */
       .lab__foot {
         display: flex;
@@ -1166,8 +1395,8 @@
             <p class="eyebrow">Statocyst · S041 proof of concept</p>
             <h1>Descent</h1>
             <p class="lede">
-              Four motion primitives for the 2.0.0 bathypelagic shell. Tap, swipe and hold the
-              samples; switch theme and tier to feel the cost.
+              Four primitives, plus a special foam page wipe, for the 2.0.0 bathypelagic
+              shell. Tap, swipe and hold the samples; switch theme and tier to feel the cost.
             </p>
           </div>
         </div>
@@ -1357,6 +1586,78 @@
             </div>
           </div>
           <p class="hint"><b>Tap</b> the heart and download, then tap download again to reset.</p>
+        </section>
+
+        <!-- 05 FOAM -->
+        <section class="card card--wide" aria-labelledby="foam-heading">
+          <div class="card__head">
+            <div>
+              <span class="card__no">05 · Foam</span>
+              <h2 id="foam-heading">Bubble wipe</h2>
+              <p>A foam bloom rises over the swap, then clears to the next page.</p>
+            </div>
+            <span class="tag">800 ms · special</span>
+          </div>
+          <div class="stage stage--foam">
+            <div class="foam-stage" id="foamStage" data-view="library">
+              <div class="foam-page" id="foamLibrary">
+                <div class="foam-top">
+                  <span>Library · 3 tracks</span>
+                  <span>Depth 0</span>
+                </div>
+                <div class="foam-layout">
+                  <span class="foam-art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <div>
+                    <h3 class="foam-title">Pressure</h3>
+                    <p class="foam-artist">The Hadal Zone</p>
+                    <div class="foam-chips">
+                      <span class="foam-chip">2026</span>
+                      <span class="foam-chip">FLAC</span>
+                      <span class="foam-chip">Jellyfin</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="foam-list" aria-hidden="true">
+                  <div class="foam-row"><i></i> Tide Glass</div>
+                  <div class="foam-row"><i></i> Sonar Bloom</div>
+                  <div class="foam-row"><i></i> Abyssal Pulse</div>
+                </div>
+              </div>
+
+              <div class="foam-page" id="foamNow" hidden>
+                <div class="foam-top">
+                  <span>Now playing · Depth 3</span>
+                  <span>1 of 3</span>
+                </div>
+                <div class="foam-layout">
+                  <span class="foam-art"><svg aria-hidden="true"><use href="#jelly" /></svg></span>
+                  <div>
+                    <h3 class="foam-title">Abyssal Plain</h3>
+                    <p class="foam-artist">The Hadal Zone</p>
+                    <div class="foam-chips">
+                      <span class="foam-chip">FLAC</span>
+                      <span class="foam-chip">2026</span>
+                      <span class="foam-chip">1 of 3</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="foam-progress" aria-hidden="true"><span></span></div>
+                <div class="foam-transport" aria-hidden="true">
+                  <span>⏮</span><span class="foam-play">▶</span><span>⏭</span>
+                </div>
+              </div>
+
+              <div class="foam-layer" id="foamLayer" aria-hidden="true">
+                <div class="foam-wash"></div>
+                <div class="foam-bubbles" id="foamBubbles"></div>
+              </div>
+            </div>
+          </div>
+          <div class="foam-ctl">
+            <button type="button" class="foam-go" id="foamGo">Foam dive →</button>
+            <span class="foam-note">Cover at 360 ms · reveal by 800 ms</span>
+          </div>
+          <p class="hint"><b>Tap</b> the foam button to dive, then again to surface.</p>
         </section>
       </main>
 
@@ -1654,6 +1955,56 @@
           // scaleX is compositor-friendly; the duration is deliberate for the demo.
           requestAnimationFrame(() => downloadBtn.style.setProperty('--p', 1));
           setTimeout(() => setDownload('done'), reduced ? 300 : 1450);
+        });
+
+        // ---------------------------------------------------------------- foam
+        const foamStage = document.getElementById('foamStage');
+        const foamLayer = document.getElementById('foamLayer');
+        const foamBubbles = document.getElementById('foamBubbles');
+        const foamGo = document.getElementById('foamGo');
+        const foamLibrary = document.getElementById('foamLibrary');
+        const foamNow = document.getElementById('foamNow');
+        let foamView = 'library';
+        let foamBusy = false;
+
+        for (let i = 0; i < 34; i += 1) {
+          const bubble = document.createElement('span');
+          bubble.className = 'foam-bubble';
+          bubble.style.setProperty('--x', `${(i * 29 + 8) % 100}%`);
+          bubble.style.setProperty('--y', `${18 + ((i * 47) % 78)}%`);
+          bubble.style.setProperty('--s', `${8 + ((i * 13) % 54)}px`);
+          bubble.style.setProperty('--delay', `${(i % 7) * 14}ms`);
+          bubble.style.setProperty('--dx', `${-18 + (i % 6) * 7}px`);
+          foamBubbles.appendChild(bubble);
+        }
+
+        function renderFoam(view) {
+          foamView = view;
+          foamStage.dataset.view = view;
+          foamLibrary.hidden = view !== 'library';
+          foamNow.hidden = view !== 'now';
+          foamGo.textContent = view === 'library' ? 'Foam dive →' : 'Foam surface ↑';
+        }
+
+        foamGo.addEventListener('click', () => {
+          if (foamBusy) return;
+          const next = foamView === 'library' ? 'now' : 'library';
+          if (reduced) {
+            renderFoam(next);
+            return;
+          }
+          foamBusy = true;
+          foamLayer.classList.remove('is-active', 'is-revealing');
+          void foamLayer.offsetWidth;
+          foamLayer.classList.add('is-active');
+          setTimeout(() => {
+            renderFoam(next);
+            foamLayer.classList.add('is-revealing');
+          }, 360);
+          setTimeout(() => {
+            foamLayer.classList.remove('is-active', 'is-revealing');
+            foamBusy = false;
+          }, 820);
         });
 
         // Pause ambient work when the tab is hidden.
