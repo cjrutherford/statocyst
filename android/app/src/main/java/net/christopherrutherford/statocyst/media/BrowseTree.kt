@@ -326,7 +326,7 @@ object BrowseTree {
     )
 
     private fun queueNodes(data: BrowseData): List<BrowseNode> {
-        val byId = data.tracks.associateBy { it.id }
+        val byId = (data.tracks + data.podcastMedia.values).associateBy { it.id }
         return data.queue.mapNotNull { entry ->
             byId[entry.trackId]?.let { trackNode(it, BrowseIds.QUEUE).copy(id = BrowseIds.queueItem(entry.entryId)) }
         }

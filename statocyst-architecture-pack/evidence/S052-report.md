@@ -1,38 +1,40 @@
 # Evidence report: S052 — Podcast browse in Android Auto and CarPlay
 
-**Status:** BLOCKED (iOS/CarPlay dependent; Android Auto podcast browse not implemented)
+**Status:** IMPLEMENTED_UNVERIFIED (Android Auto MediaBrowser test passes; DHU/CarPlay runtime pending)
 **Date:** 2026-11-08
 **Depends on:** S049, S051
 
-## What exists
+## Landed in 2.1.1
 
-- Android Auto music browse and playback exist from the earlier milestones.
-- iOS CarPlay music browse exists and is IMPLEMENTED_UNVERIFIED for music (S039).
-- Podcast episodes are native Room rows on Android after S048/S049; iOS has no podcast
-  data yet.
+### Android Auto
 
-## Why this is BLOCKED
+- `BrowseTree` adds a Podcasts folder, show nodes and episode nodes with stable
+  `podcast-feed::<id>` / `track::<mediaId>@@podcast-feed::<id>` IDs.
+- Episode nodes carry local `podcast-art` artwork and queue context so next/previous move
+  within the selected show.
+- `PlaybackService` loads Room podcast feeds/episodes into the browse data, keeps music
+  browse filtered to `mediaKind = music`, and resolves podcast enclosures through the
+  existing native queue and `SourceResolver` path.
+- The Queue folder includes podcast media items.
 
-- Android Auto podcast nodes/actions are not implemented; a DHU/physical head-unit run is
-  required for the slice gate.
-- CarPlay requires S050/S051, an Apple entitlement and a real head unit for full evidence.
-- The Linux host cannot build or run the iOS CarPlay simulator.
+### CarPlay
 
-## Reproduction recipe
+- `CarPlayBrowse` adds podcast subscriptions and episode rows with duration/download
+  detail.
+- `CarPlaySceneDelegate` loads podcast feeds and episodes into the existing browse snapshot
+  and `tracksById`, so episode selection uses the existing CarPlay queue/playback path.
+- Podcast artwork flows through `CarPlayArtwork` from the cached `artworkPath`.
 
-On Android (DHU + phone):
+## Verification
 
-1. Add podcast roots/children to the native browse tree (Continue Listening, Subscriptions
-   → Episodes) over Room.
-2. Wire selection to the existing native playback queue and podcast resume.
-3. Run the Desktop Head Unit and a physical phone with the screen off and offline.
+- Android unit tests pass, including `podcastFolderGroupsShowsAndEpisodes`.
+- Android instrumented `MediaLibraryServiceBrowseTest` passes on the emulator, including
+  `podcastShowBrowsesAndQueuesEpisodes` (Podcasts → show → episode → queue media ID).
+- iOS CarPlay code compiles in the successful iOS CI build (run `42522311443`).
+- CI Android instrumented job passes.
 
-On macOS (CarPlay):
+## Still pending
 
-1. Complete S050/S051, add the `CPTemplateApplicationScene` podcast templates and share
-   `PlaybackManager`.
-2. Run the CarPlay simulator and record the entitlement/head-unit result.
-
-## Evidence decision
-
-BLOCKED. Do not claim car podcast support in the MVP-5 release.
+- Android Auto Desktop Head Unit or physical head-unit run with screen off/offline.
+- CarPlay simulator/head-unit run with the Apple entitlement.
+- Voice/Assistant podcast requests and platform-specific empty states.

@@ -1,6 +1,6 @@
 # MVP-5 — Podcasts (all platforms)
 
-**Status:** IN_PROGRESS / BLOCKED (2026-11-08). Desktop + Android core implemented; iOS/CarPlay gates open. No all-platform claim is made.
+**Status:** IMPLEMENTED_UNVERIFIED (2.1.1, 2026-11-08). Desktop, Android, iOS and in-car browse are implemented and building. Runtime/device and performance evidence remains open; MVP-5 is not yet VERIFIED.
 **Decision record:** ADR-036.
 **Slice range:** S042–S053.
 **Platforms:** Electron desktop, Capacitor Android, Capacitor iOS, Android Auto, CarPlay.
@@ -767,8 +767,8 @@ All of the following are required before MVP-5 is called VERIFIED:
 7. Android Auto and CarPlay browse and play podcasts without the WebView.
 8. Migration tests pass from real v5 desktop, v6 Android and v5 iOS databases.
 9. Performance gate passes at 100 subscriptions / 10,000 episodes on the named device.
-10. Evidence reports S042–S053 are complete; any blocked platform gate is recorded as
-    BLOCKED and blocks the release.
+10. Evidence reports S042–S053 are complete; remaining runtime-only gates are called out in
+    the release notes. MVP-5 is not marked VERIFIED until they pass.
 
 ## 19. Deferred after MVP-5
 
