@@ -492,7 +492,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             call.reject("feedJson required")
             return
         }
-        let episodes = call.getString("episodesJson").flatMap { Self.jsonArray($0) } ?? []
+        let episodes = (call.getString("episodesJson").flatMap { Self.jsonArray($0) } ?? [])
+            .compactMap { $0 as? [String: Any] }
         ioQueue.async { [weak self] in
             guard let self = self else { return }
             guard let record = self.podcasts.saveFeed(feedJson: feed, episodes: episodes) else {
