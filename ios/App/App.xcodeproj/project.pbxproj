@@ -27,6 +27,8 @@
 		A10000122FE994000072D4E8 /* DiagnosticsAndSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000112FE994000072D4E8 /* DiagnosticsAndSupport.swift */; };
 		A10000142FE994000072D4E8 /* PlaybackManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000132FE994000072D4E8 /* PlaybackManager.swift */; };
 		A10000162FE994000072D4E8 /* StatocystPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000152FE994000072D4E8 /* StatocystPlugin.swift */; };
+		A10000512FE994000072D4E8 /* PodcastTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000502FE994000072D4E8 /* PodcastTransport.swift */; };
+		A10000532FE994000072D4E8 /* PodcastRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000522FE994000072D4E8 /* PodcastRepository.swift */; };
 		A10000312FE994000072D4E8 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000302FE994000072D4E8 /* CarPlaySceneDelegate.swift */; };
 		A10000332FE994000072D4E8 /* CarPlayBrowse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000322FE994000072D4E8 /* CarPlayBrowse.swift */; };
 		A10000352FE994000072D4E8 /* CarPlayArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000342FE994000072D4E8 /* CarPlayArtwork.swift */; };
@@ -55,6 +57,8 @@
 		A10000112FE994000072D4E8 /* DiagnosticsAndSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsAndSupport.swift; sourceTree = "<group>"; };
 		A10000132FE994000072D4E8 /* PlaybackManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackManager.swift; sourceTree = "<group>"; };
 		A10000152FE994000072D4E8 /* StatocystPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatocystPlugin.swift; sourceTree = "<group>"; };
+		A10000502FE994000072D4E8 /* PodcastTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastTransport.swift; sourceTree = "<group>"; };
+		A10000522FE994000072D4E8 /* PodcastRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastRepository.swift; sourceTree = "<group>"; };
 		A10000302FE994000072D4E8 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		A10000322FE994000072D4E8 /* CarPlayBrowse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayBrowse.swift; sourceTree = "<group>"; };
 		A10000342FE994000072D4E8 /* CarPlayArtwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlayArtwork.swift; sourceTree = "<group>"; };
@@ -133,6 +137,8 @@
 				A10000112FE994000072D4E8 /* DiagnosticsAndSupport.swift */,
 				A10000132FE994000072D4E8 /* PlaybackManager.swift */,
 				A10000152FE994000072D4E8 /* StatocystPlugin.swift */,
+				A10000502FE994000072D4E8 /* PodcastTransport.swift */,
+				A10000522FE994000072D4E8 /* PodcastRepository.swift */,
 			);
 			path = Plugin;
 			sourceTree = "<group>";
@@ -231,6 +237,8 @@
 				A10000122FE994000072D4E8 /* DiagnosticsAndSupport.swift in Sources */,
 				A10000142FE994000072D4E8 /* PlaybackManager.swift in Sources */,
 				A10000162FE994000072D4E8 /* StatocystPlugin.swift in Sources */,
+				A10000512FE994000072D4E8 /* PodcastTransport.swift in Sources */,
+				A10000532FE994000072D4E8 /* PodcastRepository.swift in Sources */,
 				A10000312FE994000072D4E8 /* CarPlaySceneDelegate.swift in Sources */,
 				A10000332FE994000072D4E8 /* CarPlayBrowse.swift in Sources */,
 				A10000352FE994000072D4E8 /* CarPlayArtwork.swift in Sources */,

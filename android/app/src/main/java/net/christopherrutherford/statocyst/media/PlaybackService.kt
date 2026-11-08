@@ -72,6 +72,7 @@ class PlaybackService : MediaLibraryService() {
 
     private val database by lazy { StatocystDatabase.getInstance(this) }
     private val dao by lazy { database.mediaItemDao() }
+    private val podcastDao by lazy { database.podcastDao() }
     private val resolver by lazy { SourceResolver(this) }
     private val userDao by lazy { database.userDao() }
     private val queueStore by lazy { QueueStore(this) }
@@ -554,7 +555,7 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun tracks(): List<MediaItemEntity> {
         cachedTracks?.let { return it }
         return withContext(Dispatchers.IO) {
-            val all = dao.getAll()
+            val all = dao.getAll().filter { it.mediaKind == "music" }
             val hidden = Duplicates.hiddenToKeeper(all)
             cachedAliases = hidden
             if (hidden.isEmpty()) all else all.filterNot { it.id in hidden }
@@ -579,10 +580,28 @@ class PlaybackService : MediaLibraryService() {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
         val (favorites, recents, playlistRows) = user
+        val podcastFeeds = withContext(Dispatchers.IO) {
+            val mediaById = mutableMapOf<String, MediaItemEntity>()
+            podcastDao.listFeeds().map { feed ->
+                val episodeIds = podcastDao.listEpisodes(feed.id).mapNotNull { episode ->
+                    dao.getById(episode.mediaItemId)?.let { media ->
+                        mediaById[media.id] = media
+                        media.id
+                    }
+                }
+                PodcastFeedInfo(
+                    id = feed.id,
+                    title = feed.title,
+                    author = feed.author,
+                    artworkPath = feed.artworkPath,
+                    episodeIds = episodeIds,
+                )
+            } to mediaById
+        }
         val hasRemote = catalog.any { it.sourceKind.startsWith("jellyfin") }
         val signedIn = JellyfinSessions.any(this)
         val notice = when {
-            catalog.isEmpty() -> BrowseNotice.EMPTY_LIBRARY
+            catalog.isEmpty() && podcastFeeds.first.isEmpty() -> BrowseNotice.EMPTY_LIBRARY
             hasRemote && !signedIn -> BrowseNotice.SIGNED_OUT
             hasRemote && !isOnline() -> BrowseNotice.OFFLINE
             else -> null
@@ -602,6 +621,8 @@ class PlaybackService : MediaLibraryService() {
                 val item = player.getMediaItemAt(it)
                 QueueEntry(item.mediaId, QueueItems.trackIdOf(item))
             },
+            podcastFeeds = podcastFeeds.first,
+            podcastMedia = podcastFeeds.second,
         )
     }
 
@@ -855,7 +876,8 @@ class PlaybackService : MediaLibraryService() {
                 },
             )
         }
-        val artUrl = resolver.artwork(node.albumId, node.imageTag, node.art)
+        val artUrl = node.podcastArtworkPath?.let { LocalMediaServer.localUri(this, File(it)) }
+            ?: resolver.artwork(node.albumId, node.imageTag, node.art)
         if (artUrl != null) {
             metadataBuilder.setArtworkUri(Uri.parse(artUrl))
         }

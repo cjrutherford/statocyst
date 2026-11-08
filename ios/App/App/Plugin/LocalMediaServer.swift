@@ -277,7 +277,7 @@ final class LocalMediaServer {
 
     private static func insideMediaRoots(_ fileURL: URL) -> Bool {
         let base = StatocystDatabase.appDataDirectory().standardizedFileURL.path
-        let roots = ["downloads", "cache", "library"]
+        let roots = ["downloads", "cache", "library", "podcast-art"]
         let filePath = fileURL.standardizedFileURL.path
         for name in roots {
             let rootPath = URL(fileURLWithPath: base).appendingPathComponent(name).standardizedFileURL.path

@@ -59,6 +59,8 @@ final class PlaybackManager: NSObject {
     private var desiredPlay: Bool = false
     private var qualityPreference: String = "lossless"
     private var cacheBudgetBytes: Int64 = 2 * 1024 * 1024 * 1024
+    private var playbackRate: Double = 1.0
+    private var lastPodcastResumeWriteMs: Int64 = 0
 
     private let networkMonitor = NWPathMonitor()
     private let networkMonitorQueue = DispatchQueue(label: "com.hopefulaspirationsindustries.statocyst.network")
@@ -199,6 +201,7 @@ final class PlaybackManager: NSObject {
             guard let self = self else { return }
             if self.player.timeControlStatus == .playing {
                 self.recoveryPositionMs = self.currentPositionMs()
+                self.persistPodcastResumeIfNeeded()
             }
             if self.desiredPlay || self.player.timeControlStatus == .playing {
                 self.onPositionChanged?(self.currentPositionMs(), self.currentDurationMs())
@@ -318,7 +321,20 @@ final class PlaybackManager: NSObject {
         try? AVAudioSession.sharedInstance().setActive(true)
         desiredPlay = true
         player.play()
+        player.rate = Float(playbackRate)
         emitState()
+    }
+
+    func setRate(_ rate: Double) {
+        playbackRate = min(3.0, max(0.5, rate))
+        if desiredPlay && player.currentItem != nil {
+            player.rate = Float(playbackRate)
+        }
+        emitState()
+    }
+
+    func currentRate() -> Double {
+        return playbackRate
     }
 
     func pause() {
@@ -494,6 +510,13 @@ final class PlaybackManager: NSObject {
                 )
             }
             return (JellyfinAuth.streamUrl(serverUrl: session.url, itemId: itemId), false)
+        } else if track.sourceKind == "podcast" {
+            guard let url = URL(string: track.path),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else {
+                return (nil, false)
+            }
+            return (track.path, false)
         } else {
             let fileURL = URL(fileURLWithPath: track.path)
             var isDir: ObjCBool = false
@@ -593,6 +616,7 @@ final class PlaybackManager: NSObject {
         if autoplay {
             try? AVAudioSession.sharedInstance().setActive(true)
             player.play()
+            player.rate = Float(playbackRate)
         } else {
             player.pause()
         }
@@ -609,6 +633,7 @@ final class PlaybackManager: NSObject {
             recoveryPositionMs = 0
             player.seek(to: .zero)
             player.play()
+            player.rate = Float(playbackRate)
             emitState()
             return
         }
@@ -652,6 +677,16 @@ final class PlaybackManager: NSObject {
     }
 
     // MARK: - State & Metadata Helpers
+
+    private func persistPodcastResumeIfNeeded() {
+        guard let slot = currentSlot,
+              let track = db.getMediaItemById(slot.trackId),
+              track.sourceKind == "podcast" else { return }
+        let position = currentPositionMs()
+        guard abs(position - lastPodcastResumeWriteMs) >= 5_000 else { return }
+        lastPodcastResumeWriteMs = position
+        PodcastRepository.shared.setResumeForMedia(mediaItemId: slot.trackId, positionMs: position)
+    }
 
     private func currentPositionMs() -> Int64 {
         let sec = CMTimeGetSeconds(player.currentTime())

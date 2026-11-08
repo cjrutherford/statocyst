@@ -2,6 +2,7 @@ package net.christopherrutherford.statocyst.media
 
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,9 +77,43 @@ class BrowseTreeTest {
                 favorites = listOf("t2"),
                 playlists = listOf(PlaylistInfo("p1", "Mix", listOf("t1"))),
                 queue = listOf(QueueEntry("q_1", "t1")),
+                podcastFeeds = listOf(
+                    PodcastFeedInfo("pod1", "Deep Water", "Studio", null, listOf("p1")),
+                ),
             ),
         )
         assertEquals(BrowseIds.ROOT_FOLDERS, full.map { it.id })
+    }
+
+    @Test
+    fun podcastFolderGroupsShowsAndEpisodes() {
+        val episode = entity("p1", "Episode One", "Deep Water", "Deep Water").copy(
+            path = "https://example.com/one.mp3",
+            pathKey = "podcast:pod1:one",
+            sourceId = "podcast",
+            sourceKind = "podcast",
+            sourceLabel = "Podcasts",
+            format = "audio/mpeg",
+            artworkPath = "/tmp/podcast-art.png",
+            mediaKind = "podcast",
+        )
+        val withPodcasts = data.copy(
+            podcastFeeds = listOf(
+                PodcastFeedInfo("pod1", "Deep Water", "Studio", "/tmp/feed-art.png", listOf("p1")),
+            ),
+            podcastMedia = mapOf("p1" to episode),
+        )
+
+        assertTrue(BrowseIds.PODCASTS in BrowseTree.children(BrowseIds.ROOT, withPodcasts).map { it.id })
+        val shows = BrowseTree.children(BrowseIds.PODCASTS, withPodcasts)
+        assertEquals(listOf("podcast-feed::pod1"), shows.map { it.id })
+        assertEquals("/tmp/feed-art.png", shows.single().podcastArtworkPath)
+
+        val episodes = BrowseTree.children("podcast-feed::pod1", withPodcasts)
+        assertEquals(listOf("track::p1@@podcast-feed::pod1"), episodes.map { it.id })
+        assertEquals("/tmp/podcast-art.png", episodes.single().podcastArtworkPath)
+        assertEquals(listOf("p1"), BrowseTree.contextTrackIds("podcast-feed::pod1", withPodcasts))
+        assertNotNull(BrowseTree.node("track::p1@@podcast-feed::pod1", withPodcasts))
     }
 
     @Test
