@@ -16,7 +16,7 @@ struct CarPlayTrack: Equatable {
     let albumArtist: String?
     let durationMs: Int64
     let isDownloaded: Bool
-    let isPodcast: Bool = false
+    var isPodcast: Bool = false
 }
 
 struct CarPlayPlaylist: Equatable {
