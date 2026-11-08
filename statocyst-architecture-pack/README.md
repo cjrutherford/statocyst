@@ -15,9 +15,10 @@ Each MVP is a **vertical slice and independently demonstrated stage**, never imp
 
 ## Navigation
 - `PRODUCT_CONTRACT.md`: outcomes, invariants, non-goals and MVPs.
-- `DECISION_REGISTER.md`: all 30 user-accepted decisions, and the final staged-MVP amendment.
+- `DECISION_REGISTER.md`: all 31 user-accepted decisions, and the final staged-MVP amendment.
 - `adrs/`: consolidated architecture decisions, clearly flagging implementation validation gates.
 - `roadmap/MILESTONES.md`: milestone-by-milestone completion conditions.
+- `roadmap/PODCASTS.md`: MVP-5 podcast architecture, data model, platform plan and release gate.
 - `slices/`: bounded agent work packets, one at a time.
 - `AGENTS.md`: execution contract for coding agents.
 - `contracts/`: initial language-neutral playback, queue and capability contracts.

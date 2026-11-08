@@ -319,6 +319,47 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
         }
 
         @if (tab() === 'general') {
+        <section class="card card--wide" aria-labelledby="podcasts-heading">
+          <div class="card__head">
+            <div>
+              <h2 id="podcasts-heading">Podcasts</h2>
+              <p class="card__hint">
+                Feeds are fetched on this device. Podcast Index search is optional and uses the
+                key you add in the Podcasts view.
+              </p>
+            </div>
+          </div>
+
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              [checked]="settings.settings().podcastRefreshOnLaunch"
+              (change)="setPodcastRefreshOnLaunch($event)"
+            />
+            <span class="toggle-row__text">
+              <strong>Refresh podcasts when Statocyst starts</strong>
+              <span>Checks due feeds shortly after the app is ready. Manual refresh always works.</span>
+            </span>
+          </label>
+
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              [checked]="settings.settings().podcastAllowLocalNetwork"
+              (change)="setPodcastAllowLocalNetwork($event)"
+            />
+            <span class="toggle-row__text">
+              <strong>Allow local-network podcast feeds</strong>
+              <span>
+                Permits RFC1918/loopback feeds such as a self-hosted server. Link-local and
+                metadata addresses stay blocked. Leave off unless you need it.
+              </span>
+            </span>
+          </label>
+        </section>
+        }
+
+        @if (tab() === 'general') {
         <section class="card card--wide" aria-labelledby="privacy-heading">
           <div class="card__head">
             <div>
@@ -1203,6 +1244,16 @@ export class SettingsViewComponent {
   protected setListeningHistory(event: Event): void {
     const target = event.target as HTMLInputElement | null;
     void this.settings.update({ listeningHistory: target?.checked ?? false });
+  }
+
+  protected setPodcastRefreshOnLaunch(event: Event): void {
+    const target = event.target as HTMLInputElement | null;
+    void this.settings.update({ podcastRefreshOnLaunch: target?.checked ?? true });
+  }
+
+  protected setPodcastAllowLocalNetwork(event: Event): void {
+    const target = event.target as HTMLInputElement | null;
+    void this.settings.update({ podcastAllowLocalNetwork: target?.checked ?? false });
   }
 
   protected async exportBundle(): Promise<void> {

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Deep Water Radio</title>
+    <link>https://example.com/deep-water</link>
+    <description>A show &amp; notes from the bathypelagic zone.</description>
+    <language>en-us</language>
+    <itunes:author>Statocyst Studio</itunes:author>
+    <itunes:image href="https://example.com/deep-water.jpg" />
+    <itunes:explicit>no</itunes:explicit>
+    <itunes:category text="Science">
+      <itunes:category text="Nature" />
+    </itunes:category>
+    <item>
+      <title>Episode One</title>
+      <guid isPermaLink="false">ep-1</guid>
+      <pubDate>Wed, 01 Oct 2026 08:00:00 GMT</pubDate>
+      <description><![CDATA[<p>Dive &amp; listen. <a href="/notes/1">Notes</a></p>]]></description>
+      <content:encoded><![CDATA[<p>Full notes <script>alert(1)</script><a href="https://example.com/notes/1">Read</a></p>]]></content:encoded>
+      <enclosure url="https://cdn.example.com/1.mp3" length="42000000" type="audio/mpeg" />
+      <itunes:duration>1:02:03</itunes:duration>
+      <itunes:episode>1</itunes:episode>
+      <itunes:season>2</itunes:season>
+      <itunes:episodeType>full</itunes:episodeType>
+      <itunes:explicit>yes</itunes:explicit>
+      <itunes:image href="https://example.com/ep1.jpg" />
+      <podcast:chapters url="https://example.com/1.chapters.json" type="application/json+chapters" />
+      <podcast:transcript url="https://example.com/1.vtt" type="text/vtt" />
+    </item>
+    <item>
+      <title>Episode Two</title>
+      <guid>ep-2</guid>
+      <pubDate>Thu, 02 Oct 2026 08:00:00 GMT</pubDate>
+      <description>Second episode without full HTML.</description>
+      <enclosure url="/media/2.mp3" length="1000" type="audio/mpeg" />
+      <itunes:duration>45:30</itunes:duration>
+      <itunes:episode>2</itunes:episode>
+      <itunes:season>2</itunes:season>
+    </item>
+    <item>
+      <title>No enclosure</title>
+      <guid>ep-3</guid>
+      <pubDate>Fri, 03 Oct 2026 08:00:00 GMT</pubDate>
+      <description>This item must be skipped.</description>
+    </item>
+  </channel>
+</rss>

@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadWifiOnly: true,
   downloadQuotaBytes: 0,
   downloadQuality: 'original',
+  podcastAllowLocalNetwork: false,
+  podcastRefreshOnLaunch: true,
 };
 
 @Injectable({ providedIn: 'root' })

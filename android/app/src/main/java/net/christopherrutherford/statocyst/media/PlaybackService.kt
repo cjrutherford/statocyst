@@ -59,6 +59,7 @@ import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.RecentEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
+import java.io.File
 
 /**
  * The single owner of audio on Android. The ExoPlayer here holds the real queue
@@ -678,11 +679,17 @@ class PlaybackService : MediaLibraryService() {
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setExtras(android.os.Bundle().apply { putString(QueueItems.EXTRA_TRACK_ID, trackId) })
-        resolver.artwork(
-            prepared.entity.albumId, prepared.entity.jellyfinImageTag,
-            ArtKey(prepared.entity.albumArtist ?: prepared.entity.artist, prepared.entity.album),
-        )
-            ?.let { entityMeta.setArtworkUri(Uri.parse(it)) }
+        if (prepared.entity.sourceKind == "podcast") {
+            prepared.entity.artworkPath
+                ?.let { LocalMediaServer.localUri(this@PlaybackService, File(it)) }
+                ?.let { entityMeta.setArtworkUri(Uri.parse(it)) }
+        } else {
+            resolver.artwork(
+                prepared.entity.albumId, prepared.entity.jellyfinImageTag,
+                ArtKey(prepared.entity.albumArtist ?: prepared.entity.artist, prepared.entity.album),
+            )
+                ?.let { entityMeta.setArtworkUri(Uri.parse(it)) }
+        }
         val entryId = if (QueueItems.isSlot(item)) item.mediaId else QueueItems.newEntryId()
         return MediaItem.Builder()
             .setMediaId(entryId)

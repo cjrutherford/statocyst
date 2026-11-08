@@ -20,6 +20,7 @@ import { PlaylistsStore } from './core/playlists.store';
 import { JellyfinStore } from './core/jellyfin.store';
 import { NavigationStore, type View } from './core/navigation.store';
 import { PlaybackStore } from './core/playback.store';
+import { PodcastsStore } from './core/podcasts.store';
 import { ScreenTransitionService } from './core/screen-transition.service';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
@@ -27,6 +28,7 @@ import { LibraryViewComponent } from './views/library-view.component';
 import { NowPlayingViewComponent } from './views/now-playing.component';
 import { OfflineViewComponent } from './views/offline-view.component';
 import { PlaylistsViewComponent } from './views/playlists-view.component';
+import { PodcastsViewComponent } from './views/podcasts-view.component';
 import { QueueViewComponent } from './views/queue-view.component';
 import { SettingsViewComponent } from './views/settings-view.component';
 
@@ -49,6 +51,7 @@ interface NavItem {
     NowPlayingViewComponent,
     OfflineViewComponent,
     PlaylistsViewComponent,
+    PodcastsViewComponent,
     QueueViewComponent,
     SettingsViewComponent,
   ],
@@ -104,6 +107,9 @@ interface NavItem {
                 @if (item.id === 'offline') {
                   <span class="nav__badge">{{ offlineCount() }}</span>
                 }
+                @if (item.id === 'podcasts' && podcastStore.unplayedTotal() > 0) {
+                  <span class="nav__badge">{{ podcastStore.unplayedTotal() }}</span>
+                }
                 @if (item.id === 'queue' && playback.queue().entries.length > 0) {
                   <span class="nav__badge">{{ playback.queue().entries.length }}</span>
                 }
@@ -138,6 +144,9 @@ interface NavItem {
               @case ('playlists') {
                 <sc-playlists-view />
               }
+              @case ('podcasts') {
+                <sc-podcasts-view />
+              }
               @case ('now') {
                 <sc-now-playing (openQueue)="navigate('queue')" />
               }
@@ -157,6 +166,7 @@ interface NavItem {
           class="player-slot"
           [class.player-slot--hidden-phone]="navigation.view() === 'now'"
           (openNow)="navigate('now')"
+          (openPodcast)="navigate('podcasts')"
           (openQueue)="navigate('queue')"
         />
       </div>
@@ -653,6 +663,7 @@ export class AppComponent {
   protected readonly settingsStore = inject(SettingsStore);
   protected readonly toasts = inject(ToastStore);
   protected readonly navigation = inject(NavigationStore);
+  protected readonly podcastStore = inject(PodcastsStore);
   private readonly transitions = inject(ScreenTransitionService);
   protected readonly bridgeAvailable = bridgeAvailable;
   private readonly audio = inject(AudioEngineService);
@@ -668,12 +679,14 @@ export class AppComponent {
   protected readonly nav: NavItem[] = [
     { id: 'library', label: 'Library', icon: 'library' },
     { id: 'playlists', label: 'Playlists', icon: 'sparkles' },
+    { id: 'podcasts', label: 'Podcasts', icon: 'podcast' },
     { id: 'offline', label: 'Offline', icon: 'offline' },
     { id: 'queue', label: 'Queue', icon: 'queue' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 
   constructor() {
+    void this.podcastStore.init();
     this.setupBackButton();
     this.setupConnectivity();
     void this.bootstrap();

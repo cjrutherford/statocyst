@@ -35,6 +35,7 @@ struct MediaItemEntity: Equatable {
     var missing: Bool = false
     var albumId: String? = nil
     var serverId: String = ""
+    var mediaKind: String = "music"
 }
 
 struct DownloadEntity: Equatable {
@@ -56,6 +57,98 @@ struct CacheEntryEntity: Equatable {
     var lastAccessAt: Int64
 }
 
+struct PodcastFeedEntity: Equatable {
+    var id: String
+    var feedUrl: String
+    var resolvedUrl: String?
+    var siteUrl: String?
+    var title: String
+    var author: String?
+    var descriptionText: String?
+    var imageUrl: String?
+    var artworkPath: String?
+    var language: String?
+    var explicit: Bool = false
+    var categoriesJson: String?
+    var feedType: String
+    var podcastIndexId: Int64?
+    var etag: String?
+    var lastModified: String?
+    var lastFetchedAt: String?
+    var lastSuccessAt: String?
+    var nextFetchAt: String?
+    var fetchError: String?
+    var failureCount: Int = 0
+    var refreshIntervalMinutes: Int = 60
+    var defaultSpeed: Double = 1.0
+    var skipIntroSeconds: Int = 0
+    var skipOutroSeconds: Int = 0
+    var autoQueue: Bool = true
+    var episodeSort: String = "newest"
+    var subscribed: Bool = true
+    var lastViewedAt: String?
+    var createdAt: String
+    var updatedAt: String
+}
+
+struct PodcastEpisodeEntity: Equatable {
+    var id: String
+    var feedId: String
+    var mediaItemId: String
+    var guid: String
+    var title: String
+    var descriptionText: String?
+    var linksJson: String?
+    var link: String?
+    var enclosureUrl: String
+    var enclosureType: String?
+    var enclosureLengthBytes: Int64?
+    var durationMs: Int64 = 0
+    var publishedAt: String?
+    var seasonNo: Int?
+    var episodeNo: Int?
+    var episodeType: String?
+    var imageUrl: String?
+    var artworkPath: String?
+    var explicit: Bool = false
+    var chaptersUrl: String?
+    var transcriptUrl: String?
+    var transcriptType: String?
+    var playbackSpeed: Double?
+    var resumePositionMs: Int64 = 0
+    var played: Bool = false
+    var completed: Bool = false
+    var playCount: Int = 0
+    var lastPlayedAt: String?
+    var firstSeenAt: String
+    var createdAt: String
+    var updatedAt: String
+}
+
+struct PodcastQueueEntryEntity: Equatable {
+    var entryId: String
+    var episodeId: String
+    var position: Int
+    var addedAt: String
+}
+
+struct PodcastPlaybackStateEntity: Equatable {
+    var id: Int = 1
+    var currentEntryId: String?
+    var positionMs: Int64
+    var speed: Double
+    var updatedAt: String
+}
+
+struct PodcastDirectoryCacheEntity: Equatable {
+    var id: String
+    var provider: String
+    var queryKey: String
+    var payloadJson: String
+    var fetchedAt: String
+    var expiresAt: String
+}
+
 struct FavoriteEntity: Equatable {
     var trackId: String
     var position: Int
@@ -75,11 +168,11 @@ struct PlaylistTrackEntity: Equatable {
 }
 
 /**
- * Thread-safe SQLite database matching Android's Room schema v5.
+ * Thread-safe SQLite database matching Android's Room schema v7.
  * Uses the system SQLite3 C library so zero external dependencies are required.
  */
 final class StatocystDatabase {
-    static let SCHEMA_VERSION = 5
+    static let SCHEMA_VERSION = 6
     static let shared = StatocystDatabase()
 
     let databaseURL: URL
@@ -152,7 +245,8 @@ final class StatocystDatabase {
                 updatedAt TEXT NOT NULL,
                 missing INTEGER NOT NULL DEFAULT 0,
                 albumId TEXT,
-                serverId TEXT NOT NULL DEFAULT ''
+                serverId TEXT NOT NULL DEFAULT '',
+                mediaKind TEXT NOT NULL DEFAULT 'music'
             );
         """)
         execRaw("""
@@ -204,7 +298,130 @@ final class StatocystDatabase {
                 playedAt INTEGER NOT NULL
             );
         """)
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS podcast_feed (
+                id TEXT NOT NULL PRIMARY KEY,
+                feedUrl TEXT NOT NULL,
+                resolvedUrl TEXT,
+                siteUrl TEXT,
+                title TEXT NOT NULL,
+                author TEXT,
+                descriptionText TEXT,
+                imageUrl TEXT,
+                artworkPath TEXT,
+                language TEXT,
+                explicit INTEGER NOT NULL,
+                categoriesJson TEXT,
+                feedType TEXT NOT NULL,
+                podcastIndexId INTEGER,
+                etag TEXT,
+                lastModified TEXT,
+                lastFetchedAt TEXT,
+                lastSuccessAt TEXT,
+                nextFetchAt TEXT,
+                fetchError TEXT,
+                failureCount INTEGER NOT NULL,
+                refreshIntervalMinutes INTEGER NOT NULL,
+                defaultSpeed REAL NOT NULL,
+                skipIntroSeconds INTEGER NOT NULL,
+                skipOutroSeconds INTEGER NOT NULL,
+                autoQueue INTEGER NOT NULL,
+                episodeSort TEXT NOT NULL,
+                subscribed INTEGER NOT NULL,
+                lastViewedAt TEXT,
+                createdAt TEXT NOT NULL,
+                updatedAt TEXT NOT NULL
+            );
+        """)
+        execRaw("CREATE UNIQUE INDEX IF NOT EXISTS index_podcast_feed_feedUrl ON podcast_feed(feedUrl);")
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_feed_nextFetchAt ON podcast_feed(nextFetchAt);")
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS podcast_episode (
+                id TEXT NOT NULL PRIMARY KEY,
+                feedId TEXT NOT NULL,
+                mediaItemId TEXT NOT NULL,
+                guid TEXT NOT NULL,
+                title TEXT NOT NULL,
+                descriptionText TEXT,
+                linksJson TEXT,
+                link TEXT,
+                enclosureUrl TEXT NOT NULL,
+                enclosureType TEXT,
+                enclosureLengthBytes INTEGER,
+                durationMs INTEGER NOT NULL,
+                publishedAt TEXT,
+                seasonNo INTEGER,
+                episodeNo INTEGER,
+                episodeType TEXT,
+                imageUrl TEXT,
+                artworkPath TEXT,
+                explicit INTEGER NOT NULL,
+                chaptersUrl TEXT,
+                transcriptUrl TEXT,
+                transcriptType TEXT,
+                playbackSpeed REAL,
+                resumePositionMs INTEGER NOT NULL,
+                played INTEGER NOT NULL,
+                completed INTEGER NOT NULL,
+                playCount INTEGER NOT NULL,
+                lastPlayedAt TEXT,
+                firstSeenAt TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                updatedAt TEXT NOT NULL
+            );
+        """)
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_feedId ON podcast_episode(feedId);")
+        execRaw("CREATE UNIQUE INDEX IF NOT EXISTS index_podcast_episode_mediaItemId ON podcast_episode(mediaItemId);")
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_feedId_publishedAt ON podcast_episode(feedId, publishedAt);")
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_lastPlayedAt ON podcast_episode(lastPlayedAt);")
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS podcast_queue_entry (
+                entryId TEXT NOT NULL PRIMARY KEY,
+                episodeId TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                addedAt TEXT NOT NULL
+            );
+        """)
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_queue_entry_position ON podcast_queue_entry(position);")
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS podcast_playback_state (
+                id INTEGER NOT NULL PRIMARY KEY,
+                currentEntryId TEXT,
+                positionMs INTEGER NOT NULL,
+                speed REAL NOT NULL,
+                updatedAt TEXT NOT NULL
+            );
+        """)
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS podcast_directory_cache (
+                id TEXT NOT NULL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                queryKey TEXT NOT NULL,
+                payloadJson TEXT NOT NULL,
+                fetchedAt TEXT NOT NULL,
+                expiresAt TEXT NOT NULL
+            );
+        """)
+        execRaw("CREATE UNIQUE INDEX IF NOT EXISTS index_podcast_directory_cache_provider_queryKey ON podcast_directory_cache(provider, queryKey);")
+        if !tableHasColumn("media_item", "mediaKind") {
+            execRaw("ALTER TABLE media_item ADD COLUMN mediaKind TEXT NOT NULL DEFAULT 'music';")
+        }
         execRaw("PRAGMA user_version = \(Self.SCHEMA_VERSION);")
+    }
+
+    private func tableHasColumn(_ table: String, _ column: String) -> Bool {
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table));", -1, &stmt, nil) == SQLITE_OK else {
+            return false
+        }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let cStr = sqlite3_column_text(stmt, 1), String(cString: cStr) == column {
+                return true
+            }
+        }
+        return false
     }
 
     @discardableResult
@@ -331,13 +548,13 @@ final class StatocystDatabase {
                     title, artist, album, albumArtist, trackNo, discNo, year, genre,
                     durationMs, bitrate, sampleRate, channels, codec, format,
                     artworkPath, jellyfinImageTag, sourceKind, sourceLabel,
-                    addedAt, updatedAt, missing, albumId, serverId
+                    addedAt, updatedAt, missing, albumId, serverId, mediaKind
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?
                 );
             """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -372,6 +589,7 @@ final class StatocystDatabase {
             sqlite3_bind_int(stmt, 29, item.missing ? 1 : 0)
             bindOptionalText(stmt, 30, item.albumId)
             bindText(stmt, 31, item.serverId)
+            bindText(stmt, 32, item.mediaKind)
             _ = sqlite3_step(stmt)
         }
     }
@@ -869,7 +1087,8 @@ final class StatocystDatabase {
             updatedAt: colString(stmt, 27),
             missing: sqlite3_column_int(stmt, 28) != 0,
             albumId: colOptionalString(stmt, 29),
-            serverId: colString(stmt, 30)
+            serverId: colString(stmt, 30),
+            mediaKind: colString(stmt, 31)
         )
     }
 

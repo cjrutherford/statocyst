@@ -40,6 +40,8 @@ const SETTINGS = {
   downloadWifiOnly: true,
   downloadQuotaBytes: 0,
   downloadQuality: 'original' as const,
+  podcastAllowLocalNetwork: false,
+  podcastRefreshOnLaunch: true,
 };
 
 describe('buildSupportBundle', () => {

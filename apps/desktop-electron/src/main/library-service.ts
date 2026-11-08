@@ -239,8 +239,9 @@ export class LibraryService {
     let changed = 0;
     for (const track of tracks) {
       // Jellyfin items are not local files: their path is a remote item id, so
-      // they are never "missing" on the local filesystem.
-      if (track.sourceKind === 'jellyfin') continue;
+      // they are never "missing" on the local filesystem. Podcast episodes are
+      // remote enclosures for the same reason.
+      if (track.sourceKind === 'jellyfin' || track.sourceKind === 'podcast') continue;
       try {
         await access(track.path);
         if (track.missing) {

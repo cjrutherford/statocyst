@@ -1,6 +1,6 @@
 import { computed, Injectable, signal } from '@angular/core';
 
-export type View = 'library' | 'offline' | 'playlists' | 'now' | 'queue' | 'settings';
+export type View = 'library' | 'podcasts' | 'offline' | 'playlists' | 'now' | 'queue' | 'settings';
 
 /**
  * Single owner of app navigation. Keeps a linear back stack so Android's

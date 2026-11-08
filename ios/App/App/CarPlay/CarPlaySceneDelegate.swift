@@ -294,7 +294,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     private func browseSnapshot() -> BrowseSnapshot {
-        let all = db.getAllMediaItems()
+        let all = db.getAllMediaItems().filter { $0.mediaKind == "music" }
         let visible = Duplicates.collapse(all)
         let entitiesById = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 

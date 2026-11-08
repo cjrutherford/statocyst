@@ -7,11 +7,16 @@ import type {
   HealthCheck,
   ImportProgress,
   ImportSummary,
+  PodcastEpisode,
+  PodcastFeed,
+  PodcastFeedPatch,
+  PodcastImportSummary,
   Result,
   Settings,
   SupportBundleResult,
 } from '@statocyst/contracts';
 import { CHANNELS, fail, ok } from '@statocyst/contracts';
+import { checkHttpUrl } from '@statocyst/podcast-core';
 import { SUPPORTED_AUDIO_EXTENSIONS } from '@statocyst/media-library';
 import type { StatocystDatabase } from '@statocyst/persistence';
 import { buildSupportBundle, collectHealth } from './support';
@@ -22,6 +27,7 @@ import type { Logger } from './logger';
 import type { PlaybackService } from './playback-service';
 import type { SettingsService } from './settings-service';
 import type { JellyfinService } from './jellyfin-service';
+import type { PodcastService } from './podcast-service';
 
 export interface IpcContext {
   getWindow: () => BrowserWindow | null;
@@ -34,6 +40,7 @@ export interface IpcContext {
   playback: PlaybackService;
   settings: SettingsService;
   jellyfin: JellyfinService;
+  podcast: PodcastService;
   downloads: DownloadService;
   cache: CacheManager;
   logger: Logger;
@@ -52,6 +59,10 @@ function emptySummary(cancelled: boolean): ImportSummary {
     tracks: [],
     cancelled,
   };
+}
+
+function isPlaybackContext(value: unknown): value is 'music' | 'podcast' {
+  return value === 'music' || value === 'podcast';
 }
 
 const IMPORT_CONCURRENCY = (() => {
@@ -213,6 +224,27 @@ export function registerIpc(context: IpcContext): void {
     if (error) context.logger.warn('app.open-data-folder.failed', { error });
   });
 
+  handle(
+    CHANNELS.appOpenExternal,
+    async (url: unknown): Promise<Result<{ opened: boolean }>> => {
+      if (typeof url !== 'string') {
+        return fail('INVALID_ARGUMENT', 'A URL is required');
+      }
+      const checked = checkHttpUrl(url);
+      if (!checked.ok) return fail('INVALID_ARGUMENT', checked.message);
+      try {
+        await shell.openExternal(checked.url.toString());
+        return ok({ opened: true });
+      } catch (error) {
+        context.logger.warn('app.open-external.failed', {
+          host: checked.url.host,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return fail('INTERNAL_ERROR', 'The link could not be opened');
+      }
+    },
+  );
+
   handle(CHANNELS.appQuit, () => {
     app.quit();
   });
@@ -281,11 +313,24 @@ export function registerIpc(context: IpcContext): void {
     },
   );
 
-  handle(CHANNELS.playbackGetSnapshot, () => context.playback.getSnapshot());
+  handle(CHANNELS.playbackGetSnapshot, (playbackContext: unknown) =>
+    context.playback.getSnapshot(isPlaybackContext(playbackContext) ? playbackContext : 'music'),
+  );
 
-  handle(CHANNELS.playbackGetQueue, () => context.playback.getQueue());
+  handle(CHANNELS.playbackGetQueue, (playbackContext: unknown) =>
+    context.playback.getQueue(isPlaybackContext(playbackContext) ? playbackContext : 'music'),
+  );
 
-  handle(CHANNELS.playbackCommand, (command: unknown) => context.playback.command(command));
+  handle(CHANNELS.playbackCommand, (args: unknown) => {
+    const input = (args ?? {}) as { command?: unknown; context?: unknown };
+    if (input.command === undefined) {
+      return fail('INVALID_ARGUMENT', 'A playback command is required');
+    }
+    return context.playback.command(
+      input.command,
+      isPlaybackContext(input.context) ? input.context : 'music',
+    );
+  });
 
   handle(CHANNELS.settingsGet, () => context.settings.get());
 
@@ -333,6 +378,142 @@ export function registerIpc(context: IpcContext): void {
   });
 
   handle(CHANNELS.jellyfinEncryptionAvailable, () => context.jellyfin.encryptionAvailable());
+
+  const emptyPodcastImport = (): PodcastImportSummary => ({
+    added: 0,
+    duplicates: 0,
+    invalid: 0,
+    scheduled: 0,
+    feeds: [],
+  });
+
+  handle(CHANNELS.podcastListFeeds, () => context.podcast.listFeeds());
+
+  handle(CHANNELS.podcastAddFeed, (args: unknown) => {
+    const input =
+      typeof args === 'string'
+        ? { url: args, artworkUrl: null }
+        : ((args ?? {}) as { url?: unknown; artworkUrl?: unknown });
+    if (typeof input.url !== 'string' || input.url.trim().length === 0) {
+      return fail<PodcastFeed>('INVALID_ARGUMENT', 'A feed URL is required');
+    }
+    return context.podcast.addFeed(
+      input.url,
+      typeof input.artworkUrl === 'string' ? { artworkUrl: input.artworkUrl } : undefined,
+    );
+  });
+
+  handle(CHANNELS.podcastUpdateFeed, (args: unknown) => {
+    const input = (args ?? {}) as { feedId?: unknown; patch?: unknown };
+    if (typeof input.feedId !== 'string' || input.feedId.length === 0) {
+      return fail<PodcastFeed>('INVALID_ARGUMENT', 'feedId is required');
+    }
+    if (!input.patch || typeof input.patch !== 'object' || Array.isArray(input.patch)) {
+      return fail<PodcastFeed>('INVALID_ARGUMENT', 'A feed settings patch is required');
+    }
+    return context.podcast.updateFeed(input.feedId, input.patch as PodcastFeedPatch);
+  });
+
+  handle(CHANNELS.podcastRemoveFeed, (args: unknown) => {
+    const input = (args ?? {}) as { feedId?: unknown; options?: unknown };
+    if (typeof input.feedId !== 'string' || input.feedId.length === 0) {
+      return fail<{ removed: boolean }>('INVALID_ARGUMENT', 'feedId is required');
+    }
+    const options =
+      input.options && typeof input.options === 'object' && !Array.isArray(input.options)
+        ? (input.options as { deleteDownloads?: boolean })
+        : {};
+    return context.podcast.removeFeed(input.feedId, options);
+  });
+
+  handle(CHANNELS.podcastRefresh, (feedId: unknown) =>
+    context.podcast.refresh(typeof feedId === 'string' && feedId.length > 0 ? feedId : undefined),
+  );
+
+  handle(CHANNELS.podcastListEpisodes, (args: unknown) => {
+    const input = (args ?? {}) as {
+      feedId?: unknown;
+      options?: { limit?: unknown; offset?: unknown; sort?: unknown };
+    };
+    if (typeof input.feedId !== 'string' || input.feedId.length === 0) {
+      return Promise.resolve([] as PodcastEpisode[]);
+    }
+    const options: { limit?: number; offset?: number; sort?: 'newest' | 'oldest' } = {};
+    if (typeof input.options?.limit === 'number') options.limit = input.options.limit;
+    if (typeof input.options?.offset === 'number') options.offset = input.options.offset;
+    if (input.options?.sort === 'newest' || input.options?.sort === 'oldest') {
+      options.sort = input.options.sort;
+    }
+    return context.podcast.listEpisodes(input.feedId, options);
+  });
+
+  handle(CHANNELS.podcastGetEpisode, (episodeId: unknown) =>
+    context.podcast.getEpisode(typeof episodeId === 'string' ? episodeId : ''),
+  );
+
+  handle(CHANNELS.podcastSetPlayed, (args: unknown) => {
+    const input = (args ?? {}) as { episodeId?: unknown; played?: unknown };
+    if (typeof input.episodeId !== 'string' || input.episodeId.length === 0) {
+      return fail<PodcastEpisode>('INVALID_ARGUMENT', 'episodeId is required');
+    }
+    return context.podcast.setPlayed(input.episodeId, input.played === true);
+  });
+
+  handle(CHANNELS.podcastSearchDirectory, (query: unknown) =>
+    context.podcast.searchDirectory(typeof query === 'string' ? query : ''),
+  );
+
+  handle(CHANNELS.podcastDiscover, () => context.podcast.discoverDirectory());
+
+  handle(CHANNELS.podcastCacheArtwork, (url: unknown) =>
+    context.podcast.cacheDirectoryArtwork(typeof url === 'string' ? url : ''),
+  );
+
+  handle(CHANNELS.podcastDirectoryStatus, () => context.podcast.directoryStatus());
+
+  handle(CHANNELS.podcastSetDirectoryCredentials, (args: unknown) => {
+    const input = (args ?? {}) as { apiKey?: unknown; secret?: unknown };
+    return context.podcast.setDirectoryCredentials(
+      typeof input.apiKey === 'string' ? input.apiKey : '',
+      typeof input.secret === 'string' ? input.secret : '',
+    );
+  });
+
+  handle(CHANNELS.podcastClearDirectoryCredentials, () =>
+    context.podcast.clearDirectoryCredentials(),
+  );
+
+  handle(CHANNELS.podcastImportOpml, async () => {
+    const window = context.getWindow();
+    if (!window) return emptyPodcastImport();
+    const result = await dialog.showOpenDialog(window, {
+      title: 'Import podcast subscriptions',
+      buttonLabel: 'Import OPML',
+      properties: ['openFile'],
+      filters: [
+        { name: 'OPML', extensions: ['opml', 'xml'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return emptyPodcastImport();
+    const xml = await readFile(result.filePaths[0], 'utf8');
+    return context.podcast.importOpmlText(xml);
+  });
+
+  handle(CHANNELS.podcastExportOpml, async (): Promise<Result<{ path: string | null; bytes: number }>> => {
+    const window = context.getWindow();
+    if (!window) return ok({ path: null, bytes: 0 });
+    const stamp = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(window, {
+      title: 'Export podcast subscriptions',
+      defaultPath: join(context.dataDirectory, `statocyst-podcasts-${stamp}.opml`),
+      filters: [{ name: 'OPML', extensions: ['opml'] }],
+    });
+    if (result.canceled || !result.filePath) return ok({ path: null, bytes: 0 });
+    const xml = await context.podcast.exportOpmlText();
+    await writeFile(result.filePath, xml, 'utf8');
+    return ok({ path: result.filePath, bytes: Buffer.byteLength(xml) });
+  });
 
   handle(CHANNELS.downloadAdd, async (trackId: unknown) => {
     if (typeof trackId !== 'string' || trackId.length === 0) {

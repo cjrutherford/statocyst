@@ -161,6 +161,18 @@ export function validatePlaybackCommand(value: unknown): Result<PlaybackCommand>
       }
       return ok({ type: 'setMuted', muted: value['muted'] });
 
+    case 'setRate':
+      if (
+        !hasOnlyKeys(value, ['type', 'rate']) ||
+        typeof value['rate'] !== 'number' ||
+        !Number.isFinite(value['rate']) ||
+        value['rate'] < 0.5 ||
+        value['rate'] > 3
+      ) {
+        return fail('INVALID_ARGUMENT', 'setRate requires a rate between 0.5 and 3');
+      }
+      return ok({ type: 'setRate', rate: value['rate'] });
+
     case 'clear':
       if (!hasOnlyKeys(value, ['type'])) {
         return fail('INVALID_ARGUMENT', 'Unexpected field on clear command');

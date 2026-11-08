@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { buildAudioStreamUrl, type ClientIdentity } from '@statocyst/jellyfin-client';
 import type { CacheStats } from '@statocyst/contracts';
-import type { StatocystDatabase } from '@statocyst/persistence';
+import type { StatocystDatabase, StoredTrack } from '@statocyst/persistence';
 import type { Logger } from './logger';
 
 export interface CacheManagerOptions {
@@ -15,6 +15,8 @@ export interface CacheManagerOptions {
   identity: ClientIdentity;
   getBudgetBytes: () => number;
   resolveRemoteTrack: (sourceId: string) => Promise<{ serverUrl: string; token: string } | null>;
+  /** Direct enclosure URLs for non-Jellyfin sources (podcasts). */
+  resolveDirectAudio?: (track: StoredTrack) => Promise<{ url: string; headers?: Record<string, string> } | null>;
 }
 
 function remoteAuthorization(identity: ClientIdentity, token: string): string {
@@ -148,9 +150,27 @@ export class CacheManager {
    */
   async prefetch(trackId: string): Promise<string | null> {
     const track = await this.database.getTrack(trackId).catch(() => null);
-    if (!track || track.sourceKind !== 'jellyfin') return null;
-    const remote = await this.options.resolveRemoteTrack(track.sourceId);
+    if (!track || (track.sourceKind !== 'jellyfin' && track.sourceKind !== 'podcast')) return null;
+    const direct = this.options.resolveDirectAudio
+      ? await this.options.resolveDirectAudio(track).catch(() => null)
+      : null;
+    const remote =
+      direct ??
+      (track.sourceKind === 'jellyfin'
+        ? await this.options.resolveRemoteTrack(track.sourceId)
+        : null);
     if (!remote) return null;
+    const streamUrl =
+      'url' in remote
+        ? remote.url
+        : buildAudioStreamUrl({
+            baseUrl: remote.serverUrl,
+            itemId: track.path,
+            mode: 'direct',
+          });
+    const headers = 'url' in remote
+      ? remote.headers
+      : { Authorization: remoteAuthorization(this.options.identity, remote.token) };
 
     await mkdir(this.options.cacheDirectory, { recursive: true });
     const ext = (track.ext || track.format || 'bin').toLowerCase();
@@ -158,13 +178,8 @@ export class CacheManager {
     const tmpPath = `${finalPath}.part`;
 
     try {
-      const url = buildAudioStreamUrl({
-        baseUrl: remote.serverUrl,
-        itemId: track.path,
-        mode: 'direct',
-      });
-      const response = await fetch(url, {
-        headers: { Authorization: remoteAuthorization(this.options.identity, remote.token) },
+      const response = await fetch(streamUrl, {
+        headers,
         redirect: 'manual',
       });
       if (!response.ok || !response.body) return null;

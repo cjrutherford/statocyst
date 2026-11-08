@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <title>Atom Deep</title>
+  <subtitle>An Atom podcast feed.</subtitle>
+  <icon>https://example.com/icon.png</icon>
+  <link rel="alternate" href="https://example.com/atom" />
+  <author>
+    <name>Atom Studio</name>
+  </author>
+  <entry>
+    <id>atom-ep-1</id>
+    <title>Atom One</title>
+    <published>2026-09-15T10:00:00Z</published>
+    <summary type="html">&lt;p&gt;Summary &amp;amp; notes &lt;a href="/atom/notes"&gt;Notes&lt;/a&gt;&lt;/p&gt;</summary>
+    <link rel="alternate" href="https://example.com/atom/1" />
+    <link rel="enclosure" href="https://cdn.example.com/atom1.m4a" type="audio/mp4" length="12345" />
+    <itunes:duration>00:45:30</itunes:duration>
+    <itunes:episode>4</itunes:episode>
+    <itunes:season>1</itunes:season>
+    <itunes:episodeType>bonus</itunes:episodeType>
+  </entry>
+</feed>

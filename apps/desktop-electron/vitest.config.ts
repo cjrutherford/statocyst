@@ -9,6 +9,7 @@ export default defineConfig({
       '@statocyst/persistence': resolve(import.meta.dirname, '../../libs/persistence/src/index.ts'),
       '@statocyst/media-library': resolve(import.meta.dirname, '../../libs/media-library/src/index.ts'),
       '@statocyst/jellyfin-client': resolve(import.meta.dirname, '../../libs/jellyfin-client/src/index.ts'),
+      '@statocyst/podcast-core': resolve(import.meta.dirname, '../../libs/podcast-core/src/index.ts'),
     },
   },
   test: {

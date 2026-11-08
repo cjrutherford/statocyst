@@ -6,6 +6,7 @@ import type {
   EngineEvent,
   EngineLoadRequest,
   PlaybackCommand,
+  PlaybackContext,
   PlaybackEvent,
   PlaybackSnapshot,
   PlaybackState,
@@ -58,17 +59,46 @@ function toTrack(stored: StoredTrack): Track {
   return track;
 }
 
+interface ContextState {
+  queue: QueueModel;
+  state: PlaybackState;
+  positionMs: number;
+  durationMs: number;
+  loadedEntryId: string | null;
+}
+
+function emptyContext(): ContextState {
+  return {
+    queue: createQueue(),
+    state: 'idle',
+    positionMs: 0,
+    durationMs: 0,
+    loadedEntryId: null,
+  };
+}
+
+const QUEUE_ONLY_COMMANDS: ReadonlySet<PlaybackCommand['type']> = new Set([
+  'enqueue',
+  'playNext',
+  'remove',
+  'reorder',
+  'setShuffle',
+  'setRepeat',
+  'clear',
+]);
+
 export class PlaybackService {
-  private queue: QueueModel = createQueue();
+  private contexts: Record<PlaybackContext, ContextState> = {
+    music: emptyContext(),
+    podcast: emptyContext(),
+  };
+  private activeContext: PlaybackContext = 'music';
+  private podcastSpeed = 1;
   private tracks = new Map<string, StoredTrack>();
-  private state: PlaybackState = 'idle';
-  private positionMs = 0;
-  private durationMs = 0;
   private bufferSeconds = 0;
   private volume = 0.85;
   private muted = false;
   private token = 0;
-  private loadedEntryId: string | null = null;
   private serial: Promise<unknown> = Promise.resolve();
   private persistTimer: NodeJS.Timeout | null = null;
   private shuttingDown = false;
@@ -79,113 +109,307 @@ export class PlaybackService {
     return this.options.database;
   }
 
+  private get active(): ContextState {
+    return this.contexts[this.activeContext];
+  }
+
+  private get queue(): QueueModel {
+    return this.active.queue;
+  }
+
+  private set queue(value: QueueModel) {
+    this.active.queue = value;
+  }
+
+  private get state(): PlaybackState {
+    return this.active.state;
+  }
+
+  private set state(value: PlaybackState) {
+    this.active.state = value;
+  }
+
+  private get positionMs(): number {
+    return this.active.positionMs;
+  }
+
+  private set positionMs(value: number) {
+    this.active.positionMs = value;
+  }
+
+  private get durationMs(): number {
+    return this.active.durationMs;
+  }
+
+  private set durationMs(value: number) {
+    this.active.durationMs = value;
+  }
+
+  private get loadedEntryId(): string | null {
+    return this.active.loadedEntryId;
+  }
+
+  private set loadedEntryId(value: string | null) {
+    this.active.loadedEntryId = value;
+  }
+
   async init(): Promise<void> {
-    const [entries, playback, tracks, settings] = await Promise.all([
-      this.database.loadQueue(),
-      this.database.loadPlaybackState(),
-      this.database.listTracks(),
-      Promise.resolve(this.options.settings.get()),
-    ]);
+    const [musicEntries, musicPlayback, podcastEntries, podcastPlayback, tracks, settings] =
+      await Promise.all([
+        this.database.loadQueue(),
+        this.database.loadPlaybackState(),
+        this.loadPodcastPlaybackEntries(),
+        this.database.loadPodcastPlaybackState(),
+        this.database.listAllTracks(),
+        Promise.resolve(this.options.settings.get()),
+      ]);
     this.tracks = new Map(tracks.map((track) => [track.id, track]));
     this.volume = settings.volume;
     this.muted = settings.muted;
-    this.queue = {
+    this.activeContext = musicPlayback.activeContext;
+    this.podcastSpeed = podcastPlayback.speed;
+
+    let musicQueue: QueueModel = {
       ...createQueue(),
-      entries: entries.filter((entry) => this.tracks.has(entry.trackId)),
-      currentEntryId: playback.currentEntryId,
-      shuffle: playback.shuffle,
-      repeat: playback.repeat,
+      entries: musicEntries.filter((entry) => this.trackFits('music', entry.trackId)),
+      currentEntryId: musicPlayback.currentEntryId,
+      shuffle: musicPlayback.shuffle,
+      repeat: musicPlayback.repeat,
     };
-    if (this.queue.currentEntryId && !currentEntry(this.queue)) {
-      this.queue.currentEntryId = this.queue.entries[0]?.entryId ?? null;
-    }
-    if (!this.queue.currentEntryId && this.queue.entries.length > 0) {
-      this.queue.currentEntryId = this.queue.entries[0].entryId;
-    }
-    if (this.queue.shuffle) {
+    musicQueue = this.restoreCurrent(musicQueue);
+    if (musicQueue.shuffle) {
       // Rebuild the shuffle bag from the restored entries. History is not
       // restored across restarts, but the bag must be usable immediately.
-      this.queue = applyQueueCommand(this.queue, { type: 'setShuffle', enabled: false }, this.context()).queue;
-      this.queue = applyQueueCommand(this.queue, { type: 'setShuffle', enabled: true }, this.context()).queue;
+      musicQueue = applyQueueCommand(
+        musicQueue,
+        { type: 'setShuffle', enabled: false },
+        this.context('music'),
+      ).queue;
+      musicQueue = applyQueueCommand(
+        musicQueue,
+        { type: 'setShuffle', enabled: true },
+        this.context('music'),
+      ).queue;
     }
-    const entry = currentEntry(this.queue);
-    const track = entry ? this.tracks.get(entry.trackId) : null;
-    this.durationMs = track?.durationMs ?? 0;
-    this.positionMs = Math.min(playback.positionMs, this.durationMs || playback.positionMs);
-    this.state = entry ? 'paused' : 'idle';
+    const podcastQueue = this.restoreCurrent({
+      ...createQueue(),
+      entries: podcastEntries.filter((entry) => this.trackFits('podcast', entry.trackId)),
+      currentEntryId: podcastPlayback.currentEntryId,
+    });
+    this.contexts = {
+      music: this.contextFromQueue(musicQueue, musicPlayback.positionMs),
+      podcast: this.contextFromQueue(podcastQueue, podcastPlayback.positionMs),
+    };
     this.options.logger.info('playback.initialised', {
-      entries: this.queue.entries.length,
+      activeContext: this.activeContext,
+      musicEntries: this.contexts.music.queue.entries.length,
+      podcastEntries: this.contexts.podcast.queue.entries.length,
       state: this.state,
       positionMs: this.positionMs,
     });
   }
 
   async syncLibrary(reason: string): Promise<void> {
-    const tracks = await this.database.listTracks();
+    const tracks = await this.database.listAllTracks();
     this.tracks = new Map(tracks.map((track) => [track.id, track]));
-    const entries = await this.database.loadQueue();
-    const kept = entries.filter((entry) => this.tracks.has(entry.trackId));
-    const previousCurrent = this.queue.currentEntryId;
-    this.queue.entries = kept;
-    if (this.queue.currentEntryId && !kept.some((entry) => entry.entryId === this.queue.currentEntryId)) {
-      this.queue.currentEntryId = kept[0]?.entryId ?? null;
-      this.positionMs = 0;
-    }
-    if (!this.queue.currentEntryId && kept.length > 0) {
-      this.queue.currentEntryId = kept[0].entryId;
-    }
-    if (kept.length === 0) {
-      this.state = 'idle';
-      this.positionMs = 0;
-      this.durationMs = 0;
-      this.loadedEntryId = null;
-    } else if (previousCurrent !== this.queue.currentEntryId) {
-      this.loadedEntryId = null;
-    }
+    const [musicEntries, podcastEntries] = await Promise.all([
+      this.database.loadQueue(),
+      this.loadPodcastPlaybackEntries(),
+    ]);
+    this.syncContext('music', musicEntries);
+    this.syncContext('podcast', podcastEntries);
     this.options.logger.info('playback.library.synced', {
       reason,
-      entries: kept.length,
-      currentEntryId: this.queue.currentEntryId,
+      activeContext: this.activeContext,
+      musicEntries: this.contexts.music.queue.entries.length,
+      podcastEntries: this.contexts.podcast.queue.entries.length,
     });
-    this.emitQueue();
+    this.emitQueue('music');
+    this.emitQueue('podcast');
     this.emitState();
     this.schedulePersist();
   }
 
-  getSnapshot(): PlaybackSnapshot {
-    const entry = currentEntry(this.queue);
+  private async loadPodcastPlaybackEntries(): Promise<
+    Array<{ entryId: string; trackId: string }>
+  > {
+    const entries = await this.database.loadPodcastQueue();
+    const episodes = await Promise.all(
+      entries.map((entry) =>
+        this.database.getPodcastEpisode(entry.episodeId).catch(() => null),
+      ),
+    );
+    return entries.flatMap((entry, index) => {
+      const episode = episodes[index];
+      return episode ? [{ entryId: entry.entryId, trackId: episode.id }] : [];
+    });
+  }
+
+  private trackFits(context: PlaybackContext, trackId: string): boolean {
+    const track = this.tracks.get(trackId);
+    if (!track) return false;
+    return context === 'music' ? track.mediaKind === 'music' : track.mediaKind === 'podcast';
+  }
+
+  private restoreCurrent(queue: QueueModel): QueueModel {
+    if (queue.currentEntryId && !queue.entries.some((entry) => entry.entryId === queue.currentEntryId)) {
+      queue.currentEntryId = queue.entries[0]?.entryId ?? null;
+    }
+    if (!queue.currentEntryId && queue.entries.length > 0) {
+      queue.currentEntryId = queue.entries[0].entryId;
+    }
+    return queue;
+  }
+
+  private contextFromQueue(queue: QueueModel, positionMs: number): ContextState {
+    const entry = currentEntry(queue);
+    const track = entry ? this.tracks.get(entry.trackId) : null;
+    const durationMs = track?.durationMs ?? 0;
+    return {
+      queue,
+      state: entry ? 'paused' : 'idle',
+      positionMs: Math.min(Math.max(0, positionMs), durationMs || Math.max(0, positionMs)),
+      durationMs,
+      loadedEntryId: null,
+    };
+  }
+
+  private syncContext(context: PlaybackContext, entries: readonly { entryId: string; trackId: string }[]): void {
+    const state = this.contexts[context];
+    const kept = entries.filter((entry) => this.trackFits(context, entry.trackId));
+    const previousCurrent = state.queue.currentEntryId;
+    state.queue.entries = kept.map((entry) => ({ ...entry }));
+    if (state.queue.currentEntryId && !kept.some((entry) => entry.entryId === state.queue.currentEntryId)) {
+      state.queue.currentEntryId = kept[0]?.entryId ?? null;
+      state.positionMs = 0;
+    }
+    if (!state.queue.currentEntryId && kept.length > 0) {
+      state.queue.currentEntryId = kept[0].entryId;
+    }
+    if (kept.length === 0) {
+      state.state = 'idle';
+      state.positionMs = 0;
+      state.durationMs = 0;
+      state.loadedEntryId = null;
+    } else if (previousCurrent !== state.queue.currentEntryId) {
+      state.loadedEntryId = null;
+      state.positionMs = 0;
+      state.durationMs = 0;
+    }
+  }
+
+  getSnapshot(context: PlaybackContext = this.activeContext): PlaybackSnapshot {
+    const state = this.contexts[context];
+    const entry = currentEntry(state.queue);
     const track = entry ? this.tracks.get(entry.trackId) : null;
     return {
-      state: this.state,
-      currentEntryId: this.queue.currentEntryId,
-      positionMs: Math.round(this.positionMs),
-      durationMs: Math.round(this.durationMs || track?.durationMs || 0),
+      state:
+        context === this.activeContext
+          ? state.state
+          : state.queue.currentEntryId
+            ? 'paused'
+            : 'idle',
+      currentEntryId: state.queue.currentEntryId,
+      positionMs: Math.round(state.positionMs),
+      durationMs: Math.round(state.durationMs || track?.durationMs || 0),
       volume: this.volume,
       muted: this.muted,
-      shuffle: this.queue.shuffle,
-      repeat: this.queue.repeat,
+      shuffle: state.queue.shuffle,
+      repeat: state.queue.repeat,
+      rate: context === 'podcast' ? this.podcastSpeed : 1,
+      context,
+      active: context === this.activeContext,
       track: track ? toTrack(track) : null,
     };
   }
 
-  getQueue(): QueueSnapshot {
+  getQueue(context: PlaybackContext = this.activeContext): QueueSnapshot {
+    const state = this.contexts[context];
     return {
-      entries: this.queue.entries.flatMap((entry) => {
+      entries: state.queue.entries.flatMap((entry) => {
         const track = this.tracks.get(entry.trackId);
-        return track ? [{ entryId: entry.entryId, trackId: entry.trackId, track: toTrack(track) }] : [];
+        return track
+          ? [{ entryId: entry.entryId, trackId: entry.trackId, track: toTrack(track) }]
+          : [];
       }),
-      currentEntryId: this.queue.currentEntryId,
-      shuffle: this.queue.shuffle,
-      repeat: this.queue.repeat,
+      currentEntryId: state.queue.currentEntryId,
+      shuffle: state.queue.shuffle,
+      repeat: state.queue.repeat,
+      context,
+      active: context === this.activeContext,
     };
   }
 
-  command(input: unknown): Promise<Result<PlaybackSnapshot>> {
+  command(
+    input: unknown,
+    context: PlaybackContext = 'music',
+  ): Promise<Result<PlaybackSnapshot>> {
     const validated = validatePlaybackCommand(input);
     if (!validated.ok) return Promise.resolve(validated);
-    const run = this.serial.then(() => this.applyCommand(validated.value));
+    const run = this.serial.then(() => this.routeCommand(validated.value, context));
     this.serial = run.catch(() => undefined);
     return run;
+  }
+
+  private async routeCommand(
+    command: PlaybackCommand,
+    target: PlaybackContext,
+  ): Promise<Result<PlaybackSnapshot>> {
+    if (command.type === 'setVolume' || command.type === 'setMuted') {
+      return this.applyCommand(command);
+    }
+    if (target !== this.activeContext) {
+      if (QUEUE_ONLY_COMMANDS.has(command.type)) {
+        return this.applyInactiveQueueCommand(target, command);
+      }
+      if (command.type === 'pause') {
+        return ok(this.getSnapshot(target));
+      }
+      await this.switchContext(target);
+    }
+    return this.applyCommand(command);
+  }
+
+  private async applyInactiveQueueCommand(
+    context: PlaybackContext,
+    command: PlaybackCommand,
+  ): Promise<Result<PlaybackSnapshot>> {
+    const state = this.contexts[context];
+    const outcome = applyQueueCommand(state.queue, command, this.context(context));
+    if (outcome.error) return fail(outcome.error.code, outcome.error.message);
+    state.queue = outcome.queue;
+    if (outcome.queueChanged) {
+      await this.persistQueue(context);
+      this.emitQueue(context);
+    }
+    if (outcome.shuffleChanged || outcome.repeatChanged) {
+      await this.persistState(context);
+    }
+    return ok(this.getSnapshot(context));
+  }
+
+  private async switchContext(target: PlaybackContext): Promise<void> {
+    if (target === this.activeContext) return;
+    const outgoing = this.activeContext;
+    this.sendCommand({ token: this.token, action: 'pause' });
+    this.contexts[outgoing].state = this.contexts[outgoing].queue.currentEntryId
+      ? 'paused'
+      : 'idle';
+    this.activeContext = target;
+    await this.persistState(outgoing);
+    await this.persistNow();
+    this.emitState(outgoing);
+    this.emitQueue(outgoing);
+    this.emitState();
+    this.emitQueue(target);
+    const entry = currentEntry(this.queue);
+    if (entry) {
+      await this.loadEntry(entry.entryId, false, this.positionMs);
+    } else {
+      this.state = 'idle';
+      this.emitState();
+      this.emitPosition();
+    }
   }
 
   engineEvent(event: unknown): void {
@@ -264,14 +488,34 @@ export class PlaybackService {
     await this.serial.catch(() => undefined);
   }
 
-  private context(): QueueContext {
+  private context(context: PlaybackContext = this.activeContext): QueueContext {
     return {
-      isKnownTrack: (trackId) => this.tracks.has(trackId),
+      isKnownTrack: (trackId) => this.trackFits(context, trackId),
       createEntryId: () => `q_${randomUUID()}`,
     };
   }
 
+  private async ensureTrack(trackId: string): Promise<void> {
+    if (this.tracks.has(trackId)) return;
+    const stored = await this.options.database.getTrack(trackId).catch(() => null);
+    if (stored) this.tracks.set(stored.id, stored);
+  }
+
   private async applyCommand(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>> {
+    if (command.type === 'play' && command.trackId) {
+      await this.ensureTrack(command.trackId);
+      if (command.contextTrackIds) {
+        await Promise.all(command.contextTrackIds.map((id) => this.ensureTrack(id)));
+      }
+    }
+    if (command.type === 'playEntry') {
+      const entry = this.queue.entries.find((candidate) => candidate.entryId === command.entryId);
+      if (entry) await this.ensureTrack(entry.trackId);
+    }
+    if (command.type === 'enqueue' || command.type === 'playNext') {
+      const ids = command.type === 'enqueue' ? command.trackIds : [command.trackId];
+      await Promise.all(ids.map((id) => this.ensureTrack(id)));
+    }
     const entryBefore = this.queue.currentEntryId;
     const wasPlaying = this.state === 'playing' || this.state === 'buffering';
 
@@ -304,6 +548,17 @@ export class PlaybackService {
       this.muted = command.muted;
       this.sendCommand({ token: this.token, action: 'volume', volume: this.volume, muted: this.muted });
       await this.options.settings.update({ muted: this.muted });
+      this.emitState();
+      return ok(this.getSnapshot());
+    }
+
+    if (command.type === 'setRate') {
+      if (this.activeContext !== 'podcast') {
+        return fail('INVALID_ARGUMENT', 'Playback rate applies to podcasts');
+      }
+      this.podcastSpeed = Math.min(3, Math.max(0.5, command.rate));
+      this.sendCommand({ token: this.token, action: 'rate', rate: this.podcastSpeed });
+      await this.persistNow();
       this.emitState();
       return ok(this.getSnapshot());
     }
@@ -368,7 +623,12 @@ export class PlaybackService {
           command.type === 'skipNext' ||
           command.type === 'skipPrevious';
         const autoplay = explicitStart || (command.type === 'remove' && wasPlaying);
-        const startPosition = reason === 'restart' ? 0 : entryId === entryBefore ? this.positionMs : 0;
+        let startPosition =
+          reason === 'restart' ? 0 : entryId === entryBefore ? this.positionMs : 0;
+        if (this.activeContext === 'podcast' && reason !== 'restart' && entryId !== entryBefore) {
+          const resume = await this.podcastResumeForEntry(entryId);
+          if (resume !== null) startPosition = resume;
+        }
         await this.loadEntry(entryId, autoplay, startPosition);
       }
     } else if (outcome.queueChanged) {
@@ -390,7 +650,14 @@ export class PlaybackService {
       this.emitState();
       return;
     }
-    const track = this.tracks.get(entry.trackId);
+    let track = this.tracks.get(entry.trackId);
+    if (!track) {
+      const stored = await this.options.database.getTrack(entry.trackId).catch(() => null);
+      if (stored) {
+        this.tracks.set(stored.id, stored);
+        track = stored;
+      }
+    }
     this.queue.currentEntryId = entryId;
     if (!track) {
       this.state = 'error';
@@ -416,6 +683,7 @@ export class PlaybackService {
       durationMs: this.durationMs,
       volume: this.volume,
       muted: this.muted,
+      playbackRate: this.activeContext === 'podcast' ? this.podcastSpeed : 1,
     };
     this.send(CHANNELS.engineLoad, request);
     this.options.logger.info('playback.track.load', {
@@ -435,14 +703,51 @@ export class PlaybackService {
       // Local listening history is opt-in (ADR-015). When disabled, playback is
       // unchanged but no play count or last-played timestamp is written.
       if (this.options.settings.get().listeningHistory) {
-        void this.database.markPlayed(track.id).catch((error) => {
-          this.options.logger.warn('playback.mark-played.failed', { error, trackId: track.id });
-        });
+        if (this.activeContext === 'podcast') {
+          void this.database
+            .getPodcastEpisodeByMediaItemId(track.id)
+            .then((episode) =>
+              episode ? this.database.markPodcastEpisodeStarted(episode.episodeId) : undefined,
+            )
+            .catch((error) => {
+              this.options.logger.warn('playback.podcast.mark-started.failed', {
+                error,
+                trackId: track.id,
+              });
+            });
+        } else {
+          void this.database.markPlayed(track.id).catch((error) => {
+            this.options.logger.warn('playback.mark-played.failed', { error, trackId: track.id });
+          });
+        }
       }
     }
   }
 
+  private async podcastResumeForEntry(entryId: string): Promise<number | null> {
+    const entry = this.queue.entries.find((candidate) => candidate.entryId === entryId);
+    if (!entry) return null;
+    const episode = await this.database
+      .getPodcastEpisodeByMediaItemId(entry.trackId)
+      .catch(() => null);
+    if (!episode) return null;
+    return episode.completed ? 0 : episode.resumePositionMs;
+  }
+
   private async handleEnded(): Promise<void> {
+    if (this.activeContext === 'podcast') {
+      const current = currentEntry(this.queue);
+      const episode = current
+        ? await this.database
+            .getPodcastEpisodeByMediaItemId(current.trackId)
+            .catch(() => null)
+        : null;
+      if (episode) {
+        await this.database.setPodcastEpisodePlayed(episode.episodeId, true).catch((error) => {
+          this.options.logger.warn('playback.podcast.complete.failed', { error });
+        });
+      }
+    }
     const outcome = advanceAfterEnd(this.queue, this.context());
     if (outcome.error) {
       this.state = 'ended';
@@ -451,7 +756,12 @@ export class PlaybackService {
     }
     this.queue = outcome.queue;
     if (outcome.selection?.entryId && outcome.selection.reason !== 'none') {
-      await this.loadEntry(outcome.selection.entryId, true, 0);
+      let startPosition = 0;
+      if (this.activeContext === 'podcast') {
+        const resume = await this.podcastResumeForEntry(outcome.selection.entryId);
+        if (resume !== null) startPosition = resume;
+      }
+      await this.loadEntry(outcome.selection.entryId, true, startPosition);
     } else {
       this.state = 'ended';
       this.positionMs = this.durationMs;
@@ -481,8 +791,8 @@ export class PlaybackService {
     this.send(CHANNELS.playbackEvent, event);
   }
 
-  private emitState(): void {
-    this.emit({ type: 'stateChanged', snapshot: this.getSnapshot() });
+  private emitState(context: PlaybackContext = this.activeContext): void {
+    this.emit({ type: 'stateChanged', snapshot: this.getSnapshot(context) });
   }
 
   private emitPosition(): void {
@@ -493,17 +803,61 @@ export class PlaybackService {
     });
   }
 
-  private emitQueue(): void {
-    this.emit({ type: 'queueChanged', queue: this.getQueue() });
+  private emitQueue(context: PlaybackContext = this.activeContext): void {
+    this.emit({ type: 'queueChanged', queue: this.getQueue(context) });
   }
 
-  private async persistQueue(): Promise<void> {
+  private async persistQueue(context: PlaybackContext = this.activeContext): Promise<void> {
     try {
-      await this.database.saveQueue(
-        this.queue.entries.map((entry) => ({ entryId: entry.entryId, trackId: entry.trackId })),
-      );
+      const state = this.contexts[context];
+      const entries = state.queue.entries.map((entry) => ({
+        entryId: entry.entryId,
+        trackId: entry.trackId,
+      }));
+      if (context === 'music') {
+        await this.database.saveQueue(entries);
+      } else {
+        const episodes = await Promise.all(
+          entries.map((entry) =>
+            this.database
+              .getPodcastEpisodeByMediaItemId(entry.trackId)
+              .catch(() => null),
+          ),
+        );
+        await this.database.savePodcastQueue(
+          entries.flatMap((entry, index) => {
+            const episode = episodes[index];
+            return episode
+              ? [{ entryId: entry.entryId, episodeId: episode.episodeId }]
+              : [];
+          }),
+        );
+      }
     } catch (error) {
-      this.options.logger.error('playback.queue.persist.failed', { error });
+      this.options.logger.error('playback.queue.persist.failed', { context, error });
+    }
+  }
+
+  private async persistState(context: PlaybackContext = this.activeContext): Promise<void> {
+    const state = this.contexts[context];
+    try {
+      if (context === 'music') {
+        await this.database.savePlaybackState({
+          currentEntryId: state.queue.currentEntryId,
+          positionMs: state.positionMs,
+          shuffle: state.queue.shuffle,
+          repeat: state.queue.repeat,
+          activeContext: this.activeContext,
+        });
+      } else {
+        await this.database.savePodcastPlaybackState({
+          currentEntryId: state.queue.currentEntryId,
+          positionMs: state.positionMs,
+          speed: this.podcastSpeed,
+        });
+      }
+    } catch (error) {
+      this.options.logger.error('playback.state.persist.failed', { context, error });
     }
   }
 
@@ -517,15 +871,27 @@ export class PlaybackService {
   }
 
   private async persistNow(): Promise<void> {
+    await this.persistState('music');
+    await this.persistState('podcast');
+    const podcast = this.contexts.podcast;
+    const current = currentEntry(podcast.queue);
+    if (!current) return;
     try {
-      await this.database.savePlaybackState({
-        currentEntryId: this.queue.currentEntryId,
-        positionMs: this.positionMs,
-        shuffle: this.queue.shuffle,
-        repeat: this.queue.repeat,
-      });
+      const episode = await this.database
+        .getPodcastEpisodeByMediaItemId(current.trackId)
+        .catch(() => null);
+      if (!episode) return;
+      const threshold =
+        podcast.durationMs > 0
+          ? Math.max(podcast.durationMs - 30_000, podcast.durationMs * 0.95)
+          : Number.POSITIVE_INFINITY;
+      if (podcast.state === 'ended' || podcast.positionMs >= threshold) {
+        await this.database.setPodcastEpisodePlayed(episode.episodeId, true);
+      } else {
+        await this.database.setPodcastEpisodeResume(episode.episodeId, podcast.positionMs);
+      }
     } catch (error) {
-      this.options.logger.error('playback.state.persist.failed', { error });
+      this.options.logger.error('playback.podcast.resume.persist.failed', { error });
     }
   }
 

@@ -20,6 +20,7 @@ const alias = {
   '@statocyst/persistence': resolve(root, 'libs/persistence/src/index.ts'),
   '@statocyst/media-library': resolve(root, 'libs/media-library/src/index.ts'),
   '@statocyst/jellyfin-client': resolve(root, 'libs/jellyfin-client/src/index.ts'),
+  '@statocyst/podcast-core': resolve(root, 'libs/podcast-core/src/index.ts'),
 };
 
 /** @type {import('esbuild').BuildOptions} */

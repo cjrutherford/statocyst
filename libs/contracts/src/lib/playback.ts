@@ -22,6 +22,15 @@ export type PlaybackState = (typeof PLAYBACK_STATES)[number];
 export const REPEAT_MODES = ['off', 'all', 'one'] as const;
 export type RepeatMode = (typeof REPEAT_MODES)[number];
 
+/** A media row is either music or a podcast episode. */
+export type MediaKind = 'music' | 'podcast';
+
+/**
+ * The active audio context. Each running instance has one authoritative queue
+ * at a time; the inactive context is persisted state, not a second player.
+ */
+export type PlaybackContext = 'music' | 'podcast';
+
 export const ERROR_CODES = [
   'INVALID_ARGUMENT',
   'TRACK_NOT_FOUND',
@@ -58,8 +67,10 @@ export interface Track {
   artistArtworkUrl?: string | null;
   sourceId: string;
   sourceLabel: string;
-  /** Runtime source kind: `local`, `demo`, or `jellyfin`. Optional for older hosts. */
+  /** Runtime source kind: `local`, `demo`, `jellyfin`, or `podcast`. Optional for older hosts. */
   sourceKind?: string;
+  /** Media kind; absent on older hosts means music. */
+  mediaKind?: MediaKind;
   trackNo?: number | null;
   year?: number | null;
   genre?: string | null;
@@ -87,6 +98,8 @@ export interface QueueSnapshot {
   currentEntryId: string | null;
   shuffle: boolean;
   repeat: RepeatMode;
+  context: PlaybackContext;
+  active: boolean;
 }
 
 export interface PlaybackSnapshot {
@@ -98,6 +111,9 @@ export interface PlaybackSnapshot {
   muted: boolean;
   shuffle: boolean;
   repeat: RepeatMode;
+  rate: number;
+  context: PlaybackContext;
+  active: boolean;
   track: Track | null;
 }
 
@@ -121,6 +137,7 @@ export type PlaybackCommand =
   | { type: 'setRepeat'; mode: RepeatMode }
   | { type: 'setVolume'; volume: number }
   | { type: 'setMuted'; muted: boolean }
+  | { type: 'setRate'; rate: number }
   | { type: 'clear' };
 
 export type PlaybackCommandName = PlaybackCommand['type'];
@@ -140,6 +157,7 @@ export const PLAYBACK_COMMANDS: readonly PlaybackCommandName[] = [
   'setRepeat',
   'setVolume',
   'setMuted',
+  'setRate',
   'clear',
 ] as const;
 

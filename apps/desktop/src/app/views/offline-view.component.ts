@@ -1,12 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
-import type { Track } from '@statocyst/contracts';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import type { PodcastEpisode, Track } from '@statocyst/contracts';
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
 import { LibraryStore } from '../core/library.store';
 import { DownloadsStore } from '../core/downloads.store';
 import { PlaybackStore } from '../core/playback.store';
+import { PodcastPlaybackStore } from '../core/podcast-playback.store';
+import { PodcastsStore } from '../core/podcasts.store';
 import { NavigationStore } from '../core/navigation.store';
-import { isNativePlatform } from '../core/bridge';
+import { bridge, isNativePlatform } from '../core/bridge';
 import { formatDuration, formatBytes } from '../core/format';
 
 @Component({
@@ -26,7 +28,7 @@ import { formatDuration, formatBytes } from '../core/format';
         </div>
       </header>
 
-      @if (tracks().length === 0) {
+      @if (tracks().length === 0 && podcastDownloads().length === 0) {
         <div class="empty">
           <sc-icon name="offline" />
           <h2>Nothing saved for offline yet</h2>
@@ -39,6 +41,36 @@ import { formatDuration, formatBytes } from '../core/format';
           </button>
         </div>
       } @else {
+        @if (podcastDownloads().length > 0) {
+          <div class="podcast-offline">
+            <div class="section-head">
+              <h2>Podcast episodes</h2>
+              <span class="result-count">{{ podcastDownloads().length }} pinned</span>
+            </div>
+            <ul>
+              @for (episode of podcastDownloads(); track episode.id) {
+                <li>
+                  <button type="button" class="podcast-row" (click)="playPodcast(episode)">
+                    <sc-artwork [src]="episode.artworkUrl" [track]="episode" size="sm" />
+                    <span class="podcast-row__text">
+                      <span class="podcast-row__show">{{ episode.feedTitle }}</span>
+                      <span class="podcast-row__title">{{ episode.title }}</span>
+                    </span>
+                    <span class="podcast-row__time">{{ formatDuration(episode.durationMs) }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon-btn icon-btn--danger"
+                    aria-label="Remove download"
+                    (click)="removePodcastDownload(episode)"
+                  >
+                    <sc-icon name="trash" />
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
         <div class="toolbar">
           <span class="result-count">{{ tracks().length }} offline track{{ tracks().length === 1 ? '' : 's' }}@if (offlineBytes() > 0) { · {{ formatBytes(offlineBytes()) }} }</span>
           @if (downloads.stats().count > 0) {
@@ -139,6 +171,17 @@ import { formatDuration, formatBytes } from '../core/format';
       .col-size { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.78rem; }
       .col-duration { color: var(--muted); font-variant-numeric: tabular-nums; }
       .col-actions { text-align: right; white-space: nowrap; }
+      .podcast-offline { display: grid; gap: 8px; }
+      .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .podcast-offline h2 { margin: 0; font-size: 1rem; }
+      .podcast-offline ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+      .podcast-offline li { display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); padding: 4px; }
+      .podcast-row { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; padding: 4px; cursor: pointer; }
+      .podcast-row:hover { background: var(--surface-row-hover); border-radius: var(--radius-sm); }
+      .podcast-row__text { display: grid; gap: 1px; min-width: 0; flex: 1; }
+      .podcast-row__show { color: var(--cyan); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; }
+      .podcast-row__title { font-weight: 600; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .podcast-row__time { color: var(--muted); font-size: 0.72rem; }
       @media (max-width: 720px) {
         .col-index, .col-album, .col-format, .col-size, .col-duration { display: none; }
         .track-table th, .track-table td { padding: 10px 8px; }
@@ -152,7 +195,14 @@ export class OfflineViewComponent {
   protected readonly library = inject(LibraryStore);
   protected readonly downloads = inject(DownloadsStore);
   protected readonly playback = inject(PlaybackStore);
+  protected readonly podcasts = inject(PodcastsStore);
+  protected readonly podcastPlayback = inject(PodcastPlaybackStore);
   protected readonly navigation = inject(NavigationStore);
+  protected readonly podcastDownloads = signal<PodcastEpisode[]>([]);
+
+  constructor() {
+    void this.loadPodcastDownloads();
+  }
 
   protected readonly tracks = computed<Track[]>(() => {
     const isDownloaded = this.downloads.isDownloaded();
@@ -167,6 +217,28 @@ export class OfflineViewComponent {
 
   protected play(track: Track): void {
     void this.playback.playTrack(track.id);
+  }
+
+  protected playPodcast(episode: PodcastEpisode): void {
+    void this.podcastPlayback.playEpisode(episode, this.podcastDownloads());
+  }
+
+  protected removePodcastDownload(episode: PodcastEpisode): void {
+    void this.downloads.remove(episode.id, episode.title).then(() => this.loadPodcastDownloads());
+  }
+
+  private async loadPodcastDownloads(): Promise<void> {
+    const api = bridge().podcast;
+    if (!api) return;
+    await this.podcasts.init();
+    await this.downloads.init();
+    const isDownloaded = this.downloads.isDownloaded();
+    const lists = await Promise.all(
+      this.podcasts
+        .feeds()
+        .map((feed) => api.listEpisodes(feed.id, { limit: 200 }).catch(() => [])),
+    );
+    this.podcastDownloads.set(lists.flat().filter((episode) => isDownloaded(episode.id)));
   }
 
   protected enqueue(track: Track): void {

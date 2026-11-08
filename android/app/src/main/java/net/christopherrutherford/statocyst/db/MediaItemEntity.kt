@@ -38,4 +38,6 @@ data class MediaItemEntity(
     val albumId: String? = null,
     /** Jellyfin server the track came from; empty for local files and pre-multi-server rows. */
     @ColumnInfo(defaultValue = "") val serverId: String = "",
+    /** `music` or `podcast`; music views filter on this. */
+    @ColumnInfo(defaultValue = "music") val mediaKind: String = "music",
 )

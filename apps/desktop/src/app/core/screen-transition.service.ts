@@ -15,6 +15,7 @@ type ViewTransitionDocument = Document & {
 const DEPTH: Record<View, number> = {
   settings: 0,
   library: 0,
+  podcasts: 0,
   playlists: 0,
   offline: 1,
   queue: 2,

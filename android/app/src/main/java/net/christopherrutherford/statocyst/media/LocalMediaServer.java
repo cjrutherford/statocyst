@@ -377,7 +377,7 @@ public final class LocalMediaServer {
 
     private static boolean insideMediaRoots(File file) {
         if (appContext == null) return false;
-        String[] roots = { "downloads", "cache", "library" };
+        String[] roots = { "downloads", "cache", "library", "podcast-art" };
         String base = appContext.getFilesDir().getAbsolutePath();
         for (String name : roots) {
             File root = new File(base, name);

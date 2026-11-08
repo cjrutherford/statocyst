@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, HostListener, inject, out
 import { ArtworkComponent } from './artwork.component';
 import { IconComponent } from './icon.component';
 import { PlaybackStore } from '../core/playback.store';
+import { PodcastPlaybackStore } from '../core/podcast-playback.store';
 import { formatDuration } from '../core/format';
 
 @Component({
@@ -17,27 +18,30 @@ import { formatDuration } from '../core/format';
       <button
         type="button"
         class="player__track"
-        (click)="openNow.emit()"
+        (click)="podcastMode() ? openPodcast.emit() : openNow.emit()"
         [attr.aria-label]="
-          playback.track()
-            ? 'Open now playing: ' + playback.track()!.title
+          track()
+            ? (podcastMode() ? 'Open podcasts: ' : 'Open now playing: ') + track()!.title
             : 'No track selected'
         "
       >
-        <sc-artwork [track]="playback.track()" size="md" />
+        <sc-artwork [track]="track()" size="md" />
         <span class="player__meta">
-          <span class="player__title">{{ playback.track()?.title ?? 'Nothing playing yet' }}</span>
+          <span class="player__title">{{ track()?.title ?? 'Nothing playing yet' }}</span>
           <span class="player__artist">
-            {{ playback.track()?.artist ?? 'Pick a track from your library' }}
+            {{ track()?.artist ?? (podcastMode() ? 'Pick an episode' : 'Pick a track from your library') }}
           </span>
+          @if (podcastMode()) {
+            <span class="player__podcast-tag">Podcast · {{ rate() }}×</span>
+          }
         </span>
-        @if (playback.snapshot().state === 'buffering') {
+        @if (state() === 'buffering') {
           <span class="player__state">Buffering</span>
         }
-        @if (playback.snapshot().state === 'waiting-network') {
+        @if (state() === 'waiting-network') {
           <span class="player__state player__state--waiting">Offline — will resume</span>
         }
-        @if (playback.snapshot().state === 'error') {
+        @if (state() === 'error') {
           <span class="player__state player__state--error">Audio error</span>
         }
         <sc-icon name="up" class="player__expand" />
@@ -45,38 +49,50 @@ import { formatDuration } from '../core/format';
 
       <div class="player__transport">
         <div class="player__controls">
-          <button
-            type="button"
-            class="icon-btn player__aux"
-            [class.is-active]="playback.snapshot().shuffle"
-            [attr.aria-pressed]="playback.snapshot().shuffle"
-            aria-label="Shuffle queue"
-            title="Shuffle (S)"
-            (click)="playback.toggleShuffle()"
-          >
-            <sc-icon name="shuffle" />
-          </button>
+          @if (podcastMode()) {
+            <button
+              type="button"
+              class="icon-btn player__aux"
+              aria-label="Skip back 15 seconds"
+              title="Skip back 15 seconds"
+              (click)="skip(-15000)"
+            >
+              <span class="player__skip">15</span>
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="icon-btn player__aux"
+              [class.is-active]="playback.snapshot().shuffle"
+              [attr.aria-pressed]="playback.snapshot().shuffle"
+              aria-label="Shuffle queue"
+              title="Shuffle (S)"
+              (click)="playback.toggleShuffle()"
+            >
+              <sc-icon name="shuffle" />
+            </button>
+          }
           <button
             type="button"
             class="icon-btn"
             aria-label="Previous track"
             [disabled]="idle()"
             title="Previous (P)"
-            (click)="playback.previous()"
+            (click)="previous()"
           >
             <sc-icon name="previous" />
           </button>
           <button
             type="button"
             class="player__play"
-            [class.is-live]="playback.isPlaying()"
+            [class.is-live]="isPlaying()"
             [class.is-pulsing]="pulsing()"
-            [attr.aria-label]="playback.isPlaying() ? 'Pause' : 'Play'"
+            [attr.aria-label]="isPlaying() ? 'Pause' : 'Play'"
             title="Play or pause (Space)"
             [disabled]="idle()"
             (click)="togglePlay()"
           >
-            <sc-icon [name]="playback.isPlaying() ? 'pause' : 'play'" />
+            <sc-icon [name]="isPlaying() ? 'pause' : 'play'" />
           </button>
           <button
             type="button"
@@ -84,20 +100,41 @@ import { formatDuration } from '../core/format';
             aria-label="Next track"
             [disabled]="idle()"
             title="Next (N)"
-            (click)="playback.next()"
+            (click)="next()"
           >
             <sc-icon name="next" />
           </button>
-          <button
-            type="button"
-            class="icon-btn player__aux"
-            [class.is-active]="playback.snapshot().repeat !== 'off'"
-            [attr.aria-label]="'Repeat ' + playback.snapshot().repeat"
-            [title]="'Repeat (R): ' + playback.snapshot().repeat"
-            (click)="playback.cycleRepeat()"
-          >
-            <sc-icon [name]="playback.snapshot().repeat === 'one' ? 'repeat-one' : 'repeat'" />
-          </button>
+          @if (podcastMode()) {
+            <button
+              type="button"
+              class="icon-btn player__aux"
+              aria-label="Skip forward 30 seconds"
+              title="Skip forward 30 seconds"
+              (click)="skip(30000)"
+            >
+              <span class="player__skip">30</span>
+            </button>
+            <button
+              type="button"
+              class="player__rate"
+              [attr.aria-label]="'Playback speed ' + rate() + ' times'"
+              [title]="'Playback speed: ' + rate() + '×'"
+              (click)="cycleRate()"
+            >
+              {{ rate() }}×
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="icon-btn player__aux"
+              [class.is-active]="playback.snapshot().repeat !== 'off'"
+              [attr.aria-label]="'Repeat ' + playback.snapshot().repeat"
+              [title]="'Repeat (R): ' + playback.snapshot().repeat"
+              (click)="playback.cycleRepeat()"
+            >
+              <sc-icon [name]="playback.snapshot().repeat === 'one' ? 'repeat-one' : 'repeat'" />
+            </button>
+          }
         </div>
 
         <div class="player__seek">
@@ -110,7 +147,7 @@ import { formatDuration } from '../core/format';
             step="250"
             [value]="displayPosition()"
             [style.--progress]="progressPercent() + '%'"
-            [disabled]="!playback.track()"
+            [disabled]="!track()"
             aria-label="Seek position"
             (input)="onSeekInput($event)"
             (change)="onSeekCommit($event)"
@@ -226,6 +263,31 @@ import { formatDuration } from '../core/format';
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      .player__podcast-tag {
+        color: var(--cyan);
+        font-size: 0.66rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .player__skip {
+        font-size: 0.62rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+      .player__rate {
+        min-width: 44px;
+        padding: 3px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface-1);
+        color: var(--cyan);
+        font: inherit;
+        font-size: 0.68rem;
+        cursor: pointer;
+      }
+      .player__rate:hover {
+        border-color: var(--cyan);
       }
       .player__state {
         margin-left: auto;
@@ -469,25 +531,57 @@ import { formatDuration } from '../core/format';
 })
 export class PlayerBarComponent {
   protected readonly playback = inject(PlaybackStore);
+  protected readonly podcastPlayback = inject(PodcastPlaybackStore);
   protected readonly formatDuration = formatDuration;
 
   readonly openNow = output<void>();
+  readonly openPodcast = output<void>();
   readonly openQueue = output<void>();
+
+  constructor() {
+    void this.podcastPlayback.init();
+  }
 
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
   protected readonly pulsing = signal(false);
 
+  protected readonly podcastMode = computed(() => this.podcastPlayback.active());
+  protected readonly track = computed(() =>
+    this.podcastMode() ? this.podcastPlayback.track() : this.playback.track(),
+  );
+  protected readonly state = computed(() =>
+    this.podcastMode()
+      ? this.podcastPlayback.snapshot().state
+      : this.playback.snapshot().state,
+  );
+  protected readonly isPlaying = computed(() =>
+    this.podcastMode() ? this.podcastPlayback.isPlaying() : this.playback.isPlaying(),
+  );
+  protected readonly rate = computed(() =>
+    this.podcastMode() ? this.podcastPlayback.rate() : this.playback.snapshot().rate,
+  );
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(
-    () => !this.playback.track() && this.playback.queue().entries.length === 0,
+    () =>
+      !this.track() &&
+      (this.podcastMode()
+        ? this.podcastPlayback.queue().entries.length === 0
+        : this.playback.queue().entries.length === 0),
   );
   protected readonly displayPosition = computed(() =>
-    this.dragging() ? this.dragValue() : this.playback.positionMs(),
+    this.dragging()
+      ? this.dragValue()
+      : this.podcastMode()
+        ? this.podcastPlayback.positionMs()
+        : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
-    Math.max(1, this.playback.durationMs()),
+    Math.max(
+      1,
+      this.podcastMode() ? this.podcastPlayback.durationMs() : this.playback.durationMs(),
+    ),
   );
   protected readonly progressPercent = computed(() =>
     Math.min(100, (this.displayPosition() / this.displayDuration()) * 100),
@@ -495,7 +589,7 @@ export class PlayerBarComponent {
   protected readonly volumePercent = computed(() => this.playback.snapshot().volume * 100);
 
   protected togglePlay(): void {
-    void this.playback.toggle();
+    void (this.podcastMode() ? this.podcastPlayback.toggle() : this.playback.toggle());
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     this.pulsing.set(true);
     setTimeout(() => this.pulsing.set(false), 1000);
@@ -509,11 +603,31 @@ export class PlayerBarComponent {
   protected onSeekCommit(event: Event): void {
     const value = Number((event.target as HTMLInputElement).value);
     this.dragging.set(false);
-    void this.playback.seek(value);
+    void (this.podcastMode() ? this.podcastPlayback.seek(value) : this.playback.seek(value));
   }
 
   protected onVolume(event: Event): void {
     void this.playback.setVolume(Number((event.target as HTMLInputElement).value));
+  }
+
+  protected previous(): void {
+    void (this.podcastMode() ? this.podcastPlayback.previous() : this.playback.previous());
+  }
+
+  protected next(): void {
+    void (this.podcastMode() ? this.podcastPlayback.next() : this.playback.next());
+  }
+
+  protected skip(deltaMs: number): void {
+    if (!this.podcastMode()) return;
+    void this.podcastPlayback.seekBy(deltaMs);
+  }
+
+  protected cycleRate(): void {
+    if (!this.podcastMode()) return;
+    const rates = [1, 1.25, 1.5, 1.75, 2];
+    const index = rates.findIndex((rate) => Math.abs(rate - this.rate()) < 0.001);
+    void this.podcastPlayback.setRate(rates[(index + 1) % rates.length]);
   }
 
   @HostListener('document:keydown.escape')
