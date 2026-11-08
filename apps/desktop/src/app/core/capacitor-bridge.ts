@@ -20,6 +20,7 @@ import type {
   JellyfinSyncSummary,
   LibraryStats,
   PlaybackCommand,
+  PlaybackContext,
   PlaybackEvent,
   PlaybackSnapshot,
   QueueSnapshot,
@@ -39,6 +40,17 @@ import {
   type QueueEntryModel,
   type QueueModel,
 } from '@statocyst/playback-core';
+import { createCapacitorPodcastBridge } from './podcast-bridge';
+
+const QUEUE_ONLY_COMMANDS: ReadonlySet<PlaybackCommand['type']> = new Set([
+  'enqueue',
+  'playNext',
+  'remove',
+  'reorder',
+  'setShuffle',
+  'setRepeat',
+  'clear',
+]);
 
 /**
  * Renderer-side bridge used when Statocyst runs as a Capacitor Android app.
@@ -48,6 +60,7 @@ import {
  */
 interface NativePlayerState {
   state: PlaybackSnapshot['state'];
+  rate?: number;
   entryId: string | null;
   trackId: string | null;
   positionMs: number;
@@ -70,7 +83,23 @@ export class CapacitorBridge {
     void this.initNativePlayback();
   }
 
-  private queue: QueueModel = createQueue();
+  private contexts: Record<PlaybackContext, QueueModel> = {
+    music: createQueue(),
+    podcast: createQueue(),
+  };
+  private activeContext: PlaybackContext = 'music';
+  private contextPositions: Record<PlaybackContext, { positionMs: number; durationMs: number }> = {
+    music: { positionMs: 0, durationMs: 0 },
+    podcast: { positionMs: 0, durationMs: 0 },
+  };
+
+  private get queue(): QueueModel {
+    return this.contexts[this.activeContext];
+  }
+
+  private set queue(value: QueueModel) {
+    this.contexts[this.activeContext] = value;
+  }
   private settingsCache: Settings | null = null;
   private snapshot: PlaybackSnapshot = {
     state: 'idle',
@@ -81,6 +110,9 @@ export class CapacitorBridge {
     muted: false,
     shuffle: false,
     repeat: 'off',
+    rate: 1,
+    context: 'music',
+    active: true,
     track: null,
   };
   private tracks = new Map<string, Track>();
@@ -242,23 +274,30 @@ export class CapacitorBridge {
     this.snapshot = {
       ...this.snapshot,
       state: raw.state,
+      context: this.activeContext,
+      active: true,
       currentEntryId: raw.entryId ?? null,
       positionMs: raw.positionMs,
       durationMs: raw.durationMs || track?.durationMs || 0,
       shuffle: !!raw.shuffle,
       repeat: raw.repeat ?? 'off',
+      rate: typeof raw.rate === 'number' ? raw.rate : this.snapshot.rate,
       track,
     };
     this.emitState();
   }
 
   /** Pushes the JS-computed queue (after an edit) down to the native player. */
-  private async pushQueueToNative(opts: { play: boolean; keepCurrent: boolean }): Promise<void> {
+  private async pushQueueToNative(opts: {
+    play: boolean;
+    keepCurrent: boolean;
+    startPositionMs?: number;
+  }): Promise<void> {
     const settings = await this.getSettings().catch(() => null);
     await this.plugin().setQueue({
       entries: this.queue.entries.map((e) => ({ entryId: e.entryId, trackId: e.trackId })),
       currentEntryId: this.queue.currentEntryId,
-      startPositionMs: 0,
+      startPositionMs: opts.startPositionMs ?? 0,
       play: opts.play,
       keepCurrent: opts.keepCurrent,
       cacheBudgetBytes: settings?.cacheBudgetBytes,
@@ -329,6 +368,10 @@ export class CapacitorBridge {
           this.snapshot = { ...this.snapshot, muted: command.muted };
           await plugin.setVolume({ volume: this.snapshot.volume, muted: command.muted });
           break;
+        case 'setRate':
+          await plugin.setRate?.({ rate: command.rate });
+          this.snapshot = { ...this.snapshot, rate: command.rate };
+          break;
         default: {
           // enqueue / playNext / remove / reorder / clear: compute the edit,
           // then push the new order down while the current item keeps playing.
@@ -371,8 +414,8 @@ export class CapacitorBridge {
     this.emitEvent({ type: 'positionChanged', positionMs: this.snapshot.positionMs, durationMs: this.snapshot.durationMs });
   }
 
-  private emitQueue(): void {
-    this.emitEvent({ type: 'queueChanged', queue: this.queueOf() });
+  private emitQueue(context: PlaybackContext = this.activeContext): void {
+    this.emitEvent({ type: 'queueChanged', queue: this.queueOf(context) });
   }
 
   private async loadEntry(entryId: string, autoplay: boolean, startPositionMs = 0): Promise<void> {
@@ -453,6 +496,7 @@ export class CapacitorBridge {
       durationMs: track.durationMs,
       volume: this.snapshot.volume,
       muted: this.snapshot.muted,
+      playbackRate: this.snapshot.rate,
     };
     this.onLoadCb?.(request);
   }
@@ -468,20 +512,43 @@ export class CapacitorBridge {
     this.emitQueue();
   }
 
-  private snapshotOf(): PlaybackSnapshot {
-    return { ...this.snapshot };
+  private snapshotOf(context: PlaybackContext = this.activeContext): PlaybackSnapshot {
+    if (context === this.activeContext) {
+      return { ...this.snapshot, context, active: true };
+    }
+    const queue = this.contexts[context];
+    const entry = queue.currentEntryId
+      ? queue.entries.find((candidate) => candidate.entryId === queue.currentEntryId)
+      : null;
+    const position = this.contextPositions[context];
+    return {
+      ...this.snapshot,
+      state: queue.currentEntryId ? 'paused' : 'idle',
+      currentEntryId: queue.currentEntryId,
+      positionMs: position.positionMs,
+      durationMs: position.durationMs,
+      shuffle: queue.shuffle,
+      repeat: queue.repeat,
+      rate: context === 'podcast' ? this.snapshot.rate : 1,
+      context,
+      active: false,
+      track: entry ? this.trackView(entry.trackId) : null,
+    };
   }
 
-  private queueOf(): QueueSnapshot {
+  private queueOf(context: PlaybackContext = this.activeContext): QueueSnapshot {
+    const queue = this.contexts[context];
     return {
-      entries: this.queue.entries.map((e) => ({
+      entries: queue.entries.map((e) => ({
         entryId: e.entryId,
         trackId: e.trackId,
         track: this.trackView(e.trackId),
       })),
-      currentEntryId: this.queue.currentEntryId,
-      shuffle: this.queue.shuffle,
-      repeat: this.queue.repeat,
+      currentEntryId: queue.currentEntryId,
+      shuffle: queue.shuffle,
+      repeat: queue.repeat,
+      context,
+      active: context === this.activeContext,
     };
   }
 
@@ -557,6 +624,14 @@ export class CapacitorBridge {
         this.onCommandCb?.({ token: this.token, action: 'volume', volume: this.snapshot.volume, muted: command.muted });
         this.snapshot = { ...this.snapshot, muted: command.muted };
         break;
+      case 'setRate':
+        if (this.nativePlayback) {
+          await this.plugin().setRate?.({ rate: command.rate });
+        } else {
+          this.onCommandCb?.({ token: this.token, action: 'rate', rate: command.rate });
+        }
+        this.snapshot = { ...this.snapshot, rate: command.rate };
+        break;
     }
     return { ok: true, value: this.snapshotOf() };
   }
@@ -608,9 +683,77 @@ export class CapacitorBridge {
   }
 
   // Public bridge methods
-  async getSnapshot(): Promise<PlaybackSnapshot> { return this.snapshotOf(); }
-  async getQueue(): Promise<QueueSnapshot> { return this.queueOf(); }
-  async command(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>> { return this.applyCommand(command); }
+  async getSnapshot(context: PlaybackContext = 'music'): Promise<PlaybackSnapshot> {
+    return this.snapshotOf(context);
+  }
+  async getQueue(context: PlaybackContext = 'music'): Promise<QueueSnapshot> {
+    return this.queueOf(context);
+  }
+  async command(
+    command: PlaybackCommand,
+    context: PlaybackContext = 'music',
+  ): Promise<Result<PlaybackSnapshot>> {
+    if (context !== this.activeContext) {
+      if (QUEUE_ONLY_COMMANDS.has(command.type)) {
+        return this.applyInactiveQueueCommand(context, command);
+      }
+      if (command.type === 'pause') return { ok: true, value: this.snapshotOf(context) };
+      await this.switchContext(context);
+    }
+    return this.applyCommand(command);
+  }
+
+  private async applyInactiveQueueCommand(
+    context: PlaybackContext,
+    command: PlaybackCommand,
+  ): Promise<Result<PlaybackSnapshot>> {
+    const outcome = applyQueueCommand(this.contexts[context], command, this.context());
+    if (outcome.error) {
+      return { ok: false, error: { code: outcome.error.code as never, message: outcome.error.message } };
+    }
+    this.contexts[context] = outcome.queue;
+    void this.persistQueue();
+    if (outcome.queueChanged) this.emitQueue(context);
+    return { ok: true, value: this.snapshotOf(context) };
+  }
+
+  private async switchContext(target: PlaybackContext): Promise<void> {
+    if (target === this.activeContext) return;
+    const outgoing = this.activeContext;
+    this.contextPositions[outgoing] = {
+      positionMs: this.snapshot.positionMs,
+      durationMs: this.snapshot.durationMs,
+    };
+    this.activeContext = target;
+    const queue = this.contexts[target];
+    const entry = queue.currentEntryId
+      ? queue.entries.find((candidate) => candidate.entryId === queue.currentEntryId)
+      : null;
+    const position = this.contextPositions[target];
+    this.snapshot = {
+      ...this.snapshot,
+      context: target,
+      active: true,
+      state: queue.currentEntryId ? 'paused' : 'idle',
+      currentEntryId: queue.currentEntryId,
+      positionMs: position.positionMs,
+      durationMs: position.durationMs,
+      shuffle: queue.shuffle,
+      repeat: queue.repeat,
+      rate: target === 'podcast' ? this.snapshot.rate : 1,
+      track: entry ? this.trackView(entry.trackId) : null,
+    };
+    if (this.nativePlayback) {
+      await this.pushQueueToNative({
+        play: false,
+        keepCurrent: false,
+        startPositionMs: position.positionMs,
+      });
+    }
+    void this.persistQueue();
+    this.emitState();
+    this.emitQueue(target);
+  }
 
   // Engine bridge
   setOnLoad(cb: (request: EngineLoadRequest) => void): void { this.onLoadCb = cb; }
@@ -624,7 +767,9 @@ export class CapacitorBridge {
       const rawTracks = (result.tracks ?? []) as Array<Record<string, unknown>>;
 
       const tracks: Track[] = rawTracks.map((t) => this.toTrack(t));
-      this.tracks.clear();
+      for (const [id, track] of this.tracks) {
+        if ((track.mediaKind ?? 'music') === 'music') this.tracks.delete(id);
+      }
       for (const t of tracks) this.tracks.set(t.id, t);
       this.refreshCurrentTrack();
       // A queue restored before the library was readable may hold placeholders;
@@ -690,6 +835,8 @@ export class CapacitorBridge {
       downloadWifiOnlyRaw,
       quotaRaw,
       downloadQualityRaw,
+      podcastAllowLocalNetworkRaw,
+      podcastRefreshOnLaunchRaw,
     ] = await Promise.all([
       getPref('theme'),
       getPref('density'),
@@ -701,6 +848,8 @@ export class CapacitorBridge {
       getPref('downloadWifiOnly'),
       getPref('downloadQuotaBytes'),
       getPref('downloadQuality'),
+      getPref('podcastAllowLocalNetwork'),
+      getPref('podcastRefreshOnLaunch'),
     ]);
     const theme = themeRaw ?? 'system';
     const density = densityRaw ?? 'comfortable';
@@ -725,6 +874,8 @@ export class CapacitorBridge {
       downloadWifiOnly,
       downloadQuotaBytes: Number.isFinite(quota) && quota >= 0 ? quota : 0,
       downloadQuality,
+      podcastAllowLocalNetwork: podcastAllowLocalNetworkRaw === 'true',
+      podcastRefreshOnLaunch: podcastRefreshOnLaunchRaw !== 'false',
     };
     this.settingsCache = settings;
     return settings;
@@ -762,6 +913,10 @@ export class CapacitorBridge {
       await setPref('downloadQuotaBytes', String(next.downloadQuotaBytes));
     if (patch.downloadQuality !== undefined)
       await setPref('downloadQuality', String(next.downloadQuality));
+    if (patch.podcastAllowLocalNetwork !== undefined)
+      await setPref('podcastAllowLocalNetwork', String(next.podcastAllowLocalNetwork));
+    if (patch.podcastRefreshOnLaunch !== undefined)
+      await setPref('podcastRefreshOnLaunch', String(next.podcastRefreshOnLaunch));
     if (patch.downloadWifiOnly !== undefined || patch.downloadQuotaBytes !== undefined) {
       try {
         await (window as any).Capacitor?.Plugins?.['Statocyst']?.setDownloadPolicy?.({
@@ -933,6 +1088,17 @@ export class CapacitorBridge {
       }
     },
     openDataFolder: async () => {},
+    openExternal: async (url: string) => {
+      try {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return { ok: true as const, value: { opened: true } };
+      } catch (error) {
+        return {
+          ok: false as const,
+          error: { code: 'INTERNAL_ERROR' as const, message: String(error) },
+        };
+      }
+    },
     quit: () => {},
   };
 
@@ -1039,20 +1205,61 @@ export class CapacitorBridge {
   private async restoreQueue(): Promise<void> {
     const prefs = (window as any).Capacitor?.Plugins?.Preferences;
     try {
-      const saved = await prefs?.get?.({ key: 'queue' });
-      if (saved?.value) {
-        try {
-          this.queue = JSON.parse(saved.value);
-          if (this.queue.entries.length > 0) this.emitQueue();
-        } catch { /* ignore corrupt data */ }
+      const savedContext = await prefs?.get?.({ key: 'playback.context' });
+      if (savedContext?.value === 'podcast') this.activeContext = 'podcast';
+      for (const context of ['music', 'podcast'] as const) {
+        const saved = await prefs?.get?.({ key: `queue:${context}` });
+        if (saved?.value) {
+          try {
+            const queue = JSON.parse(saved.value) as QueueModel;
+            this.contexts[context] = queue;
+          } catch { /* ignore corrupt data */ }
+        }
+        const position = await prefs?.get?.({ key: `position:${context}` });
+        if (position?.value) {
+          try {
+            const parsed = JSON.parse(position.value) as { positionMs: number; durationMs: number };
+            this.contextPositions[context] = {
+              positionMs: Math.max(0, Number(parsed.positionMs) || 0),
+              durationMs: Math.max(0, Number(parsed.durationMs) || 0),
+            };
+          } catch { /* ignore */ }
+        }
       }
+      // Migrate the pre-context queue into the music context.
+      if (this.contexts.music.entries.length === 0) {
+        const legacy = await prefs?.get?.({ key: 'queue' });
+        if (legacy?.value) {
+          try {
+            this.contexts.music = JSON.parse(legacy.value) as QueueModel;
+          } catch { /* ignore */ }
+        }
+      }
+      this.snapshot = {
+        ...this.snapshot,
+        context: this.activeContext,
+        active: true,
+        shuffle: this.queue.shuffle,
+        repeat: this.queue.repeat,
+        positionMs: this.contextPositions[this.activeContext].positionMs,
+        durationMs: this.contextPositions[this.activeContext].durationMs,
+      };
+      if (this.queue.entries.length > 0) this.emitQueue();
     } catch { /* ignore */ }
   }
 
   private async persistQueue(): Promise<void> {
     const prefs = (window as any).Capacitor?.Plugins?.Preferences;
     try {
-      await prefs?.set?.({ key: 'queue', value: JSON.stringify(this.queue) });
+      for (const context of ['music', 'podcast'] as const) {
+        await prefs?.set?.({ key: `queue:${context}`, value: JSON.stringify(this.contexts[context]) });
+        await prefs?.set?.({
+          key: `position:${context}`,
+          value: JSON.stringify(this.contextPositions[context]),
+        });
+      }
+      await prefs?.set?.({ key: 'queue', value: JSON.stringify(this.contexts.music) });
+      await prefs?.set?.({ key: 'playback.context', value: this.activeContext });
     } catch { /* ignore */ }
   }
 
@@ -1314,6 +1521,19 @@ export class CapacitorBridge {
         waitingReason: e?.waitingReason == null ? null : String(e.waitingReason),
       })),
     };
+  }
+
+  private readonly podcastBridge = createCapacitorPodcastBridge({
+    plugin: () => this.plugin(),
+    settings: () => this.getSettings(),
+    rememberTracks: (episodes) => {
+      for (const episode of episodes) this.tracks.set(episode.id, episode);
+    },
+  });
+
+  /** Podcasts are exposed only when the native host implements the data methods. */
+  get podcast() {
+    return typeof this.plugin()?.listPodcastFeeds === 'function' ? this.podcastBridge : undefined;
   }
 
   downloads = {

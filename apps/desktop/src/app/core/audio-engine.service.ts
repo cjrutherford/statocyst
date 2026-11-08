@@ -63,6 +63,7 @@ export class AudioEngineService {
     this.audio.pause();
     this.audio.volume = Math.min(1, Math.max(0, request.volume));
     this.audio.muted = request.muted;
+    this.audio.playbackRate = Math.min(3, Math.max(0.5, request.playbackRate || 1));
     this.audio.src = request.url;
     this.audio.load();
     if (request.autoplay) this.tryPlay();
@@ -97,6 +98,9 @@ export class AudioEngineService {
       case 'volume':
         this.audio.volume = Math.min(1, Math.max(0, command.volume));
         this.audio.muted = command.muted;
+        break;
+      case 'rate':
+        this.audio.playbackRate = Math.min(3, Math.max(0.5, command.rate));
         break;
     }
   }

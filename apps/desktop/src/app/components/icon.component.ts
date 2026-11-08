@@ -30,6 +30,7 @@ export type IconName =
   | 'check'
   | 'alert'
   | 'wave'
+  | 'podcast'
   | 'download'
   | 'offline';
 
@@ -166,6 +167,12 @@ export type IconName =
         @case ('alert') {
           <path d="M12 3.5l9 16H3z" />
           <path d="M12 9v4.5M12 17h.01" />
+        }
+        @case ('podcast') {
+          <rect x="8" y="3" width="8" height="12" rx="4" />
+          <path d="M5 11a7 7 0 0 0 14 0" />
+          <path d="M12 18v3M8.5 21h7" />
+          <path d="M9.5 7h5M9.5 10h5" opacity=".55" />
         }
         @case ('wave') {
           <path d="M3 12h2l2-5 3 10 3-14 3 12 2-3h3" />

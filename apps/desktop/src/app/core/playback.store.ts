@@ -20,6 +20,9 @@ const EMPTY_SNAPSHOT: PlaybackSnapshot = {
   muted: false,
   shuffle: false,
   repeat: 'off',
+  rate: 1,
+  context: 'music',
+  active: true,
   track: null,
 };
 
@@ -28,6 +31,8 @@ const EMPTY_QUEUE: QueueSnapshot = {
   currentEntryId: null,
   shuffle: false,
   repeat: 'off',
+  context: 'music',
+  active: true,
 };
 
 const QUEUE_COMMANDS = new Set<PlaybackCommand['type']>([
@@ -209,6 +214,12 @@ export class PlaybackStore {
     await this.command({ type: 'setMuted', muted: !this.snapshot().muted });
   }
 
+  async setRate(rate: number): Promise<void> {
+    const clamped = Math.min(3, Math.max(0.5, rate));
+    if (Math.abs(this.snapshot().rate - clamped) < 0.001) return;
+    await this.command({ type: 'setRate', rate: clamped });
+  }
+
   async toggleShuffle(): Promise<void> {
     await this.command({ type: 'setShuffle', enabled: !this.snapshot().shuffle });
   }
@@ -254,6 +265,7 @@ export class PlaybackStore {
   private handleEvent(event: PlaybackEvent): void {
     switch (event.type) {
       case 'stateChanged':
+        if (event.snapshot.context !== 'music') break;
         this.stateRevision += 1;
         this.snapshot.set(event.snapshot);
         this.positionMs.set(event.snapshot.positionMs);
@@ -262,11 +274,13 @@ export class PlaybackStore {
       case 'positionChanged':
         // High-frequency path: do not replace the snapshot signal. Only the
         // components bound to the seek position need to re-render.
+        if (!this.snapshot().active) break;
         this.positionRevision += 1;
         this.positionMs.set(event.positionMs);
         this.durationMs.update((current) => event.durationMs || current);
         break;
       case 'queueChanged':
+        if (event.queue.context !== 'music') break;
         this.queueRevision += 1;
         this.queue.set(event.queue);
         break;

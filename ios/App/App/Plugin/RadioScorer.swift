@@ -136,7 +136,7 @@ final class RadioBuilder {
     }
 
     func build(seedId: String, limit: Int = RadioScorer.DEFAULT_LIMIT) -> RadioResult? {
-        let library = db.getAllMediaItems()
+        let library = db.getAllMediaItems().filter { $0.mediaKind == "music" }
         guard let seed = library.first(where: { $0.id == seedId }) else { return nil }
         let favorites = Set(db.getFavorites().map { $0.trackId })
         let knownIds = Set(library.map { $0.id })

@@ -16,8 +16,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistTrackEntity::class,
         RecentEntity::class,
+        PodcastFeedEntity::class,
+        PodcastEpisodeEntity::class,
+        PodcastQueueEntryEntity::class,
+        PodcastPlaybackStateEntity::class,
+        PodcastDirectoryCacheEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class StatocystDatabase : RoomDatabase() {
@@ -25,6 +30,7 @@ abstract class StatocystDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun cacheDao(): CacheDao
     abstract fun userDao(): UserDao
+    abstract fun podcastDao(): PodcastDao
 
     companion object {
         @Volatile
@@ -97,10 +103,102 @@ abstract class StatocystDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7 adds first-class podcasts. Existing media rows are music by
+         * default, so every existing library and queue survives unchanged.
+         */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `media_item` ADD COLUMN `mediaKind` TEXT NOT NULL DEFAULT 'music'")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `podcast_feed` (" +
+                        "`id` TEXT NOT NULL, `feedUrl` TEXT NOT NULL, `resolvedUrl` TEXT, " +
+                        "`siteUrl` TEXT, `title` TEXT NOT NULL, `author` TEXT, " +
+                        "`descriptionText` TEXT, `imageUrl` TEXT, `artworkPath` TEXT, " +
+                        "`language` TEXT, `explicit` INTEGER NOT NULL, `categoriesJson` TEXT, " +
+                        "`feedType` TEXT NOT NULL, `podcastIndexId` INTEGER, `etag` TEXT, " +
+                        "`lastModified` TEXT, `lastFetchedAt` TEXT, `lastSuccessAt` TEXT, " +
+                        "`nextFetchAt` TEXT, `fetchError` TEXT, `failureCount` INTEGER NOT NULL, " +
+                        "`refreshIntervalMinutes` INTEGER NOT NULL, `defaultSpeed` REAL NOT NULL, " +
+                        "`skipIntroSeconds` INTEGER NOT NULL, `skipOutroSeconds` INTEGER NOT NULL, " +
+                        "`autoQueue` INTEGER NOT NULL, `episodeSort` TEXT NOT NULL, " +
+                        "`subscribed` INTEGER NOT NULL, `lastViewedAt` TEXT, " +
+                        "`createdAt` TEXT NOT NULL, `updatedAt` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_podcast_feed_feedUrl` " +
+                        "ON `podcast_feed` (`feedUrl`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_feed_nextFetchAt` " +
+                        "ON `podcast_feed` (`nextFetchAt`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `podcast_episode` (" +
+                        "`id` TEXT NOT NULL, `feedId` TEXT NOT NULL, `mediaItemId` TEXT NOT NULL, " +
+                        "`guid` TEXT NOT NULL, `title` TEXT NOT NULL, `descriptionText` TEXT, " +
+                        "`linksJson` TEXT, `link` TEXT, `enclosureUrl` TEXT NOT NULL, " +
+                        "`enclosureType` TEXT, `enclosureLengthBytes` INTEGER, " +
+                        "`durationMs` INTEGER NOT NULL, `publishedAt` TEXT, `seasonNo` INTEGER, " +
+                        "`episodeNo` INTEGER, `episodeType` TEXT, `imageUrl` TEXT, " +
+                        "`artworkPath` TEXT, `explicit` INTEGER NOT NULL, `chaptersUrl` TEXT, " +
+                        "`transcriptUrl` TEXT, `transcriptType` TEXT, `playbackSpeed` REAL, " +
+                        "`resumePositionMs` INTEGER NOT NULL, `played` INTEGER NOT NULL, " +
+                        "`completed` INTEGER NOT NULL, `playCount` INTEGER NOT NULL, " +
+                        "`lastPlayedAt` TEXT, `firstSeenAt` TEXT NOT NULL, " +
+                        "`createdAt` TEXT NOT NULL, `updatedAt` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_episode_feedId` " +
+                        "ON `podcast_episode` (`feedId`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_podcast_episode_mediaItemId` " +
+                        "ON `podcast_episode` (`mediaItemId`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_episode_feedId_publishedAt` " +
+                        "ON `podcast_episode` (`feedId`, `publishedAt`)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_episode_lastPlayedAt` " +
+                        "ON `podcast_episode` (`lastPlayedAt`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `podcast_queue_entry` (" +
+                        "`entryId` TEXT NOT NULL, `episodeId` TEXT NOT NULL, " +
+                        "`position` INTEGER NOT NULL, `addedAt` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`entryId`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_queue_entry_position` " +
+                        "ON `podcast_queue_entry` (`position`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `podcast_playback_state` (" +
+                        "`id` INTEGER NOT NULL, `currentEntryId` TEXT, " +
+                        "`positionMs` INTEGER NOT NULL, `speed` REAL NOT NULL, " +
+                        "`updatedAt` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `podcast_directory_cache` (" +
+                        "`id` TEXT NOT NULL, `provider` TEXT NOT NULL, `queryKey` TEXT NOT NULL, " +
+                        "`payloadJson` TEXT NOT NULL, `fetchedAt` TEXT NOT NULL, " +
+                        "`expiresAt` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_podcast_directory_cache_provider_queryKey` " +
+                        "ON `podcast_directory_cache` (`provider`, `queryKey`)",
+                )
+            }
+        }
+
         fun getInstance(context: Context): StatocystDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, StatocystDatabase::class.java, "statocyst.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { INSTANCE = it }
             }

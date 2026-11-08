@@ -30,7 +30,8 @@ const IMAGE_MIME: Record<string, string> = {
   gif: 'image/gif',
 };
 
-export interface RemoteTrack {
+export interface JellyfinRemoteTrack {
+  kind?: 'jellyfin';
   serverUrl: string;
   itemId: string;
   token: string;
@@ -39,6 +40,13 @@ export interface RemoteTrack {
   /** Bitrate ceiling in kbit/s, required for transcode. */
   maxBitrateKbps?: number;
 }
+
+export interface PodcastRemoteTrack {
+  kind: 'podcast';
+  url: string;
+}
+
+export type RemoteTrack = JellyfinRemoteTrack | PodcastRemoteTrack;
 
 export interface ProtocolTrack {
   id: string;
@@ -51,6 +59,33 @@ export interface ProtocolOptions {
   lookupTrack: (trackId: string) => Promise<ProtocolTrack | null>;
   onMediaUnavailable?: (trackId: string) => void;
   remoteIdentity?: ClientIdentity;
+  /** Local cached artwork path for a podcast feed. */
+  lookupFeedArtwork?: (feedId: string) => Promise<string | null>;
+  /** Local cached directory image by filename. */
+  lookupPodcastArtwork?: (filename: string) => Promise<string | null>;
+}
+
+function artTargetFromUrl(
+  url: string,
+): { kind: 'track' | 'feed' | 'image'; id: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== `${ART_SCHEME}:`) return null;
+  const kind = parsed.hostname;
+  const id = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+  if (
+    (kind !== 'track' && kind !== 'feed' && kind !== 'image') ||
+    !id ||
+    id.includes('/') ||
+    id.includes('\\')
+  ) {
+    return null;
+  }
+  return { kind, id };
 }
 
 function trackIdFromUrl(url: string, scheme: string): string | null {
@@ -96,22 +131,36 @@ async function proxyRemoteStream(
   identity: ClientIdentity | undefined,
   meter: RollingThroughput,
 ): Promise<Response> {
-  const headers: Record<string, string> = { Authorization: remoteAuthorization(identity, remote.token) };
+  const headers: Record<string, string> = {};
+  let url: string;
+  if (remote.kind === 'podcast') {
+    url = remote.url;
+  } else {
+    url = buildAudioStreamUrl({
+      baseUrl: remote.serverUrl,
+      itemId: remote.itemId,
+      mode: remote.mode ?? 'direct',
+      maxBitrateKbps: remote.maxBitrateKbps,
+    });
+    headers['Authorization'] = remoteAuthorization(identity, remote.token);
+  }
   const range = request.headers.get('range');
   if (range) headers['Range'] = range;
   let upstream: Response;
   try {
-    upstream = await fetch(
-      buildAudioStreamUrl({
-        baseUrl: remote.serverUrl,
-        itemId: remote.itemId,
-        mode: remote.mode ?? 'direct',
-        maxBitrateKbps: remote.maxBitrateKbps,
-      }),
-      { method: request.method, headers, redirect: 'manual' },
-    );
+    upstream = await fetch(url, { method: request.method, headers, redirect: 'manual' });
   } catch {
     return new Response('Media unavailable', { status: 502 });
+  }
+  if (upstream.status >= 300 && upstream.status < 400 && upstream.headers.get('location')) {
+    // Podcast enclosures commonly redirect. Follow one hop with the same range
+    // and no credentials, so the custom scheme still serves a playable stream.
+    const next = new URL(upstream.headers.get('location')!, url).toString();
+    try {
+      upstream = await fetch(next, { method: request.method, headers, redirect: 'manual' });
+    } catch {
+      return new Response('Media unavailable', { status: 502 });
+    }
   }
   if (upstream.status === 401 || upstream.status === 403 || upstream.status === 404) {
     return new Response('Media unavailable', { status: 404 });
@@ -156,7 +205,10 @@ function tapThroughput(
   });
 }
 
-async function proxyRemoteArt(remote: RemoteTrack, identity?: ClientIdentity): Promise<Response> {
+async function proxyRemoteArt(
+  remote: JellyfinRemoteTrack,
+  identity?: ClientIdentity,
+): Promise<Response> {
   let upstream: Response;
   try {
     upstream = await fetch(
@@ -183,6 +235,26 @@ async function proxyRemoteArt(remote: RemoteTrack, identity?: ClientIdentity): P
 export interface ProtocolMeter {
   /** Measured proxy throughput in bits per second, or null before two samples. */
   throughputBitsPerSecond(): number | null;
+}
+
+async function serveArtwork(path: string): Promise<Response> {
+  try {
+    const data = await readFile(path);
+    const type =
+      IMAGE_MIME[extname(path).replace(/^\./, '').toLowerCase()] ?? 'application/octet-stream';
+    return new Response(data, {
+      status: 200,
+      headers: {
+        'Content-Type': type,
+        'Content-Length': String(data.byteLength),
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  } catch {
+    return new Response('Artwork unavailable', { status: 404 });
+  }
 }
 
 export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
@@ -258,36 +330,33 @@ export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
   });
 
   protocol.handle(ART_SCHEME, async (request) => {
-    const trackId = trackIdFromUrl(request.url, ART_SCHEME);
-    if (!trackId) return new Response('Malformed artwork URL', { status: 400 });
+    const target = artTargetFromUrl(request.url);
+    if (!target) return new Response('Malformed artwork URL', { status: 400 });
 
-    const track = await options.lookupTrack(trackId).catch(() => null);
+    if (target.kind === 'feed') {
+      const path = await options.lookupFeedArtwork?.(target.id).catch(() => null);
+      return path ? serveArtwork(path) : new Response('Artwork not found', { status: 404 });
+    }
+
+    if (target.kind === 'image') {
+      if (!/^podcast-[a-f0-9]{32}\.(jpe?g|png|webp|gif)$/i.test(target.id)) {
+        return new Response('Malformed artwork URL', { status: 400 });
+      }
+      const path = await options.lookupPodcastArtwork?.(target.id).catch(() => null);
+      return path ? serveArtwork(path) : new Response('Artwork not found', { status: 404 });
+    }
+
+    const track = await options.lookupTrack(target.id).catch(() => null);
     if (!track) return new Response('Artwork not found', { status: 404 });
 
-    if (track.remote) {
-      return proxyRemoteArt(track.remote, options.remoteIdentity);
+    if (!track.artworkPath) {
+      if (track.remote && track.remote.kind !== 'podcast') {
+        return proxyRemoteArt(track.remote, options.remoteIdentity);
+      }
+      return new Response('Artwork not found', { status: 404 });
     }
 
-    if (!track.artworkPath) return new Response('Artwork not found', { status: 404 });
-
-    try {
-      const data = await readFile(track.artworkPath);
-      const type =
-        IMAGE_MIME[extname(track.artworkPath).replace(/^\./, '').toLowerCase()] ??
-        'application/octet-stream';
-      return new Response(data, {
-        status: 200,
-        headers: {
-          'Content-Type': type,
-          'Content-Length': String(data.byteLength),
-          'Cache-Control': 'public, max-age=3600',
-          'Access-Control-Allow-Origin': '*',
-          'X-Content-Type-Options': 'nosniff',
-        },
-      });
-    } catch {
-      return new Response('Artwork unavailable', { status: 404 });
-    }
+    return serveArtwork(track.artworkPath);
   });
 
   return {

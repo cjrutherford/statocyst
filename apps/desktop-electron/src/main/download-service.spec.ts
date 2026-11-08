@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StatocystDatabase } from '@statocyst/persistence';
 import type { ClientIdentity } from '@statocyst/jellyfin-client';
+import { createServer } from 'node:http';
 import { DownloadService } from './download-service';
 
 const identity: ClientIdentity = {
@@ -56,6 +57,64 @@ async function makeService() {
   });
   return { service, db, track };
 }
+
+describe('DownloadService podcast enclosures', () => {
+  it('downloads a direct enclosure URL into a verified pin', async () => {
+    const payload = Buffer.from('podcast-enclosure-bytes');
+    const server = createServer((_request, response) => {
+      response.writeHead(200, {
+        'Content-Type': 'audio/mpeg',
+        'Content-Length': String(payload.byteLength),
+      });
+      response.end(payload);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server did not bind');
+    const url = `http://127.0.0.1:${address.port}/episode.mp3`;
+    const dir = await tempDir();
+    const db = await StatocystDatabase.open({ path: join(dir, 'statocyst.db') });
+    const feed = await db.upsertPodcastFeed({
+      feedUrl: 'https://feeds.example.com/show.xml',
+      title: 'Show',
+      feedType: 'rss',
+    });
+    const [saved] = await db.savePodcastEpisodes(feed.id, [
+      {
+        feedId: feed.id,
+        guid: 'episode-1',
+        title: 'Episode',
+        enclosureUrl: url,
+        enclosureType: 'audio/mpeg',
+        enclosureLengthBytes: payload.byteLength,
+      },
+    ]);
+    const service = new DownloadService({
+      database: db,
+      downloadsDirectory: join(dir, 'downloads'),
+      logger,
+      identity,
+      resolveRemoteTrack: async () => null,
+      resolveDirectAudio: async (track) =>
+        track.sourceKind === 'podcast' ? { url: track.path } : null,
+    });
+    try {
+      const result = await service.download(saved.mediaItemId);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.verified).toBe(true);
+      const record = await db.getDownload(saved.mediaItemId);
+      expect(record?.verified).toBe(true);
+      expect(await readFile(record!.localPath)).toEqual(payload);
+      expect((await service.getVerifiedDownload(saved.mediaItemId))?.localPath).toBe(
+        record!.localPath,
+      );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await db.close();
+    }
+  });
+});
 
 describe('DownloadService', () => {
   it('downloads a local track and records a verified manifest', async () => {

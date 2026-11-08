@@ -1,6 +1,6 @@
 {
   "name": "statocyst",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "license": "MIT",
   "description": "Statocyst — local-first, Jellyfin-oriented music player",
@@ -38,6 +38,7 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/preferences": "^8.0.1",
     "@libsql/client": "0.18.0",
+    "fast-xml-parser": "5.12.0",
     "music-metadata": "12.3.2"
   },
   "devDependencies": {

@@ -59,6 +59,15 @@ class SourceResolver(private val context: Context) {
             return@withContext StreamFailover.remoteUrl(context, dao, entity, transcode)
                 ?.let { PreparedTrack(entity, it, remote = true, transcoded = transcode) }
         }
+        if (entity.sourceKind == "podcast") {
+            val uri = entity.path
+            if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                return@withContext PreparedTrack(entity, uri, remote = true)
+            }
+            File(uri).takeIf { it.isFile }
+                ?.let { file -> localUri(file)?.let { PreparedTrack(entity, it, remote = false) } }
+                ?.let { return@withContext it }
+        }
         File(entity.path).takeIf { it.isFile }
             ?.let { file -> localUri(file)?.let { PreparedTrack(entity, it, remote = false) } }
     }

@@ -12,6 +12,8 @@ import {
   StatocystDatabase,
   runMigrations,
   type Migration,
+  type PodcastEpisodeUpsert,
+  type PodcastFeedUpsert,
   type TrackUpsert,
 } from '../index';
 
@@ -88,6 +90,7 @@ describe('libSQL desktop foundation', () => {
       positionMs: 42_500,
       shuffle: true,
       repeat: 'all',
+      activeContext: 'music',
     });
     await db.setAppState('settings', JSON.stringify({ theme: 'dark' }));
     await db.close();
@@ -104,6 +107,7 @@ describe('libSQL desktop foundation', () => {
       positionMs: 42_500,
       shuffle: true,
       repeat: 'all',
+      activeContext: 'music',
     });
     expect(await reopened.getAppState('settings')).toBe(JSON.stringify({ theme: 'dark' }));
     await reopened.close();
@@ -333,6 +337,271 @@ describe('jellyfin server profiles and accounts', () => {
     });
     await db.removeJellyfinServer(server.id);
     expect(await db.getJellyfinAccount(server.id)).toBeNull();
+    await db.close();
+  });
+});
+
+describe('podcast catalog', () => {
+  const feedInput = (overrides: Partial<PodcastFeedUpsert> = {}): PodcastFeedUpsert => ({
+    feedUrl: 'https://feeds.example.com/deep-water.xml',
+    resolvedUrl: 'https://feeds.example.com/deep-water.xml',
+    siteUrl: 'https://example.com/deep-water',
+    title: 'Deep Water Radio',
+    author: 'Statocyst Studio',
+    descriptionText: 'Stories from the bathypelagic zone.',
+    imageUrl: 'https://feeds.example.com/deep-water.jpg',
+    artworkPath: null,
+    language: 'en',
+    explicit: false,
+    categories: ['Science', 'Nature'],
+    feedType: 'rss',
+    podcastIndexId: 1234,
+    ...overrides,
+  });
+
+  const episodeInput = (
+    overrides: Partial<PodcastEpisodeUpsert> = {},
+  ): PodcastEpisodeUpsert => ({
+    feedId: 'feed-1',
+    guid: 'episode-guid-1',
+    title: 'The pressure at 4,000 metres',
+    descriptionText: 'A dive below the sunlight zone.',
+    links: [{ title: 'Transcript', url: 'https://example.com/transcript' }],
+    link: 'https://example.com/episodes/1',
+    enclosureUrl: 'https://cdn.example.com/episodes/1.mp3',
+    enclosureType: 'audio/mpeg',
+    enclosureLengthBytes: 42_000_000,
+    durationMs: 2_400_000,
+    publishedAt: '2026-10-01T08:00:00.000Z',
+    seasonNo: 2,
+    episodeNo: 7,
+    episodeType: 'full',
+    explicit: false,
+    ...overrides,
+  });
+
+  async function seedFeed(db: StatocystDatabase) {
+    return db.upsertPodcastFeed(feedInput());
+  }
+
+  it('keeps podcast rows out of music lists and stats', async () => {
+    const { db } = await open();
+    const source = await db.upsertSource({ kind: 'local', label: 'Music', rootPath: '/music' });
+    await db.upsertTrack(track({ sourceId: source.id }));
+    const feed = await seedFeed(db);
+    await db.savePodcastEpisodes(feed.id, [episodeInput({ feedId: feed.id })]);
+
+    const music = await db.listTracks();
+    expect(music).toHaveLength(1);
+    expect(music[0].mediaKind).toBe('music');
+    expect(await db.listAllTracks()).toHaveLength(2);
+    expect((await db.stats()).tracks).toBe(1);
+
+    const episodes = await db.listPodcastEpisodes(feed.id);
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0].mediaKind).toBe('podcast');
+    expect(episodes[0].feedTitle).toBe('Deep Water Radio');
+    expect(episodes[0].title).toBe('The pressure at 4,000 metres');
+    expect(episodes[0].sourceKind).toBe('podcast');
+    expect(episodes[0].mediaKind).toBe('podcast');
+    expect(episodes[0].links).toEqual([
+      { title: 'Transcript', url: 'https://example.com/transcript' },
+    ]);
+    expect(episodes[0].resumePositionMs).toBe(0);
+    await db.close();
+  });
+
+  it('upserts episodes idempotently and preserves progress', async () => {
+    const { db } = await open();
+    const feed = await seedFeed(db);
+    const first = await db.savePodcastEpisodes(feed.id, [episodeInput({ feedId: feed.id })]);
+    expect(first).toHaveLength(1);
+    const episodeId = first[0].episodeId;
+    const mediaItemId = first[0].mediaItemId;
+
+    await db.setPodcastEpisodeResume(episodeId, 90_000);
+    await db.setPodcastEpisodePlayed(episodeId, true);
+    const refreshed = await db.savePodcastEpisodes(feed.id, [
+      episodeInput({
+        feedId: feed.id,
+        title: 'The pressure at 4,000 metres (updated)',
+        durationMs: 2_500_000,
+      }),
+    ]);
+    expect(refreshed[0].episodeId).toBe(episodeId);
+    expect(refreshed[0].mediaItemId).toBe(mediaItemId);
+    expect(await db.podcastEpisodeCount()).toBe(1);
+
+    const stored = await db.getPodcastEpisode(episodeId);
+    expect(stored?.title).toBe('The pressure at 4,000 metres (updated)');
+    expect(stored?.durationMs).toBe(2_500_000);
+    expect(stored?.played).toBe(true);
+    expect(stored?.completed).toBe(true);
+    expect(stored?.resumePositionMs).toBe(0);
+    await db.close();
+  });
+
+  it('removes a feed, its episodes and their media rows without orphans', async () => {
+    const { db } = await open();
+    const feed = await seedFeed(db);
+    const [saved] = await db.savePodcastEpisodes(feed.id, [
+      episodeInput({ feedId: feed.id }),
+      episodeInput({ feedId: feed.id, guid: 'episode-guid-2', title: 'Second' }),
+    ]);
+    await db.savePodcastQueue([{ entryId: 'pq-1', episodeId: saved.episodeId }]);
+    await db.saveDownload({
+      trackId: saved.mediaItemId,
+      localPath: '/tmp/episode.mp3',
+      sizeBytes: 10,
+      sha256: 'hash',
+      container: 'mp3',
+      verified: true,
+    });
+
+    expect(await db.removePodcastFeed(feed.id)).toBe(true);
+    expect(await db.podcastEpisodeCount()).toBe(0);
+    expect(await db.getTrack(saved.mediaItemId).catch(() => null)).toBeNull();
+    expect(await db.loadPodcastQueue()).toHaveLength(0);
+    expect(await db.getDownload(saved.mediaItemId)).toBeNull();
+    await db.close();
+  });
+
+  it('persists the podcast queue and playback state independently of music', async () => {
+    const { db, path } = await open();
+    const feed = await seedFeed(db);
+    const [saved] = await db.savePodcastEpisodes(feed.id, [episodeInput({ feedId: feed.id })]);
+    await db.savePodcastQueue([{ entryId: 'pq-1', episodeId: saved.episodeId }]);
+    await db.savePodcastPlaybackState({
+      currentEntryId: 'pq-1',
+      positionMs: 123_000,
+      speed: 1.5,
+    });
+    await db.close();
+
+    const reopened = await StatocystDatabase.open({ path });
+    expect(await reopened.loadPodcastQueue()).toEqual([
+      { entryId: 'pq-1', episodeId: saved.episodeId },
+    ]);
+    expect(await reopened.loadPodcastPlaybackState()).toEqual({
+      currentEntryId: 'pq-1',
+      positionMs: 123_000,
+      speed: 1.5,
+    });
+    await reopened.close();
+  });
+
+  it('creates one deterministic podcast source and updates feed settings', async () => {
+    const { db } = await open();
+    const first = await db.ensurePodcastSource();
+    const second = await db.ensurePodcastSource();
+    expect(first.id).toBe('podcast');
+    expect(second.id).toBe('podcast');
+    expect(second.kind).toBe('podcast');
+
+    const feed = await seedFeed(db);
+    const updated = await db.updatePodcastFeed(feed.id, {
+      title: 'Deep Water Radio (renamed)',
+      refreshIntervalMinutes: 30,
+      defaultSpeed: 1.25,
+      skipIntroSeconds: 15,
+      skipOutroSeconds: 30,
+      autoQueue: false,
+      episodeSort: 'oldest',
+      subscribed: false,
+    });
+    expect(updated.title).toBe('Deep Water Radio (renamed)');
+    expect(updated.refreshIntervalMinutes).toBe(30);
+    expect(updated.defaultSpeed).toBe(1.25);
+    expect(updated.skipIntroSeconds).toBe(15);
+    expect(updated.skipOutroSeconds).toBe(30);
+    expect(updated.autoQueue).toBe(false);
+    expect(updated.episodeSort).toBe('oldest');
+    expect(updated.subscribed).toBe(false);
+    await db.close();
+  });
+
+  it('migrates a real v5 database and preserves music data through the source rebuild', async () => {
+    const directory = await tempDir();
+    const path = join(directory, 'v5.db');
+    const client = createClient({ url: `file:${path}` });
+    await runMigrations(client, MIGRATIONS.slice(0, 5));
+    const now = '2026-10-01T00:00:00.000Z';
+    await client.execute({
+      sql: 'INSERT INTO media_source (id, kind, label, root_path, created_at) VALUES (?, ?, ?, ?, ?)',
+      args: ['source-local', 'local', 'Music', '/music', now],
+    });
+    await client.execute({
+      sql: 'INSERT INTO media_source (id, kind, label, root_path, created_at) VALUES (?, ?, ?, ?, ?)',
+      args: ['source-demo', 'demo', 'Demos', '/demo', now],
+    });
+    await client.execute({
+      sql: 'INSERT INTO media_source (id, kind, label, root_path, created_at) VALUES (?, ?, ?, ?, ?)',
+      args: ['source-jellyfin', 'jellyfin', 'Jellyfin', 'server-1', now],
+    });
+    await client.execute({
+      sql: `INSERT INTO media_item (
+        id, source_id, path, path_key, file_name, ext, size_bytes, mtime_ms,
+        title, artist, album, duration_ms, added_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        'track-1',
+        'source-local',
+        '/music/sonar-bloom.mp3',
+        '/music/sonar-bloom.mp3',
+        'sonar-bloom.mp3',
+        'mp3',
+        1024,
+        1_700_000_000_000,
+        'Pre-migration track',
+        'Statocyst Ensemble',
+        'Bathypelagic Sessions',
+        184_000,
+        now,
+        now,
+      ],
+    });
+    await client.execute({
+      sql: 'INSERT INTO queue_entry (entry_id, media_item_id, position, added_at) VALUES (?, ?, ?, ?)',
+      args: ['entry-1', 'track-1', 0, now],
+    });
+    await client.execute({
+      sql: `UPDATE playback_state SET
+        current_entry_id = ?, position_ms = ?, shuffle = 1, repeat = 'all', updated_at = ?
+        WHERE id = 1`,
+      args: ['entry-1', 42_000, now],
+    });
+    await client.execute({
+      sql: `INSERT INTO download (track_id, local_path, size_bytes, sha256, container, verified, created_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)`,
+      args: ['track-1', '/music/sonar-bloom.mp3', 1024, 'abc', 'mp3', now],
+    });
+    await client.execute({
+      sql: `INSERT INTO jellyfin_server (id, url, name, jellyfin_id, version, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: ['server-1', 'https://jelly.example.com', 'Jellyfin', 'jf-1', '12.1.0', now],
+    });
+    client.close();
+
+    const db = await StatocystDatabase.open({ path });
+    expect(await db.schemaVersion()).toBe(MIGRATIONS.length);
+    expect(await db.integrityCheck()).toBe('ok');
+    expect(await db.foreignKeyCheck()).toBe(0);
+    expect((await db.listTracks())[0].title).toBe('Pre-migration track');
+    expect((await db.listTracks())[0].mediaKind).toBe('music');
+    expect(await db.loadQueue()).toEqual([{ entryId: 'entry-1', trackId: 'track-1' }]);
+    expect(await db.loadPlaybackState()).toEqual({
+      currentEntryId: 'entry-1',
+      positionMs: 42_000,
+      shuffle: true,
+      repeat: 'all',
+      activeContext: 'music',
+    });
+    expect((await db.getDownload('track-1'))?.verified).toBe(true);
+    expect((await db.listJellyfinServers()).length).toBe(1);
+    expect((await db.getSource('source-local'))?.kind).toBe('local');
+    expect((await db.getSource('source-demo'))?.kind).toBe('demo');
+    expect((await db.getSource('source-jellyfin'))?.kind).toBe('jellyfin');
+    expect((await db.ensurePodcastSource()).id).toBe('podcast');
     await db.close();
   });
 });

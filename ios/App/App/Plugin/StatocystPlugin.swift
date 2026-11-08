@@ -147,7 +147,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     @objc func listTracks(_ call: CAPPluginCall) {
         ioQueue.async { [weak self] in
             guard let self = self else { return }
-            let all = self.db.getAllMediaItems()
+            let all = self.db.getAllMediaItems().filter { $0.mediaKind == "music" }
             let hidden = Duplicates.hiddenToKeeper(all)
             var aliases: [String: [String]] = [:]
             for (hiddenId, keeperId) in hidden {
@@ -185,7 +185,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     @objc func libraryStats(_ call: CAPPluginCall) {
         ioQueue.async { [weak self] in
             guard let self = self else { return }
-            let tracks = Duplicates.collapse(self.db.getAllMediaItems())
+            let tracks = Duplicates.collapse(self.db.getAllMediaItems().filter { $0.mediaKind == "music" })
             let duration = tracks.reduce(Int64(0)) { $0 + $1.durationMs }
             let albums = Set(tracks.map { $0.album }).count
             let artists = Set(tracks.map { $0.artist }).count
@@ -1111,6 +1111,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "bitrate": t.bitrate as Any,
             "jellyfinImageTag": t.jellyfinImageTag as Any,
             "albumId": t.albumId as Any,
+            "mediaKind": t.mediaKind,
             "artworkUrl": artworkFor(t) as Any,
             "artistArtworkUrl": NSNull(),
             "missing": t.missing

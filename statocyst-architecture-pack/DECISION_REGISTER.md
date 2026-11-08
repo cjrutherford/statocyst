@@ -34,5 +34,6 @@ User-selected decisions; source of truth for planning. No implementation status 
 | Q28 | Performance | D | Measured tiered budgets and regression tests |
 | Q29 | CI | D | Pinned hybrid CI with container fixtures and device testing |
 | Q30 | Scope | D | Full architectural vision, bounded slices and deferred register |
+| Q31 | Podcasts | D | Discovery-first local RSS/Atom aggregation; keyless Apple Podcasts + Fyyd search (optional app-configured Podcast Index); no user feed URLs, OPML source import or user API keys; separate podcast queue with per-episode resume; stream-first with manual pins; desktop/Android/iOS/Auto/CarPlay in one MVP-5 release; no publishing or cross-device sync |
 
 **Q30 clarification:** deliver multiple MVPs in strict user-requested order: standalone player → stock Jellyfin connected → Capacitor mobile → Android Auto → polish. This supersedes the previous daily-driver ordering.

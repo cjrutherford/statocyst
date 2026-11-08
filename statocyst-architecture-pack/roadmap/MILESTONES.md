@@ -32,3 +32,22 @@ metered policy, resilient playback, iOS offline parity, sparse cache, collection
 durable transfers, mobile UX, and CarPlay audio. Evidence lives in `evidence/S030-report.md`–
 `S039-report.md`. iOS and CarPlay are no longer deferred (ADR-034); entitlement and head-unit
 validation remain external gates.
+
+## MVP-5 — Podcasts, all platforms (S042–S053)
+**Status: IN_PROGRESS / BLOCKED (2026-11-08): desktop + Android core implemented; iOS/CarPlay gates open.** Decision: ADR-036. Plan: `roadmap/PODCASTS.md`.
+
+Statocyst becomes a local-first podcast client without weakening the music player. Users
+discover shows through keyless Apple Podcasts and Fyyd directories and subscribe in one tap;
+the host resolves the publisher RSS/Atom feed, fetches, parses, stores and refreshes it
+locally. Users do not paste feed URLs, import OPML as a source, or enter directory API keys. Episodes are a first-class `media_kind`, stream
+through the existing media protocol and can be pinned for offline use. Music and podcast
+queues are persisted separately with exactly one authoritative active queue at a time;
+episodes get per-episode resume, played/completed state, speed and skip intervals.
+
+All platforms ship together: Electron desktop, Android (Media3), iOS (AVPlayer), Android
+Auto and CarPlay. No platform may be claimed unless its slice gate is verified. Cross-device
+podcast sync, automatic per-show retention, background feed refresh while suspended,
+chapters/transcripts and publishing an aggregate feed are explicitly deferred.
+
+Release requires the ten-point gate in `roadmap/PODCASTS.md` §18 and evidence in
+`evidence/S042-report.md`–`S053-report.md`.

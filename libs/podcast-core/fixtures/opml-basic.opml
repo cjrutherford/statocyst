@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head>
+    <title>My Podcasts</title>
+  </head>
+  <body>
+    <outline text="Science">
+      <outline type="rss" text="Deep Water Radio" title="Deep Water Radio"
+               xmlUrl="https://feeds.example.com/deep-water.xml"
+               htmlUrl="https://example.com/deep-water" />
+      <outline type="rss" text="Duplicate" xmlUrl="https://feeds.example.com/deep-water.xml" />
+    </outline>
+    <outline type="rss" text="Atom Deep" xmlUrl="https://feeds.example.com/atom.xml" />
+    <outline type="rss" text="Local" xmlUrl="http://127.0.0.1:8080/feed.xml" />
+    <outline type="link" text="Not a feed" htmlUrl="https://example.com" />
+  </body>
+</opml>

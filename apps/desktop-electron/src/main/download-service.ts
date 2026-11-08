@@ -7,8 +7,13 @@ import { pipeline } from 'node:stream/promises';
 import { buildAudioStreamUrl, type ClientIdentity } from '@statocyst/jellyfin-client';
 import type { DownloadProgress, DownloadStats, DownloadSummary, DownloadView, Result } from '@statocyst/contracts';
 import { fail, ok } from '@statocyst/contracts';
-import type { StatocystDatabase, StoredDownload } from '@statocyst/persistence';
+import type { StatocystDatabase, StoredDownload, StoredTrack } from '@statocyst/persistence';
 import type { Logger } from './logger';
+
+export interface RemoteDownloadSource {
+  url: string;
+  headers?: Record<string, string>;
+}
 
 export interface DownloadServiceOptions {
   database: StatocystDatabase;
@@ -16,6 +21,8 @@ export interface DownloadServiceOptions {
   logger: Logger;
   identity: ClientIdentity;
   resolveRemoteTrack: (sourceId: string) => Promise<{ serverUrl: string; token: string } | null>;
+  /** Direct enclosure URLs for non-Jellyfin sources (podcasts). */
+  resolveDirectAudio?: (track: StoredTrack) => Promise<RemoteDownloadSource | null>;
 }
 
 function remoteAuthorization(identity: ClientIdentity, token: string): string {
@@ -64,28 +71,22 @@ export class DownloadService {
     const tmpPath = `${finalPath}.part`;
 
     try {
-      if (track.sourceKind === 'jellyfin') {
-        const remote = await this.options.resolveRemoteTrack(track.sourceId);
-        if (!remote) return fail('UNAUTHORIZED', 'The server is not signed in');
-        const url = buildAudioStreamUrl({
-          baseUrl: remote.serverUrl,
-          itemId: track.path,
-          mode: 'direct',
-        });
+      const remote = await this.resolveRemoteAudio(track);
+      if (remote) {
         let response: Response;
         try {
-          response = await fetch(url, {
-            headers: { Authorization: remoteAuthorization(this.options.identity, remote.token) },
+          response = await fetch(remote.url, {
+            headers: remote.headers,
             redirect: 'manual',
           });
         } catch {
-          return fail('MEDIA_UNAVAILABLE', 'The server did not respond');
+          return fail('MEDIA_UNAVAILABLE', 'The source did not respond');
         }
         if (!response.ok || !response.body) {
           if (response.status === 401 || response.status === 403) {
             return fail('UNAUTHORIZED', 'The stored session was rejected');
           }
-          return fail('MEDIA_UNAVAILABLE', `The server returned HTTP ${response.status}`);
+          return fail('MEDIA_UNAVAILABLE', `The source returned HTTP ${response.status}`);
         }
         const totalBytes = response.headers.get('content-length');
         const total = totalBytes ? Number(totalBytes) : null;
@@ -116,6 +117,24 @@ export class DownloadService {
       onProgress?.({ trackId, receivedBytes: 0, totalBytes: null, done: true, error: message });
       return fail('INTERNAL_ERROR', message);
     }
+  }
+
+  private async resolveRemoteAudio(track: StoredTrack): Promise<RemoteDownloadSource | null> {
+    const direct = this.options.resolveDirectAudio
+      ? await this.options.resolveDirectAudio(track).catch(() => null)
+      : null;
+    if (direct) return direct;
+    if (track.sourceKind !== 'jellyfin') return null;
+    const remote = await this.options.resolveRemoteTrack(track.sourceId);
+    if (!remote) return null;
+    return {
+      url: buildAudioStreamUrl({
+        baseUrl: remote.serverUrl,
+        itemId: track.path,
+        mode: 'direct',
+      }),
+      headers: { Authorization: remoteAuthorization(this.options.identity, remote.token) },
+    };
   }
 
   async remove(trackId: string): Promise<Result<{ removed: boolean }>> {

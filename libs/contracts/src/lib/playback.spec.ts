@@ -68,6 +68,9 @@ describe('playback contract schema', () => {
           muted: false,
           shuffle: false,
           repeat: 'off',
+          rate: 1,
+          context: 'music',
+          active: true,
           track: null,
         },
       }),
@@ -82,6 +85,20 @@ describe('playback contract schema', () => {
       }
     ).snapshot;
     expect(validateSnapshot(snapshot), JSON.stringify(validateSnapshot.errors)).toBe(true);
+  });
+
+  it('accepts a podcast media kind on a track and rejects unknown values', () => {
+    const snapshot = structuredClone(
+      (
+        eventFixture.events.find((event) => event.type === 'stateChanged') as {
+          snapshot: { track: Record<string, unknown> };
+        }
+      ).snapshot,
+    );
+    snapshot.track['mediaKind'] = 'podcast';
+    expect(validateSnapshot(snapshot), JSON.stringify(validateSnapshot.errors)).toBe(true);
+    snapshot.track['mediaKind'] = 'audiobook';
+    expect(validateSnapshot(snapshot)).toBe(false);
   });
 
   it('keeps language-neutral enums in lockstep with TypeScript constants', () => {

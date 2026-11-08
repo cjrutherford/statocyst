@@ -52,6 +52,13 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONArray
+import org.json.JSONObject
+import net.christopherrutherford.statocyst.podcast.PodcastCredentialsStore
+import net.christopherrutherford.statocyst.podcast.PodcastEpisodeRecord
+import net.christopherrutherford.statocyst.podcast.PodcastFeedRecord
+import net.christopherrutherford.statocyst.podcast.PodcastRepository
+import net.christopherrutherford.statocyst.podcast.PodcastTransport
+import java.security.MessageDigest
 
 @CapacitorPlugin(name = "Statocyst")
 class StatocystPlugin : Plugin() {
@@ -60,6 +67,9 @@ class StatocystPlugin : Plugin() {
     private val downloads by lazy { DownloadManager(context) }
     private val cache by lazy { MediaCache(context) }
     private val importer by lazy { LibraryImporter(context) }
+    private val podcastRepo by lazy { PodcastRepository(db) }
+    private val podcastTransport by lazy { PodcastTransport("Statocyst") }
+    private val podcastCredentials by lazy { PodcastCredentialsStore(context) }
 
     @Volatile
     private var importCancelled = false
@@ -69,7 +79,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun listTracks(call: PluginCall) {
         io(call) {
-            val all = dao.getAll()
+            val all = dao.getAll().filter { it.mediaKind == "music" }
             val hidden = Duplicates.hiddenToKeeper(all)
             val aliases = hidden.entries.groupBy({ it.value }, { it.key })
             val tracks = all.filterNot { it.id in hidden }.map { track ->
@@ -97,7 +107,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun libraryStats(call: PluginCall) {
         io(call) {
-            val tracks = Duplicates.collapse(dao.getAll())
+            val tracks = Duplicates.collapse(dao.getAll().filter { it.mediaKind == "music" })
             val duration = tracks.sumOf { it.durationMs }
             call.resolve(
                 JSObject()
@@ -110,7 +120,265 @@ class StatocystPlugin : Plugin() {
         }
     }
 
+    // ---------------------------------------------------------------- podcasts
+
+    @PluginMethod
+    fun fetchPodcastText(call: PluginCall) {
+        val url = call.getString("url")
+        if (url.isNullOrEmpty()) {
+            call.reject("url required")
+            return
+        }
+        val allowLocal = call.getBoolean("allowLocalNetwork") ?: false
+        val etag = call.getString("etag")
+        val lastModified = call.getString("lastModified")
+        val allowHtml = call.getBoolean("allowHtml") ?: true
+        io(call) {
+            val result = podcastTransport.fetchText(url, allowLocal, etag, lastModified, allowHtml)
+            call.resolve(
+                JSObject()
+                    .put("status", result.status)
+                    .put("finalUrl", result.finalUrl)
+                    .put("body", result.body)
+                    .put("contentType", result.contentType)
+                    .put("etag", result.etag)
+                    .put("lastModified", result.lastModified),
+            )
+        }
+    }
+
+    @PluginMethod
+    fun cachePodcastArtwork(call: PluginCall) {
+        val url = call.getString("url")
+        if (url.isNullOrEmpty()) {
+            call.reject("url required")
+            return
+        }
+        val allowLocal = call.getBoolean("allowLocalNetwork") ?: false
+        io(call) {
+            val bytes = podcastTransport.fetchImage(url, allowLocal)
+            if (bytes == null) {
+                call.resolve(JSObject().put("path", null as Any?))
+                return@io
+            }
+            val directory = File(context.filesDir, "podcast-art").apply { mkdirs() }
+            val hash = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            val extension = url.substringBefore('?').substringAfterLast('.', "jpg").lowercase()
+                .takeIf { it in setOf("jpg", "jpeg", "png", "webp", "gif") } ?: "jpg"
+            val file = File(directory, "podcast-$hash.$extension")
+            file.writeBytes(bytes)
+            call.resolve(
+                JSObject()
+                    .put("path", file.absolutePath)
+                    .put("url", LocalMediaServer.localUri(context, file)),
+            )
+        }
+    }
+
+    @PluginMethod
+    fun listPodcastFeeds(call: PluginCall) {
+        io(call) {
+            val feeds = podcastRepo.listFeeds().map { feedJson(it) }
+            call.resolve(JSObject().put("feeds", JSArray(feeds)))
+        }
+    }
+
+    @PluginMethod
+    fun listPodcastEpisodes(call: PluginCall) {
+        val feedId = call.getString("feedId")
+        if (feedId.isNullOrEmpty()) {
+            call.reject("feedId required")
+            return
+        }
+        io(call) {
+            val episodes = podcastRepo.listEpisodes(feedId).map { episodeJson(it) }
+            call.resolve(JSObject().put("episodes", JSArray(episodes)))
+        }
+    }
+
+    @PluginMethod
+    fun getPodcastEpisode(call: PluginCall) {
+        val id = call.getString("episodeId")
+        if (id.isNullOrEmpty()) {
+            call.reject("episodeId required")
+            return
+        }
+        io(call) {
+            val episode = podcastRepo.getEpisode(id)
+            call.resolve(JSObject().put("episode", episode?.let { episodeJson(it) }))
+        }
+    }
+
+    @PluginMethod
+    fun savePodcastFeed(call: PluginCall) {
+        val feedPayload = call.getString("feedJson")
+        val episodesJson = call.getString("episodesJson") ?: "[]"
+        if (feedPayload.isNullOrEmpty()) {
+            call.reject("feedJson required")
+            return
+        }
+        io(call) {
+            val feed = podcastRepo.saveFeed(JSONObject(feedPayload), JSONArray(episodesJson))
+            call.resolve(JSObject().put("feed", feedJson(feed)))
+        }
+    }
+
+    @PluginMethod
+    fun updatePodcastFeed(call: PluginCall) {
+        val feedId = call.getString("feedId")
+        val patchJson = call.getString("patchJson")
+        if (feedId.isNullOrEmpty() || patchJson.isNullOrEmpty()) {
+            call.reject("feedId and patchJson required")
+            return
+        }
+        io(call) {
+            val feed = podcastRepo.updateFeed(feedId, JSONObject(patchJson))
+            call.resolve(JSObject().put("feed", feed?.let { feedJson(it) }))
+        }
+    }
+
+    @PluginMethod
+    fun removePodcastFeed(call: PluginCall) {
+        val feedId = call.getString("feedId")
+        if (feedId.isNullOrEmpty()) {
+            call.reject("feedId required")
+            return
+        }
+        io(call) {
+            call.resolve(JSObject().put("removed", podcastRepo.removeFeed(feedId)))
+        }
+    }
+
+    @PluginMethod
+    fun setPodcastEpisodePlayed(call: PluginCall) {
+        val id = call.getString("episodeId")
+        val played = call.getBoolean("played") ?: false
+        if (id.isNullOrEmpty()) {
+            call.reject("episodeId required")
+            return
+        }
+        io(call) {
+            val episode = podcastRepo.setPlayed(id, played)
+            call.resolve(JSObject().put("episode", episode?.let { episodeJson(it) }))
+        }
+    }
+
+    @PluginMethod
+    fun podcastDirectoryStatus(call: PluginCall) {
+        call.resolve(JSObject().put("configured", podcastCredentials.configured()).put("provider", "podcast-index"))
+    }
+
+    @PluginMethod
+    fun setPodcastIndexCredentials(call: PluginCall) {
+        val apiKey = call.getString("apiKey")
+        val secret = call.getString("secret")
+        if (apiKey.isNullOrEmpty() || secret.isNullOrEmpty()) {
+            call.reject("apiKey and secret required")
+            return
+        }
+        podcastCredentials.save(apiKey, secret)
+        call.resolve(JSObject().put("configured", true).put("provider", "podcast-index"))
+    }
+
+    @PluginMethod
+    fun clearPodcastIndexCredentials(call: PluginCall) {
+        podcastCredentials.clear()
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun podcastIndexSearch(call: PluginCall) {
+        val query = call.getString("query")
+        if (query.isNullOrEmpty()) {
+            call.reject("query required")
+            return
+        }
+        val credentials = podcastCredentials.load()
+            ?: run { call.reject("Podcast Index is not configured"); return }
+        io(call) {
+            val feeds = podcastTransport.searchIndex(credentials.first, credentials.second, query)
+            val results = JSArray()
+            for (index in 0 until feeds.length()) {
+                val item = feeds.optJSONObject(index) ?: continue
+                val categories = JSArray()
+                item.optJSONObject("categories")?.let { cat ->
+                    cat.keys().forEach { key -> categories.put(cat.optString(key)) }
+                }
+                results.put(
+                    JSObject()
+                        .put("feedUrl", item.optString("url"))
+                        .put("title", item.optString("title"))
+                        .put("author", item.optString("author").takeIf { it.isNotEmpty() })
+                        .put("descriptionText", item.optString("description").takeIf { it.isNotEmpty() })
+                        .put("artworkUrl", item.optString("artwork").takeIf { it.isNotEmpty() })
+                        .put("episodeCount", if (item.has("episodeCount")) item.optInt("episodeCount") else null)
+                        .put("explicit", item.optBoolean("explicit"))
+                        .put("podcastIndexId", if (item.has("id")) item.optLong("id") else null)
+                        .put("categories", categories),
+                )
+            }
+            call.resolve(JSObject().put("results", results))
+        }
+    }
+
+    private fun feedJson(record: PodcastFeedRecord): JSObject {
+        val feed = record.feed
+        return JSObject()
+            .put("id", feed.id)
+            .put("feedUrl", feed.feedUrl)
+            .put("siteUrl", feed.siteUrl)
+            .put("title", feed.title)
+            .put("author", feed.author)
+            .put("descriptionText", feed.descriptionText)
+            .put("imageUrl", feed.imageUrl)
+            .put("artworkUrl", feed.artworkPath?.let { LocalMediaServer.localUri(context, File(it)) })
+            .put("language", feed.language)
+            .put("explicit", feed.explicit)
+            .put("categories", JSONArray(feed.categoriesJson ?: "[]"))
+            .put("subscribed", feed.subscribed)
+            .put("refreshIntervalMinutes", feed.refreshIntervalMinutes)
+            .put("defaultSpeed", feed.defaultSpeed)
+            .put("skipIntroSeconds", feed.skipIntroSeconds)
+            .put("skipOutroSeconds", feed.skipOutroSeconds)
+            .put("autoQueue", feed.autoQueue)
+            .put("episodeSort", feed.episodeSort)
+            .put("lastFetchedAt", feed.lastFetchedAt)
+            .put("lastSuccessAt", feed.lastSuccessAt)
+            .put("etag", feed.etag)
+            .put("lastModified", feed.lastModified)
+            .put("fetchError", feed.fetchError)
+            .put("unplayedCount", record.unplayed)
+            .put("newEpisodeCount", record.newEpisodes)
+    }
+
+    private fun episodeJson(record: PodcastEpisodeRecord): JSObject {
+        val episode = record.episode
+        return trackJson(record.media)
+            .put("episodeId", episode.id)
+            .put("feedId", episode.feedId)
+            .put("feedTitle", record.feedTitle)
+            .put("guid", episode.guid)
+            .put("descriptionText", episode.descriptionText)
+            .put("links", JSONArray(episode.linksJson ?: "[]"))
+            .put("link", episode.link)
+            .put("publishedAt", episode.publishedAt)
+            .put("seasonNo", episode.seasonNo)
+            .put("episodeNo", episode.episodeNo)
+            .put("episodeType", episode.episodeType)
+            .put("explicit", episode.explicit)
+            .put("enclosureUrl", episode.enclosureUrl)
+            .put("enclosureType", episode.enclosureType)
+            .put("playbackSpeed", episode.playbackSpeed)
+            .put("resumePositionMs", episode.resumePositionMs)
+            .put("played", episode.played)
+            .put("completed", episode.completed)
+            .put("playCount", episode.playCount)
+            .put("lastPlayedAt", episode.lastPlayedAt)
+    }
+
     // ---------------------------------------------------------------- playback
+
 
     /**
      * Resolves what the player should load: a pinned download, the rolling cache,
@@ -133,13 +401,14 @@ class StatocystPlugin : Plugin() {
             val url = when {
                 track == null -> null
                 track.sourceKind.startsWith("jellyfin") -> StreamFailover.remoteUrl(context, dao, track)
+                track.sourceKind == "podcast" && (track.path.startsWith("http://") || track.path.startsWith("https://")) -> track.path
                 else -> File(track.path).takeIf { it.isFile }?.let { LocalMediaServer.localUri(context, it) }
             }
             if (url == null) {
                 call.resolve(JSObject().put("url", null as Any?).put("local", false))
                 return@io
             }
-            val isRemote = track != null && track.sourceKind.startsWith("jellyfin")
+            val isRemote = track != null && (track.sourceKind.startsWith("jellyfin") || track.sourceKind == "podcast")
             call.resolve(JSObject().put("url", url).put("local", !isRemote))
             if (isRemote && budget > 0) {
                 Thread { cache.prefetch(trackId, budget) }.start()
@@ -313,6 +582,7 @@ class StatocystPlugin : Plugin() {
         .put("durationMs", durationOf(c))
         .put("shuffle", c.shuffleModeEnabled)
         .put("repeat", repeatName(c.repeatMode))
+        .put("rate", c.playbackParameters.speed)
         .put("error", c.playerError?.errorCodeName)
 
     private fun queueJson(c: MediaController): JSObject {
@@ -460,6 +730,12 @@ class StatocystPlugin : Plugin() {
     fun setRepeat(call: PluginCall) {
         val mode = repeatMode(call.getString("mode"))
         withController(call) { it.repeatMode = mode; call.resolve() }
+    }
+
+    @PluginMethod
+    fun setRate(call: PluginCall) {
+        val rate = (call.getFloat("rate") ?: 1f).coerceIn(0.5f, 3f)
+        withController(call) { it.setPlaybackSpeed(rate); call.resolve() }
     }
 
     @PluginMethod
@@ -1198,6 +1474,7 @@ class StatocystPlugin : Plugin() {
         .put("bitrate", t.bitrate)
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)
+        .put("mediaKind", t.mediaKind)
         .put("artworkUrl", artworkFor(t))
         .put("artistArtworkUrl", artistArtworkFor(t))
         .put("missing", t.missing)
@@ -1207,6 +1484,9 @@ class StatocystPlugin : Plugin() {
      * falls back to its own image (the server adds the session header) when nothing is found online.
      */
     private fun artworkFor(t: MediaItemEntity): String? {
+        if (t.sourceKind == "podcast") {
+            return t.artworkPath?.let { LocalMediaServer.localUri(context, File(it)) }
+        }
         val artist = t.albumArtist ?: t.artist
         if (!t.sourceKind.startsWith("jellyfin")) return LocalMediaServer.extArtUri(context, artist, t.album)
         val itemId = t.albumId?.takeIf { it.isNotEmpty() } ?: t.id.removePrefix("jf-")

@@ -21,7 +21,7 @@ class RadioBuilder(private val context: Context) {
     private val db by lazy { StatocystDatabase.getInstance(context) }
 
     suspend fun build(seedId: String, limit: Int = RadioScorer.DEFAULT_LIMIT): RadioResult? = withContext(Dispatchers.IO) {
-        val library = db.mediaItemDao().getAll()
+        val library = db.mediaItemDao().getAll().filter { it.mediaKind == "music" }
         val seed = library.firstOrNull { it.id == seedId } ?: return@withContext null
         val favorites = db.userDao().favorites().map { it.trackId }.toSet()
         val remote = if (seed.sourceKind.startsWith("jellyfin")) instantMix(seed, library.map { it.id }.toSet(), limit) else emptyList()

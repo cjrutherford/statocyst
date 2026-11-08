@@ -33,4 +33,7 @@ MediaLibraryService browses locally indexed catalog and queue without WebView st
 ### Polish / Daily Driver
 Explicit downloads, rolling cache, endpoint resilience, accessibility, diagnostics, advanced playback/quality settings, packaged platform releases. Subsequent staged capability delivery follows accepted roadmap.
 
+### MVP-5 — Podcasts (all platforms)
+Discovery-first local RSS/Atom aggregation through keyless Apple Podcasts and Fyyd search (optional app-configured Podcast Index); users subscribe in one tap without pasting feed URLs, importing OPML sources, or entering API keys. Episodes are a first-class media kind with their own persisted queue, per-episode resume, played state, speed and skip intervals; they stream through the existing media protocol and can be pinned for offline use. Music and podcast queues are persisted separately, but exactly one is authoritative and active at a time, preserving the one-authoritative-queue invariant. Desktop, Android, iOS, Android Auto and CarPlay ship together. The app does not publish an aggregate feed, re-host audio, scrape directories, auto-download episodes, or sync podcast state across devices in this MVP. See ADR-036 and `roadmap/PODCASTS.md`.
+
 **Explicit early non-goals**: SSO, custom syncing service, extensions marketplace, acoustic ML analysis, multi-server duplicate merges, iOS, CarPlay, complete federated playlists, crossfade and production-quality algorithmic recommendations for MVP-1 through MVP-4. They remain in the long-term specification.

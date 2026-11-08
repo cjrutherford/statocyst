@@ -1,12 +1,14 @@
 import type {
   CommandError,
   PlaybackCommand,
+  PlaybackContext,
   PlaybackEvent,
   PlaybackSnapshot,
   QueueSnapshot,
   Result,
   Track,
 } from './playback';
+import type { PodcastBridge } from './podcast';
 
 export const BRIDGE_VERSION = 1 as const;
 
@@ -36,6 +38,10 @@ export interface Settings {
   downloadQuotaBytes: number;
   /** Default quality for new pins. */
   downloadQuality: DownloadProfile;
+  /** Allow RFC1918/ULA/loopback podcast feeds (self-hosted LAN). */
+  podcastAllowLocalNetwork: boolean;
+  /** Refresh due podcast feeds after the app becomes interactive. */
+  podcastRefreshOnLaunch: boolean;
 }
 
 export interface AppInfo {
@@ -113,6 +119,7 @@ export interface EngineLoadRequest {
   durationMs: number;
   volume: number;
   muted: boolean;
+  playbackRate: number;
 }
 
 export type EngineState = 'playing' | 'paused' | 'buffering';
@@ -121,7 +128,8 @@ export type EngineCommand =
   | { token: number; action: 'play' }
   | { token: number; action: 'pause' }
   | { token: number; action: 'seek'; positionMs: number }
-  | { token: number; action: 'volume'; volume: number; muted: boolean };
+  | { token: number; action: 'volume'; volume: number; muted: boolean }
+  | { token: number; action: 'rate'; rate: number };
 
 export type EngineEvent =
   | { type: 'ready'; token: number; durationMs: number }
@@ -156,9 +164,12 @@ export interface LibraryBridge {
 }
 
 export interface PlaybackBridge {
-  getSnapshot(): Promise<PlaybackSnapshot>;
-  getQueue(): Promise<QueueSnapshot>;
-  command(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>>;
+  getSnapshot(context?: PlaybackContext): Promise<PlaybackSnapshot>;
+  getQueue(context?: PlaybackContext): Promise<QueueSnapshot>;
+  command(
+    command: PlaybackCommand,
+    context?: PlaybackContext,
+  ): Promise<Result<PlaybackSnapshot>>;
   onEvent(listener: (event: PlaybackEvent) => void): () => void;
 }
 
@@ -180,6 +191,8 @@ export interface AppBridge {
   /** Writes a redacted diagnostics bundle through a native save dialog. */
   exportSupportBundle(): Promise<Result<SupportBundleResult>>;
   openDataFolder(): Promise<void>;
+  /** Open an allow-listed HTTP(S) link in the user's external browser. */
+  openExternal(url: string): Promise<Result<{ opened: boolean }>>;
   quit(): void;
 }
 
@@ -364,6 +377,8 @@ export interface StatocystBridge {
   engine: EngineBridge;
   settings: SettingsBridge;
   jellyfin: JellyfinBridge;
+  /** Podcast library and discovery. Absent on hosts without podcast support. */
+  podcast?: PodcastBridge;
   downloads: DownloadsBridge;
   cache: CacheBridge;
   /** Song radio (Android): the seed first, then similar songs. Absent on desktop. */

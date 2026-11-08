@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS: Settings = {
   downloadWifiOnly: true,
   downloadQuotaBytes: 0,
   downloadQuality: 'original',
+  podcastAllowLocalNetwork: false,
+  podcastRefreshOnLaunch: true,
 };
 
 const THEMES: readonly ThemePreference[] = ['system', 'dark', 'light'];
@@ -101,6 +103,14 @@ export class SettingsService {
       downloadQuality: DOWNLOAD_PROFILES.includes(input.downloadQuality as DownloadProfile)
         ? (input.downloadQuality as DownloadProfile)
         : DEFAULT_SETTINGS.downloadQuality,
+      podcastAllowLocalNetwork:
+        typeof input.podcastAllowLocalNetwork === 'boolean'
+          ? input.podcastAllowLocalNetwork
+          : DEFAULT_SETTINGS.podcastAllowLocalNetwork,
+      podcastRefreshOnLaunch:
+        typeof input.podcastRefreshOnLaunch === 'boolean'
+          ? input.podcastRefreshOnLaunch
+          : DEFAULT_SETTINGS.podcastRefreshOnLaunch,
     };
   }
 }

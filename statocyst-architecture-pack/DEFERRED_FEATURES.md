@@ -1,6 +1,6 @@
 # Deferred feature register
 
-Do not build the following in MVP-1..MVP-4 unless a specifically accepted dependency spike is required.
+Do not build the following in MVP-1..MVP-5 unless a specifically accepted dependency spike is required.
 
 | Capability | Target after MVP | Dependency/gate |
 |---|---|---|
@@ -17,5 +17,13 @@ Do not build the following in MVP-1..MVP-4 unless a specifically accepted depend
 | iOS/CarPlay | **Promoted** | Superseded for this programme by ADR-034: iOS parity is S034, CarPlay audio is S039. Entitlement approval and a real head unit remain external gates. |
 | Bit-perfect output | Research | Platform-specific output path evidence |
 | Rich multi-device preference vector sync | Expansion | Validated provider and privacy/tombstone semantics |
+| Podcast background feed refresh while suspended | After MVP-5 | Android WorkManager / iOS BGTaskScheduler plus a shared refresh policy; foreground/manual refresh ships in MVP-5 |
+| Podcast auto-download / per-show retention | After MVP-5 | Storage budget and cleanup policy validated with manual pins first; MVP-5 ships manual episode pins |
+| Podcast chapters, transcripts, live items, alternate enclosures, value/streaming metadata | After MVP-5 | Schema fields reserved; Podcast 2.0 fixture coverage and UX design required |
+| Podcast sleep timer and automatic intro/outro skipping | After MVP-5 | Native engine timing and accessibility validation; MVP-5 ships manual skip buttons |
+| Cross-device podcast subscription/resume sync | Expansion | Requires the accepted offline-first sync provider and privacy/tombstone semantics |
+| Global unified music + podcast search and recommendations | Expansion | Media-kind-aware ranking and UI design; MVP-5 keeps podcast search local to Podcasts |
+| Podcast aggregate feed publishing / audio re-hosting | Not planned | Conflicts with local-first aggregation and content licensing; no accepted use case |
+| User-supplied podcast feed URLs / OPML source onboarding | Not planned | Product decision: discovery-only via existing directories (ADR-036) |
 
 Every deferred item must have rationale, owner (if known), blocking prerequisite and acceptance criteria before promotion into an active slice.
