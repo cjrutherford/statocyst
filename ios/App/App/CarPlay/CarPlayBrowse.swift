@@ -16,6 +16,7 @@ struct CarPlayTrack: Equatable {
     let albumArtist: String?
     let durationMs: Int64
     let isDownloaded: Bool
+    var isPodcast: Bool = false
 }
 
 struct CarPlayPlaylist: Equatable {
@@ -202,6 +203,14 @@ enum CarPlayBrowse {
     }
 
     private static func trackRow(_ track: CarPlayTrack) -> CarPlayRow {
+        if track.isPodcast {
+            return CarPlayRow(
+                id: "episode:\(track.id)",
+                title: display(track.title, fallback: "Untitled episode"),
+                subtitle: episodeSubtitle(track),
+                destination: .track(track.id)
+            )
+        }
         var detail = display(track.artist, fallback: "Unknown Artist")
         let album = display(track.album, fallback: "")
         if !album.isEmpty {
@@ -244,5 +253,61 @@ enum CarPlayBrowse {
 
     private static func albumCount(_ count: Int) -> String {
         return count == 1 ? "1 album" : "\(count) albums"
+    }
+
+}
+
+struct CarPlayPodcastFeed: Equatable {
+    let id: String
+    let title: String
+    let author: String?
+    let episodeTrackIds: [String]
+}
+
+extension CarPlayBrowse {
+    static func podcasts(_ feeds: [CarPlayPodcastFeed]) -> [CarPlaySection] {
+        guard !feeds.isEmpty else {
+            return [emptySection(
+                title: "No podcasts yet",
+                detail: "Subscribe to a show on your phone to listen here."
+            )]
+        }
+        let rows = feeds.map { feed in
+            CarPlayRow(
+                id: "podcast:\(feed.id)",
+                title: display(feed.title, fallback: "Podcast"),
+                subtitle: "\(display(feed.author ?? "", fallback: "Podcast")) · \(trackCount(feed.episodeTrackIds.count))",
+                destination: .group(title: feed.title, trackIds: feed.episodeTrackIds)
+            )
+        }
+        return [CarPlaySection(header: "Subscriptions", rows: rows)]
+    }
+
+    static func podcastEpisodes(_ feedTitle: String, tracks: [CarPlayTrack]) -> [CarPlaySection] {
+        guard !tracks.isEmpty else {
+            return [emptySection(
+                title: "No episodes yet",
+                detail: "Refresh the show on your phone to pull its episodes."
+            )]
+        }
+        let rows = tracks.map { track in
+            CarPlayRow(
+                id: "episode:\(track.id)",
+                title: display(track.title, fallback: "Untitled episode"),
+                subtitle: episodeSubtitle(track),
+                destination: .track(track.id)
+            )
+        }
+        return [CarPlaySection(header: feedTitle, rows: rows)]
+    }
+
+    private static func episodeSubtitle(_ track: CarPlayTrack) -> String {
+        var parts: [String] = []
+        if track.isDownloaded { parts.append("Downloaded") }
+        if track.durationMs > 0 {
+            let minutes = track.durationMs / 60_000
+            parts.append(minutes >= 60 ? "\(minutes / 60) hr \(minutes % 60) min" : "\(minutes) min")
+        }
+        return parts.isEmpty ? "Podcast episode" : parts.joined(separator: " · ")
     }
 }

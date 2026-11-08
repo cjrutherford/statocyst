@@ -17,15 +17,18 @@ object BrowseIds {
     const val TRACKS = "tracks"
     const val QUEUE = "queue"
     const val RADIO = "radio"
+    const val PODCASTS = "podcasts"
     /** A non-playable status row ("You're offline"); opens to an empty list. */
     const val NOTICE = "info::notice"
 
     /** Folders that sit directly under the root, in display order. */
-    val ROOT_FOLDERS = listOf(RECENTS, FAVORITES, PLAYLISTS, RADIO, ALBUMS, ARTISTS, TRACKS, QUEUE)
+    val ROOT_FOLDERS =
+        listOf(RECENTS, FAVORITES, PLAYLISTS, PODCASTS, RADIO, ALBUMS, ARTISTS, TRACKS, QUEUE)
 
     fun album(albumArtist: String, album: String): String = "album::$albumArtist::$album"
     fun artist(artist: String): String = "artist::$artist"
     fun playlist(id: String): String = "playlist::$id"
+    fun podcastFeed(id: String): String = "podcast-feed::$id"
     /**
      * Track IDs listed inside a folder carry that folder (`track::<id>@@<folder>`):
      * Android Auto sends back only the media ID, so this is how "play this track"
@@ -68,11 +71,21 @@ data class BrowseNode(
     val imageTag: String? = null,
     /** Fallback artwork identity for items with no Jellyfin image. */
     val art: ArtKey? = null,
+    /** Local app-private artwork for a podcast feed or episode. */
+    val podcastArtworkPath: String? = null,
     /** Layout hint for this node's children (browsable nodes only). */
     val childStyle: ChildStyle? = null,
 )
 
 data class PlaylistInfo(val id: String, val name: String, val trackIds: List<String>)
+
+data class PodcastFeedInfo(
+    val id: String,
+    val title: String,
+    val author: String?,
+    val artworkPath: String?,
+    val episodeIds: List<String>,
+)
 
 data class QueueEntry(val entryId: String, val trackId: String)
 
@@ -93,6 +106,8 @@ data class BrowseData(
     val playlists: List<PlaylistInfo> = emptyList(),
     val recents: List<String> = emptyList(),
     val queue: List<QueueEntry> = emptyList(),
+    val podcastFeeds: List<PodcastFeedInfo> = emptyList(),
+    val podcastMedia: Map<String, MediaItemEntity> = emptyMap(),
 )
 
 /**
@@ -121,6 +136,9 @@ object BrowseTree {
         parentId == BrowseIds.RECENTS -> trackNodes(data.recents, data, parentId)
         parentId == BrowseIds.FAVORITES -> trackNodes(data.favorites, data, parentId)
         parentId == BrowseIds.PLAYLISTS -> data.playlists.map(::playlistNode)
+        parentId == BrowseIds.PODCASTS -> data.podcastFeeds.map(::podcastFeedNode)
+        parentId.startsWith("podcast-feed::") ->
+            podcastEpisodeNodes(parentId, data)
         parentId == BrowseIds.RADIO -> radioNodes(data)
         parentId.startsWith("playlist::") ->
             data.playlists.firstOrNull { BrowseIds.playlist(it.id) == parentId }
@@ -166,6 +184,8 @@ object BrowseTree {
         mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
         mediaId.startsWith("playlist::") ->
             data.playlists.firstOrNull { BrowseIds.playlist(it.id) == mediaId }?.let(::playlistNode)
+        mediaId.startsWith("podcast-feed::") ->
+            data.podcastFeeds.firstOrNull { BrowseIds.podcastFeed(it.id) == mediaId }?.let(::podcastFeedNode)
         mediaId.startsWith("album::") -> {
             val key = mediaId.removePrefix("album::")
             data.tracks.firstOrNull {
@@ -189,7 +209,8 @@ object BrowseTree {
         }
         mediaId.startsWith("track::") -> {
             val id = BrowseIds.trackEntityId(mediaId)
-            data.tracks.firstOrNull { it.id == id }?.let { trackNode(it, BrowseIds.contextOf(mediaId)) }
+            (data.tracks.firstOrNull { it.id == id } ?: data.podcastMedia[id])
+                ?.let { trackNode(it, BrowseIds.contextOf(mediaId)) }
         }
         mediaId.startsWith("queue::") -> {
             val entry = data.queue.firstOrNull { BrowseIds.queueItem(it.entryId) == mediaId }
@@ -212,6 +233,8 @@ object BrowseTree {
         contextId.startsWith("album::") -> albumTrackIds(contextId, data.tracks)
         contextId.startsWith("artist::") -> artistTrackIds(contextId, data.tracks)
         contextId == BrowseIds.TRACKS -> allTrackIds(data.tracks)
+        contextId.startsWith("podcast-feed::") ->
+            data.podcastFeeds.firstOrNull { BrowseIds.podcastFeed(it.id) == contextId }?.episodeIds
         contextId.startsWith("search::") -> search(contextId.removePrefix("search::"), data)
         else -> null
     }
@@ -282,6 +305,8 @@ object BrowseTree {
                 ?.let { BrowseNode(id, "Favorites", count(it, "track"), childStyle = ChildStyle.LIST) }
             BrowseIds.PLAYLISTS -> data.playlists.size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Playlists", count(it, "playlist"), childStyle = ChildStyle.LIST) }
+            BrowseIds.PODCASTS -> data.podcastFeeds.size.takeIf { it > 0 || always }
+                ?.let { BrowseNode(id, "Podcasts", count(it, "show"), childStyle = ChildStyle.LIST) }
             BrowseIds.RADIO -> radioSeeds(data).size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Song radio", "Start from a song you like", childStyle = ChildStyle.LIST) }
             BrowseIds.ALBUMS -> BrowseNode(id, "Albums", childStyle = ChildStyle.GRID)
@@ -301,7 +326,7 @@ object BrowseTree {
     )
 
     private fun queueNodes(data: BrowseData): List<BrowseNode> {
-        val byId = data.tracks.associateBy { it.id }
+        val byId = (data.tracks + data.podcastMedia.values).associateBy { it.id }
         return data.queue.mapNotNull { entry ->
             byId[entry.trackId]?.let { trackNode(it, BrowseIds.QUEUE).copy(id = BrowseIds.queueItem(entry.entryId)) }
         }
@@ -362,6 +387,19 @@ object BrowseTree {
             .map { it.id }
     }
 
+    private fun podcastFeedNode(feed: PodcastFeedInfo): BrowseNode = BrowseNode(
+        id = BrowseIds.podcastFeed(feed.id),
+        title = feed.title,
+        subtitle = feed.author ?: "${feed.episodeIds.size} episodes",
+        childStyle = ChildStyle.LIST,
+        podcastArtworkPath = feed.artworkPath,
+    )
+
+    private fun podcastEpisodeNodes(parentId: String, data: BrowseData): List<BrowseNode> {
+        val feed = data.podcastFeeds.firstOrNull { BrowseIds.podcastFeed(it.id) == parentId } ?: return emptyList()
+        return feed.episodeIds.mapNotNull { id -> data.podcastMedia[id]?.let { trackNode(it, parentId) } }
+    }
+
     private fun trackNode(t: MediaItemEntity, contextId: String?): BrowseNode = BrowseNode(
         id = BrowseIds.track(t.id, contextId),
         title = t.title,
@@ -372,5 +410,6 @@ object BrowseTree {
         albumId = t.albumId,
         imageTag = t.jellyfinImageTag,
         art = ArtKey(t.albumArtist ?: t.artist, t.album),
+        podcastArtworkPath = if (t.mediaKind == "podcast") t.artworkPath else null,
     )
 }

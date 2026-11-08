@@ -13,6 +13,7 @@ import UIKit
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate, CPInterfaceControllerDelegate {
     private let db = StatocystDatabase.shared
     private let downloads = DownloadManager()
+    private let podcasts = PodcastRepository.shared
 
     private var interfaceController: CPInterfaceController?
     private var pathMonitor: NWPathMonitor?
@@ -119,6 +120,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 sections: CarPlayBrowse.playlists(snapshot.playlists),
                 queue: [],
                 imageName: "list.bullet"
+            ),
+            BrowseCategory(
+                title: "Podcasts",
+                sections: CarPlayBrowse.podcasts(snapshot.podcasts),
+                queue: [],
+                imageName: "mic"
             ),
             BrowseCategory(
                 title: "Downloaded",
@@ -290,6 +297,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let library: [CarPlayTrack]
         let downloaded: [CarPlayTrack]
         let playlists: [CarPlayPlaylist]
+        let podcasts: [CarPlayPodcastFeed]
         let tracksById: [String: CarPlayTrack]
     }
 
@@ -336,10 +344,32 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             tracksById[id] = track(from: entity, downloaded: downloadedIds.contains(id))
         }
 
+        var podcastFeeds: [CarPlayPodcastFeed] = []
+        for record in podcasts.listFeeds() {
+            let episodes = podcasts.listEpisodes(feedId: record.feed.id)
+            let episodeTracks = episodes.map { episode in
+                let item = track(
+                    from: episode.media,
+                    downloaded: downloadedIds.contains(episode.media.id)
+                )
+                tracksById[item.id] = item
+                return item
+            }
+            podcastFeeds.append(
+                CarPlayPodcastFeed(
+                    id: record.feed.id,
+                    title: record.feed.title,
+                    author: record.feed.author,
+                    episodeTrackIds: episodeTracks.map { $0.id }
+                )
+            )
+        }
+
         return BrowseSnapshot(
             library: library,
             downloaded: downloaded,
             playlists: playlists,
+            podcasts: podcastFeeds,
             tracksById: tracksById
         )
     }
@@ -352,7 +382,8 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             album: entity.album,
             albumArtist: entity.albumArtist,
             durationMs: entity.durationMs,
-            isDownloaded: downloaded
+            isDownloaded: downloaded,
+            isPodcast: entity.mediaKind == "podcast"
         )
     }
 

@@ -1,35 +1,33 @@
 # Evidence report: S051 — iOS podcast playback and downloads
 
-**Status:** BLOCKED (depends on S050; macOS/Xcode unavailable)
+**Status:** IMPLEMENTED_UNVERIFIED (iOS CI build passes; device playback evidence pending)
 **Date:** 2026-11-08
 **Depends on:** S046, S047, S050
 
-## What exists
+## Landed in 2.1.1
 
-- The shared renderer `PodcastPlaybackStore` and player-bar podcast mode are implemented
-  and pass the desktop E2E.
-- The Android native source path and renderer context split are implemented in S049.
-- iOS still has only the music `PlaybackManager`, `DownloadAndCache` and schema v6.
+- `PlaybackManager.resolvePlaybackURL` now streams podcast enclosure URLs through
+  `AVPlayer` when no verified download or cache copy exists.
+- Podcast artwork is resolved from the media item's cached `artworkPath` for Now Playing
+  and CarPlay.
+- `setRate`/`currentRate` add podcast speed control to the native player; the rate is
+  applied whenever playback starts or resumes.
+- Native podcast resume positions are written back to `podcast_episode` every five seconds
+  while an episode is playing.
+- `DownloadAndCache` treats podcast enclosures as remote media and pins them through the
+  existing background download session; verified downloads keep precedence during playback.
+- The shared renderer podcast queue context now drives the native iOS queue through
+  `setQueue` once podcast data is available.
 
-## Why this is BLOCKED
+## Verification
 
-There is no iOS data layer (S050) to play from and no macOS/Xcode toolchain to build,
-install or validate `AVPlayer`, background audio, `MPRemoteCommandCenter`, Keychain or
-`URLSession` transfers.
+- iOS Simulator Debug and Device Release builds pass in GitHub Actions run `42522311443`.
+- Compilation includes the shared renderer podcast bridge and native plugin methods.
+- No simulator/device playback session has been run from this Linux host.
 
-## Reproduction recipe
+## Still pending
 
-On macOS:
-
-1. Complete S050.
-2. Add a podcast context to `PlaybackManager`: persisted queue, per-episode resume,
-   `AVPlayer.rate`, completion threshold, now-playing metadata/artwork and remote commands.
-3. Resolve podcast media through the existing `LocalMediaServer` / enclosure URL path with
-   the verified-download precedence.
-4. Add podcast pins to `DownloadAndCache` and verify airplane-mode playback.
-5. Run simulator and device checks for background/lock-screen audio, relaunch resume,
-   speed and download cleanup.
-
-## Evidence decision
-
-BLOCKED, and it blocks the all-platform MVP-5 release.
+- Play/pause/seek/speed/resume on a simulator or iPhone.
+- Lock-screen/Control Center metadata and artwork.
+- Background audio and process-death resume.
+- Airplane-mode playback of a pinned episode.

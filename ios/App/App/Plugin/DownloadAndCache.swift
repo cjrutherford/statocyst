@@ -197,7 +197,9 @@ final class DownloadManager {
         let ext = (track.ext.isEmpty ? (track.format ?? "bin") : track.ext).lowercased()
         let finalURL = directory.appendingPathComponent("\(trackId).\(ext)")
         let partURL = directory.appendingPathComponent("\(trackId).\(ext).part")
-        let isRemote = track.sourceKind.hasPrefix("jellyfin")
+        let podcastRemote = track.sourceKind == "podcast" &&
+            (URL(string: track.path)?.scheme?.lowercased().hasPrefix("http") ?? false)
+        let isRemote = track.sourceKind.hasPrefix("jellyfin") || podcastRemote
 
         // If an earlier run moved a complete background download into the staging
         // path but died before hashing/moving it, finish that work before fetching
@@ -342,6 +344,22 @@ final class DownloadManager {
     }
 
     private func copyRemote(track: MediaItemEntity, trackId: String, target: URL, events: DownloadEvents) throws {
+        if track.sourceKind == "podcast" {
+            guard let url = URL(string: track.path),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else {
+                throw NSError(domain: "DownloadManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid podcast enclosure URL"])
+            }
+            var request = URLRequest(url: url, timeoutInterval: 60)
+            request.setValue("*/*", forHTTPHeaderField: "Accept")
+            try BackgroundDownloadSession.shared.download(
+                trackId: trackId,
+                request: request,
+                target: target,
+                events: events
+            )
+            return
+        }
         guard let session = JellyfinSessions.forTrack(track) else {
             throw NSError(domain: "DownloadManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "The server is not signed in"])
         }

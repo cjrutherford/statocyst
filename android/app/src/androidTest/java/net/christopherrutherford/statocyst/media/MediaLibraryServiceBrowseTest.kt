@@ -20,6 +20,8 @@ import kotlinx.coroutines.runBlocking
 import net.christopherrutherford.statocyst.db.FavoriteEntity
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.PlaylistEntity
+import net.christopherrutherford.statocyst.db.PodcastEpisodeEntity
+import net.christopherrutherford.statocyst.db.PodcastFeedEntity
 import net.christopherrutherford.statocyst.db.PlaylistTrackEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import org.junit.After
@@ -139,6 +141,76 @@ class MediaLibraryServiceBrowseTest {
             MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
             albums.mediaMetadata.extras!!.getInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE),
         )
+    }
+
+    @Test
+    fun podcastShowBrowsesAndQueuesEpisodes() {
+        val feedId = "zz-pod-feed"
+        val mediaId = "zz-pod-ep-media"
+        val episodeId = "zz-pod-episode"
+        val now = java.time.Instant.now().toString()
+        val media = fixture("zz-pod-fixture", "Episode One", 0).copy(
+            id = mediaId,
+            sourceId = "podcast",
+            path = "https://example.com/one.mp3",
+            pathKey = "podcast:$feedId:one",
+            sourceKind = "podcast",
+            sourceLabel = "Podcasts",
+            mediaKind = "podcast",
+        )
+        val feed = PodcastFeedEntity(
+            id = feedId, feedUrl = "https://example.com/feed.xml", resolvedUrl = null,
+            siteUrl = null, title = "ZZ Deep Water", author = "ZZ Studio",
+            descriptionText = null, imageUrl = null, artworkPath = null, language = "en",
+            explicit = false, categoriesJson = "[]", feedType = "rss", podcastIndexId = null,
+            etag = null, lastModified = null, lastFetchedAt = now, lastSuccessAt = now,
+            nextFetchAt = null, fetchError = null, failureCount = 0, refreshIntervalMinutes = 60,
+            defaultSpeed = 1.0, skipIntroSeconds = 0, skipOutroSeconds = 0, autoQueue = true,
+            episodeSort = "newest", subscribed = true, lastViewedAt = null, createdAt = now, updatedAt = now,
+        )
+        val episode = PodcastEpisodeEntity(
+            id = episodeId, feedId = feedId, mediaItemId = mediaId, guid = "one",
+            title = "Episode One", descriptionText = null, linksJson = "[]", link = null,
+            enclosureUrl = media.path, enclosureType = "audio/mpeg", enclosureLengthBytes = 0,
+            durationMs = 120_000, publishedAt = now, seasonNo = null, episodeNo = null,
+            episodeType = null, imageUrl = null, artworkPath = null, explicit = false,
+            chaptersUrl = null, transcriptUrl = null, transcriptType = null, playbackSpeed = null,
+            resumePositionMs = 0, played = false, completed = false, playCount = 0,
+            lastPlayedAt = null, firstSeenAt = now, createdAt = now, updatedAt = now,
+        )
+        runBlocking {
+            db.mediaItemDao().upsert(media)
+            db.podcastDao().upsertFeed(feed)
+            db.podcastDao().upsertEpisode(episode)
+        }
+        try {
+            val root = children(BrowseIds.ROOT).map { it.mediaId }
+            assertTrue("podcasts folder missing", BrowseIds.PODCASTS in root)
+
+            val shows = children(BrowseIds.PODCASTS)
+            assertEquals(listOf("podcast-feed::$feedId"), shows.map { it.mediaId })
+
+            val episodes = children("podcast-feed::$feedId")
+            assertEquals(listOf("track::$mediaId@@podcast-feed::$feedId"), episodes.map { it.mediaId })
+            assertEquals(mediaId, BrowseIds.trackEntityId(episodes.single().mediaId))
+
+            app { browser.setMediaItem(episodes.single()) }
+            waitFor {
+                app {
+                    browser.mediaItemCount == 1 &&
+                        browser.getMediaItemAt(0).mediaMetadata.extras?.getString("trackId") == mediaId
+                }
+            }
+            assertEquals(mediaId, app { browser.getMediaItemAt(0).mediaMetadata.extras?.getString("trackId") })
+        } finally {
+            app { browser.clearMediaItems() }
+            runBlocking {
+                db.podcastDao().deleteEpisodesForFeed(feedId)
+                db.podcastDao().deleteFeed(feedId)
+                db.mediaItemDao().deleteById(mediaId)
+            }
+            PlaybackService.onCatalogChanged()
+        }
     }
 
     @Test

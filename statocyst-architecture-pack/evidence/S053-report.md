@@ -1,6 +1,6 @@
 # Evidence report: S053 — Cross-platform podcast verification and release gate
 
-**Status:** BLOCKED (desktop + Android core verified; iOS/CarPlay gates unresolved)
+**Status:** IMPLEMENTED_UNVERIFIED (all-platform builds pass; physical/CarPlay/performance gates pending)
 **Date:** 2026-11-08
 **Depends on:** S045, S047, S049, S051, S052
 
@@ -34,6 +34,22 @@ regressions:
   lives behind its own tab.
 
 The podcast flow, a11y suite, phone Now Playing and the rest of the desktop suite pass.
+
+## 2.1.1 update
+
+- iOS podcast transport, repository, plugin methods, artwork and podcast playback compile
+  and package in CI. `iOS build and sideload IPA` passes in GitHub Actions run
+  `42522311443`.
+- Android Auto podcast browse is covered by unit tests and the emulator
+  `MediaLibraryServiceBrowseTest` (`podcastShowBrowsesAndQueuesEpisodes`); the full
+  instrumented suite passes in CI.
+- CarPlay podcast browse compiles in the iOS build.
+- Android music browse is now filtered to `mediaKind = music`, so podcast episodes no
+  longer leak into albums/artists/tracks.
+
+Remaining unverified gates are runtime-only: physical iPhone playback/downloads, Android
+Auto DHU/head-unit, CarPlay simulator/head-unit, physical Pixel background/offline,
+100-subscription/10,000-episode performance and podcast a11y.
 
 ## What is verified
 

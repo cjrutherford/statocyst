@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UIKit
 import UniformTypeIdentifiers
@@ -25,6 +26,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         CAPPluginMethod(name: "setShuffle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRepeat", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setVolume", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setRate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPlaybackState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "dbCount", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadTrack", returnType: CAPPluginReturnPromise),
@@ -64,7 +66,17 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         CAPPluginMethod(name: "healthChecks", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exportSupportBundle", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getExternalArtwork", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setExternalArtwork", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "setExternalArtwork", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "fetchPodcastText", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cachePodcastArtwork", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listPodcastFeeds", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "listPodcastEpisodes", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getPodcastEpisode", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "savePodcastFeed", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "updatePodcastFeed", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "removePodcastFeed", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPodcastEpisodePlayed", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "podcastDirectoryStatus", returnType: CAPPluginReturnPromise)
     ]
 
     private let db = StatocystDatabase.shared
@@ -72,6 +84,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     private let cache = MediaCache()
     private let importer = LibraryImporter()
     private let playback = PlaybackManager.shared
+    private let podcasts = PodcastRepository.shared
+    private let podcastTransport = PodcastTransport(userAgent: "Statocyst/2.1.1 (iOS)")
     private let ioQueue = DispatchQueue(label: "com.hopefulaspirationsindustries.statocyst.plugin-io", qos: .userInitiated, attributes: .concurrent)
 
     private var downloadQueueListenerId: UUID?
@@ -365,6 +379,254 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 "queue": self.queueDict(current.queue)
             ])
         }
+    }
+
+    @objc func setRate(_ call: CAPPluginCall) {
+        let rate = call.getDouble("rate") ?? 1.0
+        DispatchQueue.main.async { [weak self] in
+            self?.playback.setRate(rate)
+            call.resolve()
+        }
+    }
+
+    // MARK: - Podcasts
+
+    @objc func fetchPodcastText(_ call: CAPPluginCall) {
+        guard let url = call.getString("url"), !url.isEmpty else {
+            call.reject("url required")
+            return
+        }
+        let allowLocal = call.getBool("allowLocalNetwork") ?? false
+        let etag = call.getString("etag")
+        let lastModified = call.getString("lastModified")
+        let allowHtml = call.getBool("allowHtml") ?? true
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            do {
+                let result = try self.podcastTransport.fetchText(
+                    url,
+                    allowLocalNetwork: allowLocal,
+                    etag: etag,
+                    lastModified: lastModified,
+                    allowHtml: allowHtml
+                )
+                call.resolve([
+                    "status": result.status,
+                    "finalUrl": result.finalUrl,
+                    "body": Self.orNull(result.body),
+                    "contentType": Self.orNull(result.contentType),
+                    "etag": Self.orNull(result.etag),
+                    "lastModified": Self.orNull(result.lastModified)
+                ])
+            } catch {
+                call.reject("Podcast fetch failed: \(error)")
+            }
+        }
+    }
+
+    @objc func cachePodcastArtwork(_ call: CAPPluginCall) {
+        guard let url = call.getString("url"), !url.isEmpty else {
+            call.reject("url required")
+            return
+        }
+        let allowLocal = call.getBool("allowLocalNetwork") ?? false
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard let data = self.podcastTransport.fetchImage(url, allowLocalNetwork: allowLocal) else {
+                call.resolve(["path": NSNull(), "url": NSNull()])
+                return
+            }
+            let directory = StatocystDatabase.appDataDirectory()
+                .appendingPathComponent("podcast-art", isDirectory: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let hash = SHA256.hash(data: Data(url.utf8))
+                .map { String(format: "%02x", $0) }
+                .joined()
+            let ext = Self.imageExtension(url)
+            let file = directory.appendingPathComponent("podcast-\(hash).\(ext)")
+            do {
+                try data.write(to: file, options: .atomic)
+                call.resolve([
+                    "path": file.path,
+                    "url": Self.orNull(LocalMediaServer.localUri(for: file))
+                ])
+            } catch {
+                call.resolve(["path": NSNull(), "url": NSNull()])
+            }
+        }
+    }
+
+    @objc func listPodcastFeeds(_ call: CAPPluginCall) {
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            call.resolve(["feeds": self.podcasts.listFeeds().map { self.feedDict($0) }])
+        }
+    }
+
+    @objc func listPodcastEpisodes(_ call: CAPPluginCall) {
+        guard let feedId = call.getString("feedId"), !feedId.isEmpty else {
+            call.reject("feedId required")
+            return
+        }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            call.resolve(["episodes": self.podcasts.listEpisodes(feedId: feedId).map { self.episodeDict($0) }])
+        }
+    }
+
+    @objc func getPodcastEpisode(_ call: CAPPluginCall) {
+        guard let id = call.getString("episodeId"), !id.isEmpty else {
+            call.reject("episodeId required")
+            return
+        }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            let episode = self.podcasts.getEpisode(id: id)
+            call.resolve(["episode": Self.orNull(episode.map { self.episodeDict($0) })])
+        }
+    }
+
+    @objc func savePodcastFeed(_ call: CAPPluginCall) {
+        guard let feedJson = call.getString("feedJson"),
+              let feed = Self.jsonObject(feedJson) else {
+            call.reject("feedJson required")
+            return
+        }
+        let episodes = (call.getString("episodesJson").flatMap { Self.jsonArray($0) } ?? [])
+            .compactMap { $0 as? [String: Any] }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            guard let record = self.podcasts.saveFeed(feedJson: feed, episodes: episodes) else {
+                call.reject("Could not save the podcast feed")
+                return
+            }
+            call.resolve(["feed": self.feedDict(record)])
+        }
+    }
+
+    @objc func updatePodcastFeed(_ call: CAPPluginCall) {
+        guard let feedId = call.getString("feedId"), !feedId.isEmpty,
+              let patchJson = call.getString("patchJson"),
+              let patch = Self.jsonObject(patchJson) else {
+            call.reject("feedId and patchJson required")
+            return
+        }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            let record = self.podcasts.updateFeed(id: feedId, patch: patch)
+            call.resolve(["feed": Self.orNull(record.map { self.feedDict($0) })])
+        }
+    }
+
+    @objc func removePodcastFeed(_ call: CAPPluginCall) {
+        guard let feedId = call.getString("feedId"), !feedId.isEmpty else {
+            call.reject("feedId required")
+            return
+        }
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            call.resolve(["removed": self.podcasts.removeFeed(id: feedId)])
+        }
+    }
+
+    @objc func setPodcastEpisodePlayed(_ call: CAPPluginCall) {
+        guard let id = call.getString("episodeId"), !id.isEmpty else {
+            call.reject("episodeId required")
+            return
+        }
+        let played = call.getBool("played") ?? false
+        ioQueue.async { [weak self] in
+            guard let self = self else { return }
+            let episode = self.podcasts.setPlayed(id: id, played: played)
+            call.resolve(["episode": Self.orNull(episode.map { self.episodeDict($0) })])
+        }
+    }
+
+    @objc func podcastDirectoryStatus(_ call: CAPPluginCall) {
+        call.resolve([
+            "configured": true,
+            "provider": "multiple",
+            "providers": ["apple", "fyyd"]
+        ])
+    }
+
+    private func feedDict(_ record: PodcastFeedRecord) -> [String: Any] {
+        let feed = record.feed
+        let categories = feed.categoriesJson.flatMap { Self.jsonArray($0) }?.compactMap { $0 as? String } ?? []
+        return [
+            "id": feed.id,
+            "feedUrl": feed.feedUrl,
+            "siteUrl": Self.orNull(feed.siteUrl),
+            "title": feed.title,
+            "author": Self.orNull(feed.author),
+            "descriptionText": Self.orNull(feed.descriptionText),
+            "imageUrl": Self.orNull(feed.imageUrl),
+            "artworkUrl": Self.orNull(feed.artworkPath.flatMap { LocalMediaServer.localUri(for: URL(fileURLWithPath: $0)) }),
+            "language": Self.orNull(feed.language),
+            "explicit": feed.explicit,
+            "categories": categories,
+            "subscribed": feed.subscribed,
+            "refreshIntervalMinutes": feed.refreshIntervalMinutes,
+            "defaultSpeed": feed.defaultSpeed,
+            "skipIntroSeconds": feed.skipIntroSeconds,
+            "skipOutroSeconds": feed.skipOutroSeconds,
+            "autoQueue": feed.autoQueue,
+            "episodeSort": feed.episodeSort,
+            "lastFetchedAt": Self.orNull(feed.lastFetchedAt),
+            "lastSuccessAt": Self.orNull(feed.lastSuccessAt),
+            "etag": Self.orNull(feed.etag),
+            "lastModified": Self.orNull(feed.lastModified),
+            "fetchError": Self.orNull(feed.fetchError),
+            "unplayedCount": record.unplayed,
+            "newEpisodeCount": record.newEpisodes
+        ]
+    }
+
+    private func episodeDict(_ record: PodcastEpisodeRecord) -> [String: Any] {
+        let episode = record.episode
+        var dict = trackDict(record.media)
+        dict["episodeId"] = episode.id
+        dict["feedId"] = episode.feedId
+        dict["feedTitle"] = record.feedTitle
+        dict["guid"] = episode.guid
+        dict["descriptionText"] = Self.orNull(episode.descriptionText)
+        dict["links"] = episode.linksJson.flatMap { Self.jsonArray($0) } ?? []
+        dict["link"] = Self.orNull(episode.link)
+        dict["publishedAt"] = Self.orNull(episode.publishedAt)
+        dict["seasonNo"] = Self.orNull(episode.seasonNo)
+        dict["episodeNo"] = Self.orNull(episode.episodeNo)
+        dict["episodeType"] = Self.orNull(episode.episodeType)
+        dict["explicit"] = episode.explicit
+        dict["enclosureUrl"] = episode.enclosureUrl
+        dict["enclosureType"] = Self.orNull(episode.enclosureType)
+        dict["playbackSpeed"] = Self.orNull(episode.playbackSpeed)
+        dict["resumePositionMs"] = episode.resumePositionMs
+        dict["played"] = episode.played
+        dict["completed"] = episode.completed
+        dict["playCount"] = episode.playCount
+        dict["lastPlayedAt"] = Self.orNull(episode.lastPlayedAt)
+        return dict
+    }
+
+    private static func orNull<T>(_ value: T?) -> Any {
+        return value.map { $0 as Any } ?? NSNull()
+    }
+
+    private static func imageExtension(_ url: String) -> String {
+        let ext = URL(string: url)?.pathExtension.lowercased() ?? ""
+        return ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) ? ext : "jpg"
+    }
+
+    private static func jsonObject(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return value as? [String: Any]
+    }
+
+    private static func jsonArray(_ text: String) -> [Any]? {
+        guard let data = text.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return value as? [Any]
     }
 
     @objc func dbCount(_ call: CAPPluginCall) {
@@ -1056,6 +1318,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "durationMs": s.durationMs,
             "shuffle": s.shuffle,
             "repeat": s.repeatMode,
+            "rate": playback.currentRate(),
             "error": s.error as Any
         ]
     }
@@ -1119,6 +1382,10 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     }
 
     private func artworkFor(_ t: MediaItemEntity) -> String? {
+        if t.sourceKind == "podcast" {
+            guard let path = t.artworkPath, !path.isEmpty else { return nil }
+            return LocalMediaServer.localUri(for: URL(fileURLWithPath: path))
+        }
         guard t.sourceKind.hasPrefix("jellyfin") else { return nil }
         let itemId = (t.albumId?.isEmpty == false) ? t.albumId! : String(t.id.dropFirst(t.id.hasPrefix("jf-") ? 3 : 0))
         let tag = (t.albumId?.isEmpty == false) ? (t.jellyfinImageTag ?? "") : ""
