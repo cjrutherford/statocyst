@@ -19,9 +19,17 @@ class DownloadQueueServiceTest {
     private val db by lazy { StatocystDatabase.getInstance(context) }
     private val dir = File(context.cacheDir, "zz-dl-fixtures")
     private val ids = (1..5).map { "zz-dl-$it" }
+    private var previousWifiOnly = true
+    private var previousQuotaBytes = 0L
 
     @Before
     fun setUp() {
+        // These fixtures are local files, so the tests must not depend on the
+        // emulator's network being unmetered. Without this, a metered CI network
+        // leaves the whole batch in "Waiting for Wi-Fi".
+        previousWifiOnly = DownloadCenter.wifiOnly(context)
+        previousQuotaBytes = DownloadCenter.quotaBytes(context)
+        DownloadCenter.setPolicy(context, wifiOnly = false, quotaBytes = 0)
         dir.mkdirs()
         runBlocking {
             ids.forEachIndexed { i, id ->
@@ -38,6 +46,7 @@ class DownloadQueueServiceTest {
         ids.forEach { manager.remove(it) }
         runBlocking { ids.forEach { db.mediaItemDao().deleteById(it) } }
         DownloadCenter.queue(context).let { it.cancelAll(); it.dismiss() }
+        DownloadCenter.setPolicy(context, previousWifiOnly, previousQuotaBytes)
         dir.deleteRecursively()
     }
 
