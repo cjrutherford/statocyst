@@ -61,6 +61,8 @@ final class PlaybackManager: NSObject {
     private var cacheBudgetBytes: Int64 = 2 * 1024 * 1024 * 1024
     private var playbackRate: Double = 1.0
     private var lastPodcastResumeWriteMs: Int64 = 0
+    /** Last podcast track marked as started, so resuming audio does not inflate play counts. */
+    private var lastStartedPodcastTrackId: String?
 
     private let networkMonitor = NWPathMonitor()
     private let networkMonitorQueue = DispatchQueue(label: "com.hopefulaspirationsindustries.statocyst.network")
@@ -311,7 +313,9 @@ final class PlaybackManager: NSObject {
             return
         }
         if player.currentItem == nil {
-            loadCurrentItem(startPositionMs: 0, autoplay: true)
+            // A queue restored after launch has no item loaded yet. Podcasts
+            // resume from the episode's own saved position instead of zero.
+            loadCurrentItem(startPositionMs: savedPodcastResume(), autoplay: true)
             return
         }
         if currentStateName() == "ended" {
@@ -342,6 +346,7 @@ final class PlaybackManager: NSObject {
         endRecovery()
         endStallWatch()
         player.pause()
+        persistPodcastResumeIfNeeded(force: true)
         emitState()
     }
 
@@ -549,6 +554,7 @@ final class PlaybackManager: NSObject {
         }
 
         let track = db.getMediaItemById(slot.trackId)
+        lastPodcastResumeWriteMs = 0
         let wantsTranscode = preferTranscode && qualityPreference == "auto"
         let resolved = resolvePlaybackURL(
             trackId: slot.trackId,
@@ -623,6 +629,7 @@ final class PlaybackManager: NSObject {
         updateNowPlayingMetadata()
         emitState()
         prefetchNeighbors()
+        if autoplay { markPodcastStartedIfNeeded() }
         return true
     }
 
@@ -678,14 +685,30 @@ final class PlaybackManager: NSObject {
 
     // MARK: - State & Metadata Helpers
 
-    private func persistPodcastResumeIfNeeded() {
+    private func persistPodcastResumeIfNeeded(force: Bool = false) {
         guard let slot = currentSlot,
               let track = db.getMediaItemById(slot.trackId),
               track.sourceKind == "podcast" else { return }
         let position = currentPositionMs()
-        guard abs(position - lastPodcastResumeWriteMs) >= 5_000 else { return }
+        guard force || abs(position - lastPodcastResumeWriteMs) >= 5_000 else { return }
         lastPodcastResumeWriteMs = position
         PodcastRepository.shared.setResumeForMedia(mediaItemId: slot.trackId, positionMs: position)
+    }
+
+    private func savedPodcastResume() -> Int64 {
+        guard let slot = currentSlot,
+              let track = db.getMediaItemById(slot.trackId),
+              track.sourceKind == "podcast" else { return 0 }
+        return PodcastRepository.shared.resumeForMedia(mediaItemId: slot.trackId)
+    }
+
+    private func markPodcastStartedIfNeeded() {
+        guard let slot = currentSlot,
+              let track = db.getMediaItemById(slot.trackId),
+              track.sourceKind == "podcast" else { return }
+        guard lastStartedPodcastTrackId != slot.trackId else { return }
+        lastStartedPodcastTrackId = slot.trackId
+        PodcastRepository.shared.markStartedForMedia(mediaItemId: slot.trackId)
     }
 
     private func currentPositionMs() -> Int64 {

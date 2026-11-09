@@ -49,6 +49,9 @@ interface PodcastDao {
     @Query("UPDATE podcast_episode SET resumePositionMs = :positionMs, updatedAt = :updatedAt WHERE id = :id")
     suspend fun setResume(id: String, positionMs: Long, updatedAt: String)
 
+    @Query("UPDATE podcast_episode SET lastPlayedAt = :now, playCount = playCount + 1, updatedAt = :now WHERE id = :id")
+    suspend fun markStarted(id: String, now: String)
+
     @Query("SELECT * FROM podcast_queue_entry ORDER BY position ASC")
     suspend fun listQueue(): List<PodcastQueueEntryEntity>
 

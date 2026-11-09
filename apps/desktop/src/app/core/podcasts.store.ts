@@ -54,6 +54,10 @@ export class PodcastsStore {
   private readonly artworkRepairs = new Set<string>();
   private readonly artworkCache = new Map<string, string>();
   private readonly artworkPending = new Map<string, Promise<string | null>>();
+  /** Last resume position mirrored from playback, used to avoid a write per tick. */
+  private readonly progressWrites = new Map<string, number>();
+  /** Every episode seen in a list, so a feed's view can be closed without losing the row. */
+  private readonly knownEpisodes = new Map<string, PodcastEpisode>();
   readonly selectedFeed = computed(() => {
     const id = this.selectedFeedId();
     return id ? (this.feeds().find((feed) => feed.id === id) ?? null) : null;
@@ -152,6 +156,7 @@ export class PodcastsStore {
         ),
       );
       const all = lists.flat();
+      this.rememberEpisodes(all);
       this.continueListening.set(
         all
           .filter((episode) => !episode.completed && episode.resumePositionMs > 0)
@@ -182,13 +187,79 @@ export class PodcastsStore {
     await this.loadEpisodes(feedId);
   }
 
+  /**
+   * Re-read progress from the host. Playback does not emit a library change
+   * event for every position tick, so a view that stays mounted (or is opened
+   * again after listening) would otherwise keep the resume values from the
+   * moment its lists were first loaded.
+   */
+  async refreshProgress(): Promise<void> {
+    await this.loadHome();
+    const selected = this.selectedFeedId();
+    if (selected) await this.loadEpisodes(selected);
+  }
+
+  /**
+   * Mirror the live playback position into the episode rows the UI renders.
+   * This is intentionally coarse: the in-progress filter only needs to know a
+   * position exists, and the continue card is fine with a five-second update.
+   * `force` is used when playback pauses or ends so a short listen is visible.
+   */
+  notePlaybackProgress(
+    trackId: string | null,
+    positionMs: number,
+    completed: boolean,
+    force = false,
+  ): void {
+    if (!trackId) return;
+    const position = Math.max(0, Math.round(positionMs));
+    if (!completed && position <= 0) return;
+    const previous = this.progressWrites.get(trackId) ?? -1;
+    if (!completed && !force && Math.abs(position - previous) < 5_000) return;
+    this.progressWrites.set(trackId, position);
+    const apply = (episode: PodcastEpisode): PodcastEpisode => {
+      if (episode.id !== trackId) return episode;
+      const updated: PodcastEpisode = {
+        ...episode,
+        resumePositionMs: completed ? 0 : position,
+        completed: episode.completed || completed,
+        played: episode.played || completed,
+      };
+      this.knownEpisodes.set(trackId, updated);
+      return updated;
+    };
+    this.episodes.update((list) => list.map(apply));
+    this.continueListening.update((list) => {
+      if (completed) return list.filter((episode) => episode.id !== trackId);
+      if (list.some((episode) => episode.id === trackId)) return list.map(apply);
+      // The feed view may already have been closed, so look the episode up in
+      // the rows remembered from earlier lists rather than in `episodes()`.
+      const episode =
+        this.knownEpisodes.get(trackId) ?? this.episodes().find((row) => row.id === trackId);
+      return episode ? [apply(episode), ...list].slice(0, 12) : list;
+    });
+    this.newEpisodes.update((list) =>
+      completed
+        ? list.filter((episode) => episode.id !== trackId)
+        : list.map(apply),
+    );
+  }
+
+  private rememberEpisodes(episodes: readonly PodcastEpisode[]): void {
+    for (const episode of episodes) this.knownEpisodes.set(episode.id, episode);
+  }
+
   async loadEpisodes(feedId: string): Promise<void> {
     const api = bridge().podcast;
     if (!api) return;
     const feed = this.feeds().find((candidate) => candidate.id === feedId);
     this.loading.set(true);
     try {
-      this.episodes.set(await api.listEpisodes(feedId, { sort: feed?.episodeSort ?? 'newest' }));
+      const episodes = await api.listEpisodes(feedId, {
+        sort: feed?.episodeSort ?? 'newest',
+      });
+      this.rememberEpisodes(episodes);
+      this.episodes.set(episodes);
       this.error.set(null);
     } catch (error) {
       this.error.set(String(error));
@@ -297,6 +368,7 @@ export class PodcastsStore {
     }
     const update = (entry: PodcastEpisode): PodcastEpisode =>
       entry.episodeId === episode.episodeId ? result.value : entry;
+    this.knownEpisodes.set(result.value.id, result.value);
     this.episodes.update((list) => list.map(update));
     this.continueListening.update((list) =>
       result.value.completed ? list.filter((entry) => entry.episodeId !== episode.episodeId) : list.map(update),
@@ -577,7 +649,9 @@ export class PodcastsStore {
           api.listEpisodes(feed.id, { limit: 500 }).catch(() => [] as PodcastEpisode[]),
         ),
       );
-      this.downloadPool.set(lists.flat());
+      const pool = lists.flat();
+      this.rememberEpisodes(pool);
+      this.downloadPool.set(pool);
     } catch (error) {
       this.error.set(String(error));
     } finally {

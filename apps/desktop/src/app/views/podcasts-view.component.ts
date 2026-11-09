@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import type {
   PodcastDiscoveryCategory,
   PodcastEpisode,
@@ -1635,7 +1635,43 @@ export class PodcastsViewComponent {
   });
 
   constructor() {
-    void this.store.init();
+    // Resume progress lives on the host/native store, not in this view. Re-read
+    // it whenever the screen opens and mirror the live position while it plays,
+    // so "In progress" and "Continue listening" never show a blank session.
+    effect(() => {
+      const snapshot = this.playback.snapshot();
+      const track = snapshot.track;
+      const state = snapshot.state;
+      if (!track || !this.playback.active()) return;
+      if (
+        state !== 'playing' &&
+        state !== 'buffering' &&
+        state !== 'paused' &&
+        state !== 'ended'
+      ) {
+        return;
+      }
+      const positionMs = this.playback.positionMs();
+      const completed = state === 'ended';
+      const force = state === 'paused' || state === 'ended';
+      untracked(() =>
+        this.store.notePlaybackProgress(track.id, positionMs, completed, force),
+      );
+    });
+    void this.store.init().then(async () => {
+      // A host read can land after the live tick above; replay the current
+      // position so persisted (slightly older) rows do not blank the shelf.
+      await this.store.refreshProgress();
+      const snapshot = this.playback.snapshot();
+      if (snapshot.track && this.playback.active()) {
+        this.store.notePlaybackProgress(
+          snapshot.track.id,
+          this.playback.positionMs(),
+          snapshot.state === 'ended',
+          true,
+        );
+      }
+    });
     void this.playback.init();
     void this.downloads.init();
   }

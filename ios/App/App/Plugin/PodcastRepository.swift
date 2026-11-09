@@ -252,6 +252,35 @@ final class PodcastRepository {
         }
     }
 
+    /// The saved resume position for a podcast media item, or zero for music.
+    func resumeForMedia(mediaItemId: String) -> Int64 {
+        return queue.sync {
+            episodeLockedByMedia(mediaItemId)?.resumePositionMs ?? 0
+        }
+    }
+
+    /// Records the first play of an episode, matching the desktop host.
+    @discardableResult
+    func markStartedForMedia(mediaItemId: String) -> Bool {
+        return queue.sync {
+            guard let episode = episodeLockedByMedia(mediaItemId) else { return false }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(
+                db,
+                "UPDATE podcast_episode SET lastPlayedAt = ?, playCount = playCount + 1, updatedAt = ? WHERE id = ?;",
+                -1,
+                &stmt,
+                nil
+            ) == SQLITE_OK else { return false }
+            let now = Self.isoNow()
+            bind(stmt, 1, now)
+            bind(stmt, 2, now)
+            bind(stmt, 3, episode.id)
+            return sqlite3_step(stmt) == SQLITE_DONE
+        }
+    }
+
     // MARK: - Locked helpers
 
     private func feedRecordLocked(id: String) -> PodcastFeedRecord? {
