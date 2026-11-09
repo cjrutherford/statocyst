@@ -255,3 +255,37 @@ test('local import, real playback, queue edits and restart recovery', async () =
     }
   }
 });
+
+test('mini player stays below the content and the foam covers the content area', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'statocyst-layout-'));
+  let app: ElectronApplication | null = null;
+  let page: Page | null = null;
+  try {
+    ({ app, page } = await launch(dataDir));
+    const layout = await page.evaluate(() => {
+      const rectOf = (selector: string) => {
+        const element = document.querySelector(selector);
+        if (!element) throw new Error(`Missing ${selector}`);
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, height: rect.height };
+      };
+      return {
+        viewportHeight: window.innerHeight,
+        main: rectOf('.main'),
+        foam: rectOf('.transition-foam'),
+        player: rectOf('.player-slot'),
+      };
+    });
+
+    // The grid must keep the player in the second row; it must never float above main.
+    expect(layout.player.top).toBeGreaterThanOrEqual(layout.main.bottom - 1);
+    expect(layout.player.bottom).toBeLessThanOrEqual(layout.viewportHeight + 1);
+    // The foam overlay covers the content area, ending exactly where the player starts.
+    expect(layout.foam.top).toBeCloseTo(layout.main.top, 0);
+    expect(layout.foam.height).toBeCloseTo(layout.main.height, 0);
+    expect(layout.foam.bottom).toBeLessThanOrEqual(layout.player.top + 1);
+  } finally {
+    if (app) await app.close().catch(() => undefined);
+    await rm(dataDir, { recursive: true, force: true });
+  }
+});
