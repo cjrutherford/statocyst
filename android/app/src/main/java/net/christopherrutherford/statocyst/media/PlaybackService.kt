@@ -79,6 +79,10 @@ class PlaybackService : MediaLibraryService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var contextTail: ContextTail? = null
     private var positionTicker: kotlinx.coroutines.Job? = null
+    /** Last podcast track id marked as started, so a rebuild does not inflate play counts. */
+    private var lastPodcastStartedTrackId: String? = null
+    /** Last resume position written per episode, to avoid a database write every tick. */
+    private val podcastResumeWrites = mutableMapOf<String, Long>()
 
     private val player: ExoPlayer by lazy {
         val bandwidthMeter = DefaultBandwidthMeter.Builder(this).build()
@@ -110,6 +114,13 @@ class PlaybackService : MediaLibraryService() {
             setWakeMode(C.WAKE_MODE_NETWORK)
             addListener(object : Player.Listener {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    // A finished podcast episode is complete before the next one starts.
+                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                        val finished = lastPodcastStartedTrackId
+                        if (finished != null && finished != mediaItem?.let(QueueItems::trackIdOf)) {
+                            markPodcastCompleted(finished)
+                        }
+                    }
                     // A swap of the item itself (below) must not trigger another look at it.
                     if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                         networkHold = false
@@ -123,6 +134,7 @@ class PlaybackService : MediaLibraryService() {
                     prefetchCurrent(mediaItem)
                     recordRecent(mediaItem)
                     refreshButtons()
+                    maybeMarkPodcastStarted()
                 }
                 override fun onTimelineChanged(timeline: Timeline, reason: Int) {
                     if (applyPendingShuffle()) return
@@ -157,10 +169,12 @@ class PlaybackService : MediaLibraryService() {
                     if (isPlaying) {
                         consecutiveErrors = 0
                         vanishedTried.clear()
+                        maybeMarkPodcastStarted()
                         startPositionTicker()
                     } else {
                         positionTicker?.cancel()
                         persistQueue()
+                        scope.launch { persistPodcastProgress(force = true) }
                     }
                 }
                 override fun onPositionDiscontinuity(
@@ -178,6 +192,7 @@ class PlaybackService : MediaLibraryService() {
                         reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
                     ) {
                         persistQueue()
+                        scope.launch { persistPodcastProgress(force = true) }
                     }
                 }
                 override fun onPlayerError(error: PlaybackException) {
@@ -766,7 +781,64 @@ class PlaybackService : MediaLibraryService() {
                         player.currentMediaItemIndex.coerceAtLeast(0),
                         player.currentPosition.coerceAtLeast(0),
                     )
+                    persistPodcastProgress()
                 }
+            }
+        }
+    }
+
+    /**
+     * Writes per-episode resume positions for the podcast library. The queue store
+     * only remembers the current slot, so without this the "In progress" shelf and
+     * tapping a different episode would both start from zero.
+     */
+    private suspend fun persistPodcastProgress(force: Boolean = false) {
+        val item = player.currentMediaItem ?: return
+        val position = player.currentPosition.coerceAtLeast(0)
+        if (position <= 0) return
+        try {
+            val episode = podcastDao.getEpisodeByMediaItem(QueueItems.trackIdOf(item)) ?: return
+            if (episode.completed) return
+            val previous = podcastResumeWrites[episode.id] ?: 0L
+            if (!force && kotlin.math.abs(position - previous) < PODCAST_RESUME_SAVE_MS) return
+            podcastResumeWrites[episode.id] = position
+            podcastDao.setResume(episode.id, position, java.time.Instant.now().toString())
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "podcast resume persist failed", e)
+        }
+    }
+
+    /** Records the first time an episode is played, matching the desktop host. */
+    private fun maybeMarkPodcastStarted() {
+        val item = player.currentMediaItem ?: return
+        val trackId = QueueItems.trackIdOf(item)
+        if (lastPodcastStartedTrackId == trackId) return
+        scope.launch {
+            try {
+                val episode = podcastDao.getEpisodeByMediaItem(trackId) ?: return@launch
+                if (player.currentMediaItem?.let(QueueItems::trackIdOf) != trackId) return@launch
+                lastPodcastStartedTrackId = trackId
+                podcastDao.markStarted(episode.id, java.time.Instant.now().toString())
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "podcast start persist failed", e)
+            }
+        }
+    }
+
+    /** A naturally finished episode is complete and no longer offers resume. */
+    private fun markPodcastCompleted(trackId: String) {
+        scope.launch {
+            try {
+                val episode = podcastDao.getEpisodeByMediaItem(trackId) ?: return@launch
+                podcastDao.setPlayed(
+                    episode.id,
+                    true,
+                    true,
+                    java.time.Instant.now().toString(),
+                )
+                podcastResumeWrites.remove(episode.id)
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "podcast completion persist failed", e)
             }
         }
     }
@@ -1160,6 +1232,7 @@ class PlaybackService : MediaLibraryService() {
         /** How many upcoming songs are fetched onto the device while the current one plays. */
         private const val PREFETCH_AHEAD = 5
         private const val POSITION_SAVE_MS = 5_000L
+        private const val PODCAST_RESUME_SAVE_MS = 5_000L
         /** Buffering this long at the start of a song means the connection cannot carry the original. */
         private const val STALL_MS = 6_000L
         /** A transcode cannot be seeked into, so it is only taken within this far of the start. */

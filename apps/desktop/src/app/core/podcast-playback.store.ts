@@ -7,7 +7,7 @@ import type {
   QueueSnapshot,
   Result,
 } from '@statocyst/contracts';
-import { bridge } from './bridge';
+import { bridge, isNativePlatform } from './bridge';
 
 const EMPTY_SNAPSHOT: PlaybackSnapshot = {
   state: 'idle',
@@ -137,14 +137,35 @@ export class PodcastPlaybackStore {
     episode: PodcastEpisode,
     context: readonly PodcastEpisode[] = [],
   ): Promise<void> {
+    // The row supplied by the view can be minutes old: a list loaded before
+    // playback started still carries the resume position from that moment.
+    // Read the episode back so a stale value can never seek the host (or the
+    // native player) away from the progress it just restored.
+    const fresh = await this.latestEpisode(episode);
     const ids = context.length > 1 ? context.map((entry) => entry.id) : undefined;
     const result = await this.command({
       type: 'play',
-      trackId: episode.id,
+      trackId: fresh.id,
       ...(ids ? { contextTrackIds: ids } : {}),
     });
-    if (result.ok && !episode.completed && episode.resumePositionMs > 0) {
-      await this.command({ type: 'seek', positionMs: episode.resumePositionMs });
+    if (!result.ok || fresh.completed || fresh.resumePositionMs <= 0) return;
+    // The desktop host already resumes in `loadEntry`; the native mobile bridge
+    // starts a freshly pushed queue at zero and may still report the previous
+    // track's position, so mobile always re-applies the saved position.
+    const needsSeek =
+      isNativePlatform() || result.value.positionMs < fresh.resumePositionMs - 1_000;
+    if (needsSeek) {
+      await this.command({ type: 'seek', positionMs: fresh.resumePositionMs });
+    }
+  }
+
+  private async latestEpisode(episode: PodcastEpisode): Promise<PodcastEpisode> {
+    const api = bridge().podcast;
+    if (!api) return episode;
+    try {
+      return (await api.getEpisode(episode.episodeId)) ?? episode;
+    } catch {
+      return episode;
     }
   }
 

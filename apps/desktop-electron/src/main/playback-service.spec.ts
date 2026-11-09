@@ -202,6 +202,50 @@ describe('two-context playback', () => {
     await reopened.close();
   });
 
+  it('resumes the selected episode with its own saved position', async () => {
+    const harness = await setup();
+    await harness.service.command(
+      {
+        type: 'play',
+        trackId: harness.episodeOneMediaId,
+        contextTrackIds: [harness.episodeOneMediaId, harness.episodeTwoMediaId],
+      },
+      'podcast',
+    );
+    const first = engine(harness);
+    first.playing();
+    first.time(20_000);
+    await harness.service.command({ type: 'pause' }, 'podcast');
+
+    await harness.service.command(
+      {
+        type: 'play',
+        trackId: harness.episodeTwoMediaId,
+        contextTrackIds: [harness.episodeOneMediaId, harness.episodeTwoMediaId],
+      },
+      'podcast',
+    );
+    const second = engine(harness);
+    second.playing();
+    second.time(35_000);
+    await harness.service.command({ type: 'pause' }, 'podcast');
+
+    // Both episodes live in one queue. Choosing the first must resume episode
+    // one at 20s rather than continuing episode two or starting at zero.
+    await harness.service.command(
+      {
+        type: 'play',
+        trackId: harness.episodeOneMediaId,
+        contextTrackIds: [harness.episodeOneMediaId, harness.episodeTwoMediaId],
+      },
+      'podcast',
+    );
+    const load = harness.loads.at(-1);
+    expect(load?.trackId).toBe(harness.episodeOneMediaId);
+    expect(load?.startPositionMs).toBe(20_000);
+    expect(harness.service.getSnapshot('podcast').track?.title).toBe('Episode One');
+  });
+
   it('mutates the inactive queue without switching audio', async () => {
     const harness = await setup();
     await harness.service.command({ type: 'play', trackId: harness.musicId }, 'music');
