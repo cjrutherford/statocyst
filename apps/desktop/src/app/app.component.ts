@@ -388,6 +388,7 @@ interface NavItem {
       }
       .main {
         grid-column: 2;
+        grid-row: 1;
         overflow: auto;
         min-height: 0;
         outline: none;
