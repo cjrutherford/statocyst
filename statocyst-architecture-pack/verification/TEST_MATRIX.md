@@ -16,10 +16,9 @@
 | Podcast car surfaces | Browse-tree/template fixtures | Desktop Head Unit / CarPlay simulator | Real head unit where available; record BLOCKED otherwise |
 | Video podcast parsing | Video-only/audio+video/alternate fixtures, SSRF | Local fixture feed server | Real video feeds from several hosts |
 | Video playback | Media-form/engine/protocol tests | Desktop E2E video → audio-only → minimize → restart | Android/iOS full-screen, PiP, screen-off and lock-screen evidence |
-| YouTube classification | Duration/Shorts/live/manual rule tests | Fixture companion probe/add/refresh | Manual live probe with companion version, date and region; record BLOCKED when refused |
-| Companion bridge | Pairing/version/auth/error/redaction tests | Fixture HTTP server, Range/HEAD, timeout | Real paired companion over localhost and LAN |
 | Video downloads | Size/quota/cleanup tests | Network-blocked pin playback | Large-file download and offline playback on device |
-| Video packaging/legal | No-extraction artifact audit | Store-copy and notice review | Signed build inspection; App Store policy review |
+| Video packaging | No-extraction artifact audit | Package inspection | Signed build inspection |
+| Video accessibility | Control-name/keyboard/focus tests | Manual video/PiP keyboard pass | Device assistive-technology spot check |
 | Performance | 10k/50k/100k synthetic | Measured baselines | Device tiers and battery measurement; screen-off 60-minute audio; hidden-video CPU |
 | Release | Migration and rollback fixtures | Package install/restart | Signed build and install smoke test |
 
