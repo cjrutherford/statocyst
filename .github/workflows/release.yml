@@ -96,10 +96,8 @@ jobs:
         with:
           cache-read-only: true
 
-      - name: Generate audio fixtures (needs ffmpeg)
-        run: |
-          command -v ffmpeg >/dev/null || { sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg; }
-          pnpm run fixtures
+      - name: Prepare audio fixtures
+        run: pnpm run fixtures
       - name: Typecheck and test
         run: >
           pnpm exec nx run-many -t typecheck test
