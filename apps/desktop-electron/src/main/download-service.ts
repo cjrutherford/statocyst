@@ -100,7 +100,9 @@ export class DownloadService {
     await mkdir(this.options.downloadsDirectory, { recursive: true });
     const finalPath = join(this.options.downloadsDirectory, `${trackId}.${ext}`);
     const tmpPath = `${finalPath}.part.${ext}`;
-    const sourcePath = `${finalPath}.source.${(track.ext || 'bin').toLowerCase()}`;
+    const sourcePath = `${finalPath}.source.${
+      variant === 'video-480p' || variant === 'video-720p' ? 'mp4' : (track.ext || 'bin').toLowerCase()
+    }`;
 
     try {
       const remote = selection.transcode ? null : await this.resolveRemote(track, selection.url);
@@ -194,9 +196,11 @@ export class DownloadService {
       }
       return { url: track.path, extension: 'm4a', container: 'audio/mp4', transcode: true };
     }
-    if (track.mediaForm !== 'video') return null;
+    const video = episode?.alternates.find((alternate) => alternate.form === 'video');
+    const source = video?.url ?? (track.mediaForm === 'video' ? track.path : null);
+    if (!source) return null;
     return {
-      url: track.path,
+      url: source,
       extension: 'mp4',
       container: 'video/mp4',
       transcode: true,
