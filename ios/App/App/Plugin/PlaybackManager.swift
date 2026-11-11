@@ -406,7 +406,6 @@ final class PlaybackManager: NSObject {
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
         layer.frame = container.bounds
-        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         layer.backgroundColor = UIColor.black.cgColor
         container.layer.insertSublayer(layer, at: 0)
         videoLayer = layer
