@@ -4,7 +4,7 @@
 **Decision record:** ADR-036.
 **Slice range:** S042–S053.
 **Follow-on:** Video podcasts published by RSS/Atom feeds are planned separately as MVP-6
-(`roadmap/VIDEO_PODCASTS.md`, ADR-037, S054–S060). YouTube/third-party extraction is
+(`roadmap/VIDEO_PODCASTS.md`, ADR-037, S054–S061). YouTube/third-party extraction is
 explicitly out of scope. MVP-6 is not part of this MVP-5 gate and must not delay it.
 **Platforms:** Electron desktop, Capacitor Android, Capacitor iOS, Android Auto, CarPlay.
 

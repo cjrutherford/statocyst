@@ -2,7 +2,7 @@
 
 **Status:** Proposed (2026-11-11).
 **Date:** 2026-11-11
-**Target:** MVP-6 — Video podcasts on desktop, Android and iOS (S054–S060).
+**Target:** MVP-6 — Video podcasts on desktop, Android and iOS (S054–S061).
 **Related:** ADR-019 (background playback), ADR-029 (security), ADR-033 (libSQL Android),
 ADR-036 (podcasts), `roadmap/VIDEO_PODCASTS.md`.
 
@@ -50,17 +50,24 @@ scope.
    artifact. A user who wants a YouTube-only show must use the publisher's podcast feed or
    the YouTube app.
 
-4. **Prefer audio when both forms exist.**
-   If an item publishes audio and video, the audio form is the primary for background
-   listening and the video is retained as an alternate. A feed-level preference can choose
-   video as the default. A video-only item is primary video. The user can switch
-   presentation at any time without losing position.
+4. **Audio is the default when both forms exist; the feed/tier decides what is available.**
+   If an item publishes audio and video, audio is the primary for background listening and
+   video is retained as an alternate. A feed-level preference can choose video as the
+   default. Some publishers expose different enclosures by subscription tier (for example,
+   a member feed with video and a public feed with audio); Statocyst uses whichever feed the
+   user actually subscribed to and never guesses a tier or fetches a different one. If the
+   subscribed feed is video-only, video is the effective source. The user can switch
+   presentation at any time without losing position. MVP-6 does not add premium/member-feed
+   authentication or a feed-URL importer; it respects whatever feed is already in the
+   library.
 
-5. **Downloads are per episode and publisher-authorized.**
-   Video pins are opt-in, show an estimated size, share the existing quota and can be
-   removed cleanly. Where the feed provides an audio alternate, the download sheet offers
-   audio-only (recommended) or video. Statocyst does not download from a third-party
-   platform; it downloads the enclosure the publisher advertised.
+5. **Downloads are per episode, publisher-authorized and user-chosen.**
+   Video pins are a user action, never automatic. The download sheet offers the original
+   enclosure, an audio-only copy, or a compressed video copy where the platform can produce
+   one. It shows an estimated size, shares the existing quota and can be removed cleanly.
+   Compression is a fixed set of spoken-word/space-saving presets, not a general transcoder.
+   Statocyst does not download from a third-party platform; it downloads the enclosure the
+   publisher advertised.
 
 6. **All three platforms ship together.**
    Desktop embeds video in Now Playing. Android and iOS use a native full-screen video
@@ -68,11 +75,13 @@ scope.
    surfaces remain audio-only and never render video. No platform is claimed VERIFIED until
    its background/screen-off and video-surface evidence exists.
 
-7. **No inference of “podcast-ness” by duration.**
-   A video episode is a video podcast because the publisher declared a video enclosure, not
-   because it is long. Duration is displayed, not used to convert arbitrary media. Users can
-   mark an episode or feed as audio-preferred/video-preferred, and can hide video episodes
-   from the audio queue if they choose.
+7. **Video-only episodes stay in the podcast library.**
+   A video-only episode is included in the normal episode list and queue, with a video
+   badge and a **Video** filter. In audio-only mode it plays the audio track from the video
+   container when the platform can decode it; if the codec is unsupported, Statocyst reports
+   `UNSUPPORTED_MEDIA` rather than hiding the episode. A video episode is a video podcast
+   because the publisher declared a video enclosure, not because it is long; duration is
+   displayed, never used to convert arbitrary media.
 
 ## Required implementation controls
 
@@ -82,9 +91,13 @@ scope.
   `http:`/`https:` is accepted; no `file:`, `data:`, `blob:` or platform-pseudo URLs.
 - Preserve feed HTML safety: no raw show-notes HTML, no hotlinked remote artwork by
   default, no third-party tracking.
-- Do not add a video transcoder in this milestone. Play the publisher's bytes; if the
-  platform cannot decode them, report `UNSUPPORTED_MEDIA` clearly rather than silently
-  falling back.
+- Compression is limited to the download pipeline and fixed presets. Do not add a general
+  video editor, arbitrary ffmpeg arguments or a transcoding service. Play the publisher's
+  bytes when the user chooses the original; report `UNSUPPORTED_MEDIA` clearly rather than
+  silently falling back.
+- Compression must use platform-native transcode APIs on Android/iOS. Desktop compression
+  uses a user-provided/system `ffmpeg` in v1; bundling an ffmpeg binary is a separate
+  licensing/packaging decision.
 - Do not weaken the MVP-5 release gate. MVP-6 is planned separately; if video support is
   folded into a 2.1.x release, the MVP-5 gate must still pass first.
 - Record a BLOCKED gate, with a reproduction recipe, when a platform cannot meet its
@@ -101,13 +114,15 @@ scope.
   the poster/form metadata needed to choose a `<video>` surface.
 - The renderer gains a video stage, PiP, fullscreen and audio-only controls. The mini
   player keeps a poster/thumbnail; it does not become a second video element.
-- Video pins can be large. The size estimate, quota, retention and cleanup become part of
-  the download UX.
+- Video pins can be large. The size estimate, quota, retention, compression and cleanup
+  become part of the download UX. Android uses Media3 Transformer and iOS uses
+  AVAssetExportSession; desktop requires an available `ffmpeg` or offers original/audio-only
+  behavior only.
 - YouTube and other third-party extraction remain out of scope. This avoids an unofficial
   ToS surface, GPL/Python packaging, App Store risk and a permanent maintenance treadmill.
 
 ## Verification
 
-See `roadmap/VIDEO_PODCASTS.md` and slices S054–S060. This ADR asserts no passing test and
+See `roadmap/VIDEO_PODCASTS.md` and slices S054–S061. This ADR asserts no passing test and
 no platform support. Video playback, background audio, PiP, downloads and migrations must be
 demonstrated on named runtimes and recorded in evidence.

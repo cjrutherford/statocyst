@@ -25,12 +25,12 @@ Do not build the following in MVP-1..MVP-5 unless a specifically accepted depend
 | Global unified music + podcast search and recommendations | Expansion | Media-kind-aware ranking and UI design; MVP-5 keeps podcast search local to Podcasts |
 | Podcast aggregate feed publishing / audio re-hosting | Not planned | Conflicts with local-first aggregation and content licensing; no accepted use case |
 | User-supplied podcast feed URLs / OPML source onboarding | Not planned | Product decision: discovery-only via existing directories (ADR-036) |
-| Video podcast playback (RSS video enclosures) | **Promoted to MVP-6** | Planned in S054–S060 under ADR-037; requires MVP-5 gate first or explicit re-scope |
-| RSS video downloads / large video pins | MVP-6, opt-in | Planned in S059; size warning, quota, audio-only alternate |
+| Video podcast playback (RSS video enclosures) | **Promoted to MVP-6** | Planned in S054–S061 under ADR-037; requires MVP-5 gate first or explicit re-scope |
+| RSS video downloads / large video pins | MVP-6, user-chosen | Planned in S059/S060; size warning, quota, audio-only alternate, 480p/720p compression |
 | YouTube or other third-party video-platform ingestion | Not planned | Official API cannot background-play, separate audio or download; extraction violates ToS, is fragile (SABR/PO tokens), and is not viable on iOS. Reversal needs a new ADR |
 | Bundling yt-dlp/ffmpeg/Python/NewPipe in core or store builds | Not planned | Legal/ToS, GPL linking and App Store risk; no extractor is in scope |
 | On-device YouTube extraction | Not planned | No supported iOS extractor; Android would add GPL/Python and a large APK; still against ToS |
-| Video transcoding/remuxing | Deferred after MVP-6 | Play publisher bytes first; unsupported codecs report an error, no transcoder in v1 |
+| General video editing / arbitrary transcoding | Deferred after MVP-6 | MVP-6 offers only fixed audio-only/480p/720p download presets; play publisher bytes or report an unsupported codec |
 | HLS playback for video podcasts | Deferred after MVP-6 | v1 targets progressive enclosures; HLS needs a renderer/native strategy |
 | Embedded video inside the mobile WebView | Deferred after MVP-6 | v1 uses a native full-screen surface and PiP; an embedded surface needs native overlay geometry |
 | Video live streams, premieres and Shorts | Not planned | Video podcasts are publisher-declared enclosures, not live/clip ingestion |

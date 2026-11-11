@@ -52,7 +52,7 @@ chapters/transcripts and publishing an aggregate feed are explicitly deferred.
 Release requires the ten-point gate in `roadmap/PODCASTS.md` §18 and evidence in
 `evidence/S042-report.md`–`S053-report.md`.
 
-## MVP-6 — Video podcasts (S054–S060)
+## MVP-6 — Video podcasts (S054–S061)
 **Status: PLANNED (2026-11-11).** Decision: ADR-037 (proposed). Plan: `roadmap/VIDEO_PODCASTS.md`.
 
 Video podcast episodes become a presentation of the existing podcast media kind, not a new
@@ -72,6 +72,6 @@ maintenance costs.
 
 Platform gates are recorded independently: a failed PiP, screen-off or codec gate is
 BLOCKED, not “working”. Release requires the ten-point gate in
-`roadmap/VIDEO_PODCASTS.md` §9 and evidence in `evidence/S054-report.md`–`S060-report.md`.
+`roadmap/VIDEO_PODCASTS.md` §9 and evidence in `evidence/S054-report.md`–`S061-report.md`.
 Do not start MVP-6 release work before the MVP-5 gate passes or the product owner
 explicitly re-scopes.

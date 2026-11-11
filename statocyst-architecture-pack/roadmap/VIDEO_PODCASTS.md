@@ -2,7 +2,7 @@
 
 **Status:** PLANNED (2026-11-11). Design intent only; no implementation is asserted.
 **Decision record:** ADR-037.
-**Slice range:** S054–S060.
+**Slice range:** S054–S061.
 **Depends on:** MVP-5 podcast gate (`roadmap/PODCASTS.md` §18). S054/S055 may start
 earlier, but no MVP-6 release claim may precede a passing MVP-5 gate or an explicit
 product decision to re-scope.
@@ -20,7 +20,9 @@ contract:
 - Preserve **audio/video alternates**. Some shows publish both; the user can switch
   presentation without losing position.
 - Pin video episodes for offline playback where the publisher's enclosure allows it, with
-  size, quota and cleanup handled honestly.
+  size, quota, compression and cleanup handled honestly.
+- Offer **compressed offline copies** (audio-only, 480p, 720p) for space-constrained
+  devices, while keeping the original available.
 - Ship on desktop, Android and iOS with independent evidence for each platform.
 
 ## 2. Non-goals
@@ -34,8 +36,9 @@ contract:
 - A general video library, music videos, video playlists, or a video discovery feed.
 - Live streams, premieres, Shorts, chapters/transcripts, captions or comments.
 - Re-hosting, redistributing or publishing podcast video, or running a media proxy.
-- Video transcoding/remuxing in MVP-6. Play the publisher's bytes; report unsupported
-  media clearly.
+- General-purpose video editing or arbitrary transcoding. MVP-6 offers only fixed
+  compression presets in the download pipeline; the original enclosure is still available.
+  Play the publisher's bytes when the original is chosen; report unsupported media clearly.
 - Embedded video inside the mobile WebView in v1. Android/iOS use a native full-screen
   video surface and native PiP; an embedded surface is a later refinement.
 - Background video decoding while the screen is off. Audio-only is the expected state.
@@ -52,7 +55,7 @@ contract:
 | Playback engine | One `<audio>` element; Media3/AVPlayer audio | Media element may be `<video>`; native video surfaces; audio remains authoritative |
 | Contract | `Track`, `EngineLoadRequest` audio-only | `mediaForm`, poster, presentation mode, video metadata |
 | Protocol | Podcast remote URL proxy | Same proxy, with video MIME types and Range/HEAD |
-| Downloads | Audio episode pins | RSS video pins (large, opt-in), audio-only alternate where available |
+| Downloads | Audio episode pins | RSS video pins (manual, user-chosen), audio-only or compressed copy where supported |
 | Platforms | Desktop, Android, iOS, Auto, CarPlay audio | Desktop embedded video; Android/iOS full-screen + PiP; car remains audio-only |
 | Source policy | Publisher RSS/Atom discovery only | Unchanged: publisher RSS/Atom only, now including video enclosures |
 
@@ -89,7 +92,10 @@ podcast_feed (default_media_form = audio | video)
 
 An episode can advertise both forms. `media_form` is the **primary** presentation;
 `alternates` carries the rest. The UI shows a video badge when any form is video. Audio is
-preferred as the primary when both exist, unless the feed preference is video.
+preferred as the primary when both exist, unless the feed preference is video. The effective
+choice is constrained by the feed the user subscribed to; MVP-6 does not add premium/member
+feed authentication or a feed-URL importer, so it never fetches a different tier on the
+user's behalf.
 
 ### 5.2 Desktop schema — migration 7
 
@@ -268,16 +274,24 @@ Mobile background rules:
   after first play.
 - No duration-based classification. `media_form` is declared by the feed.
 
-### 5.8 Downloads and offline
+### 5.8 Downloads, compression and offline
 
-- **RSS video episodes only.** Video pins are opt-in. The UI shows the estimated size
-  before pinning and warns when the file is large (`> 500 MB` or `> 10%` of free space,
-  whichever the quota policy reports).
-- When the feed provides a separate audio enclosure, the download sheet offers **Audio
-  only** (recommended) or **Video**. Video-only episodes download the whole file.
+- **RSS video episodes only.** Video pins are a user action, never automatic. The UI shows
+  the estimated size before pinning and warns when the file is large (`> 500 MB` or `> 10%`
+  of free space, whichever the quota policy reports).
+- Download choices:
+  - **Original** — the publisher's enclosure, untouched.
+  - **Audio only** — when the feed provides an audio alternate, use it; otherwise extract
+    the audio track into an M4A/AAC copy.
+  - **Compressed video** — 720p or 480p H.264/AAC copies for space saving. Presets are
+    fixed; no arbitrary ffmpeg arguments.
 - The existing `.part` → hash → rename, quota, Wi-Fi policy, progress events and eviction
-  protection are reused. `DownloadView` gains `mediaForm` derived from the joined media
-  item; no table change is required.
+  protection are reused. Downloads gain a **Compressing** phase before verification;
+  a failed compression keeps the original download when possible and reports the failure.
+- `DownloadView` gains `mediaForm`, `variant` and optional output dimensions, derived from
+  the download record/metadata. No schema change is required beyond the existing
+  profile/container fields; if the chosen preset cannot be represented, add a small
+  `download.variant` column with a migration in S060.
 - A pinned video plays offline with the video surface. Removing a source asks whether to
   delete its pins, as MVP-5 does for feeds.
 - A failed pin leaves no partial row. A missing/corrupt pin is reported as unverified, not
@@ -285,12 +299,33 @@ Mobile background rules:
 - Android needs parity for direct podcast enclosure downloads; iOS already routes podcast
   enclosures through its remote download path. Confirm and fix in S059.
 
+**Compression presets**
+
+| Preset | Output | Target | Use |
+| --- | --- | --- | --- |
+| Audio only | M4A/AAC, mono 64 kbps or stereo 96 kbps | Smallest spoken-word copy | Commute/background listening |
+| 480p | MP4/H.264 + AAC, ~800 kbps | Phone-sized video | Small-screen offline |
+| 720p | MP4/H.264 + AAC, ~1.5 Mbps | Tablet/laptop video | Moderate quality |
+| Original | Publisher enclosure | No quality loss | Maximum fidelity |
+
+- Android: Media3 `Transformer` with audio-only and video encoder settings.
+- iOS: `AVAssetExportSession` (`AppleM4A` for audio, 480p/720p presets for video).
+- Desktop: requires a user-provided/system `ffmpeg` in v1; if it is unavailable, the
+  compressed options are disabled with a clear explanation, while original and, when the
+  feed provides one, audio-alternate downloads still work. Bundling ffmpeg is a later
+  licensing/packaging decision, not part of S054–S061.
+- Compression is CPU/disk heavy; run it in the existing background download queue, never on
+  the playback thread, and expose progress/cancel.
+
 ### 5.9 UI
 
 **Podcasts home / show detail**
 
-- A video badge and duration on video episodes; filters gain **Video**.
-- Show-level preference: audio default / video default; refresh, remove.
+- A video badge and duration on video episodes; filters gain **Video**. Video-only
+  episodes stay in the normal list and queue; the filter narrows the view, it does not hide
+  them permanently.
+- Show-level preference: audio default / video default; refresh, remove. The default is
+  audio; a feed/tier that only exposes video uses video.
 - A video episode row shows its poster/thumbnail and a play badge; opening show notes does
   not start playback.
 
@@ -298,8 +333,9 @@ Mobile background rules:
 
 - Video stage: poster until playback, then the video surface (desktop embedded; mobile
   full-screen button). Controls: Play video / Audio only, Picture-in-Picture, Fullscreen,
-  Download (with size), speed, skip, queue.
-- Audio-only mode shows the existing artwork stage, not a black rectangle.
+  Download (with size and compression choices), speed, skip, queue.
+- Audio-only mode shows the existing artwork stage, not a black rectangle. A video-only
+  episode still plays audio from its video container when the codec is supported.
 - If a video surface cannot be created or decoded, the audio path continues and a clear
   `UNSUPPORTED_MEDIA`/`VIDEO_UNAVAILABLE` message explains why.
 
@@ -329,22 +365,26 @@ Mobile background rules:
 - Renderer: `<video>`/`<audio>` media manager, PiP, fullscreen, poster, audio-only.
 - Main: migration 7, protocol video MIME, `powerSaveBlocker`, background-throttling policy,
   media-session metadata.
-- Packaging: no new media binary, extractor or transcoder. electron-builder outputs are
-  unchanged except for the app code.
+- Packaging: no extractor is added. Video compression uses a user-provided/system
+  `ffmpeg` in v1; if it is unavailable, original/audio-alternate downloads still work.
+  Bundling ffmpeg is a later licensing/packaging decision. electron-builder outputs are
+  otherwise unchanged except for the app code.
 
 **Android**
 
 - Room v8 and shared parser via the existing native adapter.
 - Media3 `PlayerView`/surface: full-screen video and PiP; detach on background.
+- Media3 `Transformer` for audio-only and 480p/720p download compression.
 - Foreground media service and notification continue to own playback. No second player.
-- Car browse remains audio-only and excludes video-only episodes when they cannot be
-  played as audio.
+- Car browse remains audio-only; a video-only episode is offered only when its audio track
+  is decodable, otherwise it is shown as unavailable rather than broken.
 
 **iOS**
 
 - SQLite v7 and shared parser.
 - AVPlayerLayer full-screen video and `AVPictureInPictureController`; background audio
   unchanged.
+- `AVAssetExportSession` for audio-only and 480p/720p download compression.
 - CarPlay remains audio-only and uses the existing podcast rows.
 - No external-video-platform source or extractor is present.
 
@@ -373,6 +413,9 @@ Mobile background rules:
 - Startup: no change; video metadata is part of the normal feed refresh.
 - Downloads: video pins respect quota; the size estimate is shown before download; a failed
   pin leaves no partial row.
+- Compression: a 1-hour 720p pass completes within a bounded background window on the named
+  reference device without blocking playback; cancellation leaves no corrupt final file;
+  CPU/thermal behavior is recorded.
 - Feed lists: bounded alternates, paged episode queries (existing 50) and windowed rendering.
 - Memory: an hour-long 1080p video pin is a file on disk, not an in-memory buffer.
 
@@ -400,11 +443,12 @@ Mobile background rules:
 | iOS | SQLite v7 migration; AVPlayerLayer; PiP; screen-off audio |
 | Car | Audio-only browse/play; video-only episode handling; no video template |
 | Downloads | Pin video/audio, size/quota, offline playback, remove, corrupt file |
+| Compression | Audio-only, 480p, 720p; size/quality check; cancel/failure fallback; desktop no-ffmpeg state; playback of compressed output |
 | Security | SSRF on enclosures/alternates/posters; URL redaction; no-extraction artifact audit |
-| Performance | Screen-off 60-minute audio; hidden video decode; 1080p playback; large pin/quota; startup |
+| Performance | Screen-off 60-minute audio; hidden video decode; 1080p playback; large pin/quota; compression time/CPU; startup |
 | Accessibility | Control names, keyboard path, focus return from PiP, reduced motion |
 
-Evidence reports S054–S060 follow `evidence/TEMPLATE.md`, with command, exit code,
+Evidence reports S054–S061 follow `evidence/TEMPLATE.md`, with command, exit code,
 environment, logs and artifacts. Unit tests alone do not make a platform gate VERIFIED.
 
 ## 8. Slice map
@@ -417,7 +461,8 @@ environment, logs and artifacts. Unit tests alone do not make a platform gate VE
 | S057 | Android video presentation: PlayerView, PiP, surface detach, screen-off audio | S054, S055 |
 | S058 | iOS video presentation: AVPlayerLayer, PiP, screen-off audio | S054, S055 |
 | S059 | Video downloads/offline: size/quota, audio-only alternate, cleanup, Android parity | S055–S058 |
-| S060 | Cross-platform verification, performance, security, accessibility, release gate | S056–S059 |
+| S060 | Download compression: audio-only, 480p/720p, native/desktop adapters, failure/cancel | S059 |
+| S061 | Cross-platform verification, performance, security, accessibility, release gate | S056–S060 |
 
 ## 9. Release gate (MVP-6)
 
@@ -431,18 +476,20 @@ All of the following are required before MVP-6 is called VERIFIED:
    default, can switch to video without losing position, and the feed preference is
    respected.
 4. Video pin shows size, respects quota, plays offline, and removes cleanly. Audio-only pins
-   are offered where the feed provides an audio alternate.
+   are offered where the feed provides an audio alternate. Compression presets produce a
+   smaller, playable file; cancellation/failure leaves no corrupt final file; desktop
+   without ffmpeg disables compression clearly.
 5. Android and iOS screen-off/background audio is demonstrated on named runtimes; desktop
    minimize/media-key behavior is demonstrated in E2E. PiP is demonstrated or recorded as
    BLOCKED with a reproduction recipe.
 6. Car surfaces remain audio-only; a video-only episode has a clear state rather than a
    broken player.
 7. Security checks pass: SSRF on enclosures/alternates/posters, media-URL redaction, no
-   extraction/transcoder artifact in core bundles.
+   extraction artifact and no bundled ffmpeg in core/default artifacts.
 8. Performance gates pass on named references: hidden-video CPU/battery, 1080p playback,
    large-file download and startup.
 9. Accessibility checks pass for video controls and PiP focus.
-10. Evidence S054–S060 is complete. Runtime-only gates that remain open are called out as
+10. Evidence S054–S061 is complete. Runtime-only gates that remain open are called out as
     BLOCKED; they are not reported as passing.
 
 ## 10. Risks and open questions
@@ -456,18 +503,24 @@ All of the following are required before MVP-6 is called VERIFIED:
 | Two surfaces / duplicate audio | One engine and one active surface invariant; tests for PiP + background, mini player + full screen |
 | Mobile embedded video complexity | v1 uses native full-screen + PiP; no WebView video surface |
 | Range/redirect behavior differs by host | Reuse the verified protocol proxy and add video fixtures; clear errors on 401/403/404 |
-| Codec not supported by a platform | Report `UNSUPPORTED_MEDIA`, keep audio if available; no transcoder in MVP-6 |
+| Codec not supported by a platform | Report `UNSUPPORTED_MEDIA`; keep audio if the container's audio track is decodable; offer compression where available |
 | Video download on Android lags iOS | S059 explicitly verifies direct-enclosure download parity |
+| Compression is slow or heats the device | Background queue, fixed presets, progress/cancel, measured time/CPU; original download remains available |
+| Desktop has no ffmpeg | Compression options disabled with a clear explanation; original and audio-alternate downloads still work; bundling is a later licensing decision |
+| Compression quality is poor for some content | Presets are labelled as space-saving; original remains the default fidelity choice; no automatic conversion |
 | Accessibility gaps in video controls | Named controls, keyboard path, focus return, reduced motion gate |
 | Scope creep back to YouTube | ADR-037 records the exclusion; a reversal needs a new ADR with legal/platform costs |
 
-Open questions for acceptance:
+## 11. Decisions recorded (2026-11-11)
 
-1. Should the default be audio-primary when both forms exist (recommended), or ask the user
-   the first time?
-2. Should video pins be allowed by default with a size warning (recommended), or disabled
-   until the user enables them in Settings?
-3. Should mobile v1 ship full-screen + PiP only (recommended), or delay video until an
-   embedded surface is available?
-4. Should video-only episodes appear in the audio queue, or be separated behind a “Video”
-   filter? (Recommended: visible with a badge, but skipped by audio-only auto-advance.)
+1. **Audio is the default** when both forms exist. The feed/subscription tier determines
+   what is actually available; Statocyst uses the subscribed feed and never guesses or
+   fetches a different tier. The user can switch to video at any time. MVP-6 does not add
+   premium/member-feed authentication or a feed-URL importer.
+2. **Video pins are a user action**, never automatic. The pin sheet offers original,
+   audio-only and compressed video choices; compression is a fixed spoken-word/space-saving
+   preset, not a general transcoder.
+3. **Mobile v1 is full-screen + PiP.** No embedded WebView video surface in MVP-6.
+4. **Video-only episodes are included** in the normal list and queue, with a **Video**
+   filter. They remain playable in audio-only mode when the platform can decode the audio
+   track; unsupported codecs report an error instead of hiding the episode.
