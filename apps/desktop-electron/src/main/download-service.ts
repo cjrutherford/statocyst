@@ -275,8 +275,18 @@ export class DownloadService {
         );
       });
       child.on('close', (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`ffmpeg exited with code ${code}${stderr ? `: ${stderr}` : ''}`));
+        if (code === 0) {
+          resolve();
+          return;
+        }
+        // Do not put ffmpeg stderr in the user/log message: it can contain the
+        // signed source URL. The exit code is enough for diagnostics.
+        this.options.logger.warn('download.transcode.failed', {
+          trackId: 'redacted',
+          code,
+          stderrLength: stderr.length,
+        });
+        reject(new Error(`ffmpeg exited with code ${code}`));
       });
     });
   }
