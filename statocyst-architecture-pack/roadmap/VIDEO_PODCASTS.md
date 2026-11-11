@@ -13,7 +13,7 @@ Extend the podcast experience without weakening the music player or the MVP-5 po
 contract:
 
 - Play **video podcast episodes** published by RSS/Atom feeds, with a real video surface on
-  desktop and full-screen/PiP video on mobile.
+  desktop and in-page/PiP video on mobile.
 - Keep **audio authoritative**: video is a presentation layer. Audio continues when the
   window is minimized, the app is backgrounded, the screen is locked, or the user chooses
   audio-only.
@@ -39,8 +39,8 @@ contract:
 - General-purpose video editing or arbitrary transcoding. MVP-6 offers only fixed
   compression presets in the download pipeline; the original enclosure is still available.
   Play the publisher's bytes when the original is chosen; report unsupported media clearly.
-- Embedded video inside the mobile WebView in v1. Android/iOS use a native full-screen
-  video surface and native PiP; an embedded surface is a later refinement.
+- A second WebView video element or second player on mobile. Android/iOS keep the one
+  native surface over the in-page video stage, with PiP on the same surface and session.
 - Background video decoding while the screen is off. Audio-only is the expected state.
 - Cross-device video resume, casting, AirPlay/Chromecast.
 - Automatic conversion of arbitrary feed items into video. `media_form` comes from the
@@ -56,7 +56,7 @@ contract:
 | Contract | `Track`, `EngineLoadRequest` audio-only | `mediaForm`, poster, presentation mode, video metadata |
 | Protocol | Podcast remote URL proxy | Same proxy, with video MIME types and Range/HEAD |
 | Downloads | Audio episode pins | RSS video pins (manual, user-chosen), audio-only or compressed copy where supported |
-| Platforms | Desktop, Android, iOS, Auto, CarPlay audio | Desktop embedded video; Android/iOS full-screen + PiP; car remains audio-only |
+| Platforms | Desktop, Android, iOS, Auto, CarPlay audio | Desktop and mobile in-page video with PiP; car remains audio-only |
 | Source policy | Publisher RSS/Atom discovery only | Unchanged: publisher RSS/Atom only, now including video enclosures |
 
 ## 4. Why YouTube is excluded
@@ -205,10 +205,11 @@ only one form exists, it only shows/hides the video surface.
 - Desktop: the renderer owns a `<video>` element for video tracks and keeps the existing
   `<audio>` element for audio tracks. Only one is active at a time. The video element has
   `playsinline`, a poster and no `disablePictureInPicture`.
-- Android: Media3 remains the only player. A native `PlayerView`/`SurfaceView` is attached
-  for full-screen/PiP; `clearVideoSurface()` on background/audio-only keeps playback alive.
-- iOS: AVPlayer remains the only player. An `AVPlayerLayer` is attached for full-screen and
-  `AVPictureInPictureController` for PiP; the layer is detached on background/audio-only.
+- Android: Media3 remains the only player. A native `TextureView` is positioned over the
+  in-page stage (not over the whole app) and PiP uses the same surface;
+  `clearVideoTextureView()` on background/audio-only keeps playback alive.
+- iOS: AVPlayer remains the only player. An `AVPlayerLayer` sits over the in-page stage and
+  `AVPictureInPictureController` handles PiP; the layer is detached on background/audio-only.
 - The engine reports duration and position exactly as it does for audio. Video dimensions
   are persisted from feed metadata (or reported by the surface) and are optional.
 
@@ -216,7 +217,7 @@ only one form exists, it only shows/hides the video surface.
 
 | State | Desktop | Android | iOS |
 | --- | --- | --- | --- |
-| Now Playing, video mode | Embedded `<video>` in the stage | Full-screen native surface launched from the stage | Full-screen native surface launched from the stage |
+| Now Playing, video mode | Embedded `<video>` in the stage | Native surface positioned over the in-page stage | Native surface positioned over the in-page stage |
 | Mini player | Poster/thumbnail; no second video element | Poster in WebView; native surface hidden | Poster in WebView; layer hidden |
 | Minimized/background | Audio continues; video hidden; optional PiP | Audio continues; surface detached; PiP if the user leaves video | Audio continues; layer detached; PiP |
 | Screen locked | Audio continues (media session) | Audio continues (foreground media service) | Audio continues (`AVAudioSession.playback`) |
@@ -260,8 +261,9 @@ Mobile background rules:
 - Classify form from MIME first, then `medium`, then a conservative extension/URL hint.
   `application/octet-stream` is not assumed to be video.
 - Primary selection:
-  1. If the feed has both audio and video, prefer **audio** as the primary for background
-     listening and keep video as an alternate.
+  1. If the feed has both audio and video, keep **audio** as the primary media form for
+     background listening and storage, with video as an alternate. Presentation still starts
+     in video when the user plays the episode.
   2. If only video exists, primary is video.
   3. If the feed preference is `defaultMediaForm='video'`, prefer video.
 - Validate every enclosure URL with the existing HTTP(S)/SSRF gate. Reject non-HTTP(S).
@@ -324,16 +326,18 @@ Mobile background rules:
 - A video badge and duration on video episodes; filters gain **Video**. Video-only
   episodes stay in the normal list and queue; the filter narrows the view, it does not hide
   them permanently.
-- Show-level preference: audio default / video default; refresh, remove. The default is
-  audio; a feed/tier that only exposes video uses video.
+- Show-level preference: audio-only / video; refresh, remove. Video episodes start in video;
+  audio-only is a per-episode toggle. A feed/tier that only exposes audio uses audio.
 - A video episode row shows its poster/thumbnail and a play badge; opening show notes does
   not start playback.
 
 **Now Playing**
 
-- Video stage: poster until playback, then the video surface (desktop embedded; mobile
-  full-screen button). Controls: Play video / Audio only, Picture-in-Picture, Fullscreen,
-  Download (with size and compression choices), speed, skip, queue.
+- Video stage: poster until playback, then the video surface embedded in the podcast view
+  (desktop and mobile). Controls: Play/Pause, Play video / Audio only, Picture-in-Picture,
+  Fullscreen (desktop), Download (with size and compression choices), speed, skip, queue.
+- On mobile the native surface is positioned over the in-page stage, not over the whole app,
+  so the header, controls and episode list remain usable around it.
 - Audio-only mode shows the existing artwork stage, not a black rectangle. A video-only
   episode still plays audio from its video container when the codec is supported.
 - If a video surface cannot be created or decoded, the audio path continues and a clear
@@ -373,7 +377,7 @@ Mobile background rules:
 **Android**
 
 - Room v8 and shared parser via the existing native adapter.
-- Media3 `PlayerView`/surface: full-screen video and PiP; detach on background.
+- Media3 `TextureView` over the in-page stage: video and PiP; detach on background.
 - Media3 `Transformer` for audio-only and 480p/720p download compression.
 - Foreground media service and notification continue to own playback. No second player.
 - Car browse remains audio-only; a video-only episode is offered only when its audio track
@@ -382,7 +386,7 @@ Mobile background rules:
 **iOS**
 
 - SQLite v7 and shared parser.
-- AVPlayerLayer full-screen video and `AVPictureInPictureController`; background audio
+- AVPlayerLayer over the in-page stage and `AVPictureInPictureController`; background audio
   unchanged.
 - `AVAssetExportSession` for audio-only and 480p/720p download compression.
 - CarPlay remains audio-only and uses the existing podcast rows.
@@ -439,7 +443,7 @@ Mobile background rules:
 | Repository | Migration 7 from real v6 data; alternates serialization; no orphan media items; form consistency |
 | Protocol | Video MIME, Range/HEAD for a video enclosure; 401/403/404 mapping; download precedence |
 | Desktop E2E | Video RSS episode: play, video visible, audio-only toggle, minimize, media key, PiP/fullscreen where available, restart/resume |
-| Android | Room v8 migration; full-screen video; surface detach; screen-off audio; PiP; media session |
+| Android | Room v8 migration; in-page video; surface detach; screen-off audio; PiP; media session |
 | iOS | SQLite v7 migration; AVPlayerLayer; PiP; screen-off audio |
 | Car | Audio-only browse/play; video-only episode handling; no video template |
 | Downloads | Pin video/audio, size/quota, offline playback, remove, corrupt file |
@@ -501,7 +505,7 @@ All of the following are required before MVP-6 is called VERIFIED:
 | A feed advertises video but the content is audio | Trust MIME first, verify content type on first play, allow a manual form override |
 | Hidden `<video>` still decodes | Measure CPU/battery; detach/switch to audio alternate; no background video promise |
 | Two surfaces / duplicate audio | One engine and one active surface invariant; tests for PiP + background, mini player + full screen |
-| Mobile embedded video complexity | v1 uses native full-screen + PiP; no WebView video surface |
+| Mobile surface integration | v1 uses one native surface over the in-page stage plus PiP; no second player and no WebView video element |
 | Range/redirect behavior differs by host | Reuse the verified protocol proxy and add video fixtures; clear errors on 401/403/404 |
 | Codec not supported by a platform | Report `UNSUPPORTED_MEDIA`; keep audio if the container's audio track is decodable; offer compression where available |
 | Video download on Android lags iOS | S059 explicitly verifies direct-enclosure download parity |
@@ -513,14 +517,18 @@ All of the following are required before MVP-6 is called VERIFIED:
 
 ## 11. Decisions recorded (2026-11-11)
 
-1. **Audio is the default** when both forms exist. The feed/subscription tier determines
-   what is actually available; Statocyst uses the subscribed feed and never guesses or
-   fetches a different tier. The user can switch to video at any time. MVP-6 does not add
-   premium/member-feed authentication or a feed-URL importer.
+1. **Video is the default when the episode has a video form.** A video-form episode, or one
+   whose alternates include video, starts in video presentation; audio-only is an explicit
+   per-episode toggle and is preserved while that episode is current. The feed/subscription
+   tier determines what is actually available; Statocyst uses the subscribed feed and never
+   guesses or fetches a different tier. MVP-6 does not add premium/member-feed authentication
+   or a feed-URL importer.
 2. **Video pins are a user action**, never automatic. The pin sheet offers original,
    audio-only and compressed video choices; compression is a fixed spoken-word/space-saving
    preset, not a general transcoder.
-3. **Mobile v1 is full-screen + PiP.** No embedded WebView video surface in MVP-6.
+3. **Mobile v1 is an in-page native surface + PiP.** The native surface is positioned over the
+   video stage, so the app chrome and episode list remain usable; no second player and no
+   WebView video element.
 4. **Video-only episodes are included** in the normal list and queue, with a **Video**
    filter. They remain playable in audio-only mode when the platform can decode the audio
    track; unsupported codecs report an error instead of hiding the episode.

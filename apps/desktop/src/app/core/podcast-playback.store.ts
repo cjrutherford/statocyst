@@ -70,7 +70,10 @@ export class PodcastPlaybackStore {
   readonly mediaForm = computed(() => this.snapshot().mediaForm);
   readonly presentation = computed(() => this.snapshot().presentation);
   readonly hasVideo = computed(
-    () => this.snapshot().videoAvailable === true || this.snapshot().mediaForm === 'video',
+    () =>
+      this.snapshot().track?.videoAvailable === true ||
+      this.snapshot().videoAvailable === true ||
+      this.snapshot().mediaForm === 'video',
   );
   readonly progress = computed(() => {
     const duration = this.durationMs();
@@ -156,6 +159,17 @@ export class PodcastPlaybackStore {
       trackId: fresh.id,
       ...(ids ? { contextTrackIds: ids } : {}),
     });
+    // A feed can publish audio first and carry the video as an alternate.
+    // The native bridge already defaults to video when the track reports one;
+    // the desktop host needs the explicit switch.
+    if (
+      result.ok &&
+      !isNativePlatform() &&
+      fresh.mediaForm !== 'video' &&
+      fresh.alternates.some((form) => form.form === 'video')
+    ) {
+      await this.setPresentation('video');
+    }
     if (!result.ok || fresh.completed || fresh.resumePositionMs <= 0) return;
     // The desktop host already resumes in `loadEntry`; the native mobile bridge
     // starts a freshly pushed queue at zero and may still report the previous

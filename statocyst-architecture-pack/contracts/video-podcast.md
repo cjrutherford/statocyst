@@ -20,11 +20,14 @@ Rules:
 
 - A video podcast is `MediaKind.podcast` + `MediaForm.video`. It is not a third media kind.
 - `MediaForm` describes the primary enclosure; `alternates` carries the other usable forms.
-- `Presentation` is a user/session choice, not persistence of the media identity. The
-  default comes from settings, then the feed's `defaultMediaForm`, then audio.
-- **Audio is the default** when both forms exist. The feed/subscription tier determines what
-  is available; Statocyst uses the feed the user subscribed to and never guesses a tier or
-  fetches a different one. A video-only feed uses video.
+- `Presentation` is a user/session choice, not persistence of the media identity. A video-form
+  episode, or one whose alternates include video, starts in `video`; the user can switch to
+  `audio-only` for that episode without losing position. Audio-only episodes are always
+  `audio-only`.
+- **Video is the default when the episode has a video form.** The feed/subscription tier
+  determines what is available; Statocyst uses the feed the user subscribed to and never
+  guesses a tier or fetches a different one. A feed that publishes both forms keeps both in
+  the episode row so the player can switch without a reload.
 - `media_form` is declared by the feed. It is not inferred from duration, title or a
   third-party platform.
 - Video-only episodes remain in the normal list and queue. Audio-only playback uses the
@@ -60,8 +63,8 @@ Rules:
 ```
 
 An audio-only episode has `mediaForm: "audio"`, an empty `alternates` list and null video
-dimensions. An episode with both forms is audio-primary by default, with the video in
-`alternates`; the feed's `defaultMediaForm` can invert that.
+dimensions. An episode with both forms keeps the feed's primary form and carries the other
+form in `alternates`; the player starts in video whenever either form is video.
 
 ## 3. Playback additions
 

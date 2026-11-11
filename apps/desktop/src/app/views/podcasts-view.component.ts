@@ -100,7 +100,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                     <sc-icon name="refresh" />
                     Refresh
                   </button>
-                  <button type="button" class="btn btn--quiet" (click)="settingsOpen.set(!settingsOpen())">
+                  <button type="button" class="btn btn--quiet" (click)="toggleSettings()">
                     <sc-icon name="settings" />
                     Show settings
                   </button>
@@ -192,7 +192,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                       <option value="audio">Audio</option>
                       <option value="video">Video</option>
                     </select>
-                    <span class="field__hint">Audio is the default when an episode has both.</span>
+                    <span class="field__hint">Used when an episode publishes both audio and video.</span>
                   </label>
                 </div>
                 <label class="switch-row">
@@ -2174,9 +2174,31 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
         }
         .featured-pick {
           grid-template-columns: 88px minmax(0, 1fr);
+          background: rgba(4, 12, 26, 0.78);
+          backdrop-filter: none;
         }
         .recommendation-grid {
           grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+        }
+        /* Long podcast lists on phones: skip the entrance animation and the
+           hover lifts (touch devices fire them on tap and repaint the card). */
+        .feed-card,
+        .result,
+        .top-card,
+        .show-tile,
+        .category-card {
+          animation: none;
+        }
+        .feed-card:hover,
+        .result:hover,
+        .top-card:hover,
+        .show-tile:hover,
+        .category-card:hover {
+          transform: none;
+        }
+        .top-card:hover sc-artwork,
+        .show-tile:hover sc-artwork {
+          transform: none;
         }
       }
 
@@ -2444,15 +2466,23 @@ export class PodcastsViewComponent {
   }
 
   protected openFeed(feedId: string): void {
-    this.filter.set('all');
-    this.expanded.set(null);
-    void this.store.selectFeed(feedId);
+    void this.transitions.foamChange(() => {
+      this.filter.set('all');
+      this.expanded.set(null);
+      void this.store.selectFeed(feedId);
+    });
   }
 
   protected back(): void {
-    void this.store.selectFeed(null);
-    this.settingsOpen.set(false);
-    this.expanded.set(null);
+    void this.transitions.foamChange(() => {
+      void this.store.selectFeed(null);
+      this.settingsOpen.set(false);
+      this.expanded.set(null);
+    });
+  }
+
+  protected toggleSettings(): void {
+    void this.transitions.foamChange(() => this.settingsOpen.set(!this.settingsOpen()));
   }
 
   protected playLatest(): void {

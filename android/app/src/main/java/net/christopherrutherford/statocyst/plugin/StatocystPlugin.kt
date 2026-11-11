@@ -536,7 +536,22 @@ class StatocystPlugin : Plugin() {
         }
     }
 
+    private var lastQueueCount = -1
+    private var lastQueueCurrent: String? = null
+
+    /** Set while the user explicitly chose audio-only for the current entry. */
+    private var suppressAutoVideoFor: String? = null
+
     private val playerListener = object : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            // Letterbox inside the stage instead of stretching non-16:9 video.
+            VideoPresentation.configure(
+                mode = null,
+                videoWidth = videoSize.width,
+                videoHeight = videoSize.height,
+            )
+        }
+
         override fun onEvents(player: Player, events: Player.Events) {
             val c = player as? MediaController ?: return
             if (events.containsAny(
@@ -552,12 +567,27 @@ class StatocystPlugin : Plugin() {
             ) {
                 emitState(c)
             }
-            if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+            // Timeline events fire for buffering/duration updates too. Re-sending
+            // a large podcast queue on every one of them made the WebView stutter.
+            val currentId = c.currentMediaItem?.mediaId
+            if (c.mediaItemCount != lastQueueCount || currentId != lastQueueCurrent) {
+                lastQueueCount = c.mediaItemCount
+                lastQueueCurrent = currentId
                 emitQueue(c)
             }
             if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
-                // A new episode may be audio-only; never leave a black video surface.
-                VideoPresentation.configure(null, QueueItems.mediaFormOf(c.currentMediaItem))
+                val form = QueueItems.mediaFormOf(c.currentMediaItem)
+                if (suppressAutoVideoFor != null && suppressAutoVideoFor != currentId) {
+                    suppressAutoVideoFor = null
+                }
+                val keepAudioOnly = currentId != null && currentId == suppressAutoVideoFor
+                if (!keepAudioOnly && form == "video") {
+                    // A video episode is the default presentation now. The user
+                    // can still switch this episode to audio-only.
+                    VideoPresentation.configure(VideoPresentation.MODE_VIDEO, form)
+                } else {
+                    VideoPresentation.configure(null, form)
+                }
                 VideoPresentation.applyTrackSelection(c)
                 if (VideoPresentation.canShowVideo()) {
                     VideoPresentation.attach(activity, c)
@@ -800,6 +830,7 @@ class StatocystPlugin : Plugin() {
                 call.reject("This episode has no video presentation", "UNSUPPORTED_MEDIA")
                 return@withController
             }
+            videoBoundsFrom(call)
             // Audio+video feeds publish both forms. Switch the one player to the
             // requested form without creating a second queue or session.
             switchMediaForm(c, if (wantVideo) "video" else "audio")
@@ -816,8 +847,20 @@ class StatocystPlugin : Plugin() {
             } else {
                 VideoPresentation.detach(c)
             }
+            // The state event can otherwise arrive before the form switch and
+            // leave the renderer showing audio-only metadata for a video episode.
+            emitState(c)
             call.resolve(presentationJson())
         }
+    }
+
+    /** Reads the renderer's stage rect (physical pixels) when it supplied one. */
+    private fun videoBoundsFrom(call: PluginCall): Boolean {
+        val left = call.getInt("left") ?: return false
+        val top = call.getInt("top") ?: return false
+        val width = call.getInt("width") ?: return false
+        val height = call.getInt("height") ?: return false
+        return VideoPresentation.setBounds(left, top, width, height)
     }
 
     /**
@@ -826,6 +869,9 @@ class StatocystPlugin : Plugin() {
      */
     private fun switchMediaForm(controller: MediaController, form: String) {
         val current = controller.currentMediaItem ?: return
+        // Remember an explicit audio-only choice so the item replacement's
+        // transition event does not immediately turn video back on.
+        suppressAutoVideoFor = if (form == "audio") current.mediaId else null
         if (QueueItems.mediaFormOf(current) == form) return
         val alternates = QueueItems.alternatesOf(current) ?: return
         val array = runCatching { JSONArray(alternates) }.getOrNull() ?: return
@@ -864,9 +910,22 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun attachVideoSurface(call: PluginCall) {
         withController(call) { c ->
+            videoBoundsFrom(call)
             VideoPresentation.applyTrackSelection(c)
             val attached = VideoPresentation.attach(activity, c)
             call.resolve(presentationJson().put("attached", attached))
+        }
+    }
+
+    /** Repositions the existing surface after a scroll/resize; never reattaches. */
+    @PluginMethod
+    fun updateVideoSurface(call: PluginCall) {
+        withController(call) { c ->
+            videoBoundsFrom(call)
+            if (VideoPresentation.canShowVideo() && VideoPresentation.attached) {
+                VideoPresentation.attach(activity, c)
+            }
+            call.resolve(presentationJson())
         }
     }
 

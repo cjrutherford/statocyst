@@ -13,8 +13,8 @@ import { isNativePlatform } from '../core/bridge';
 
 /**
  * Video presentation for the active podcast episode. Desktop owns the media
- * element and supplies a DOM host; Android/iOS ask the native plugin for the
- * full-screen surface and PiP. Audio-only mode never stops playback.
+ * element and supplies a DOM host; Android/iOS place the one native surface
+ * over the same host so the video sits inside the app instead of covering it.
  */
 @Component({
   selector: 'sc-podcast-video-stage',
@@ -22,14 +22,16 @@ import { isNativePlatform } from '../core/bridge';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (playback.hasVideo() && playback.track(); as track) {
-      <section class="video-stage" aria-label="Video episode">
-        @if (!native) {
-          <div
-            #host
-            class="video-stage__frame"
-            [class.is-audio-only]="playback.presentation() === 'audio-only'"
-          ></div>
-        }
+      <section
+        class="video-stage"
+        [class.is-video]="playback.presentation() === 'video'"
+        aria-label="Video episode"
+      >
+        <div
+          #host
+          class="video-stage__frame"
+          [class.is-audio-only]="playback.presentation() === 'audio-only'"
+        ></div>
         <div class="video-stage__meta">
           <div>
             <p class="eyebrow">{{ track.album }}</p>
@@ -39,6 +41,9 @@ import { isNativePlatform } from '../core/bridge';
             }
           </div>
           <div class="video-stage__actions">
+            <button type="button" class="btn btn--quiet" (click)="playback.toggle()">
+              {{ playback.isPlaying() ? 'Pause' : 'Play' }}
+            </button>
             <button
               type="button"
               class="btn btn--quiet"
@@ -72,14 +77,21 @@ import { isNativePlatform } from '../core/bridge';
   `,
   styles: [
     `
+      :host {
+        display: block;
+        position: sticky;
+        top: 0;
+        z-index: 6;
+      }
       .video-stage {
         display: grid;
         gap: 10px;
-        margin-bottom: 18px;
-        padding: 12px;
+        margin: 0 0 18px;
+        padding: 10px;
         border: 1px solid var(--line);
         border-radius: var(--radius-lg);
         background: var(--surface-2);
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
       }
       .video-stage__frame {
         position: relative;
@@ -112,6 +124,15 @@ import { isNativePlatform } from '../core/bridge';
         gap: 6px;
         flex-wrap: wrap;
       }
+      @media (max-width: 640px) {
+        .video-stage {
+          padding: 8px;
+          border-radius: var(--radius-md);
+        }
+        .video-stage__meta h2 {
+          font-size: 1rem;
+        }
+      }
     `,
   ],
 })
@@ -122,33 +143,72 @@ export class PodcastVideoStageComponent {
   private readonly host = viewChild<ElementRef<HTMLElement>>('host');
   private readonly destroyRef = inject(DestroyRef);
 
+  private resizeObserver: ResizeObserver | null = null;
+  private scrollTarget: HTMLElement | null = null;
+  private boundHost: HTMLElement | null = null;
+  private syncFrame = 0;
+  private attached = false;
+  private lastBounds: { left: number; top: number; width: number; height: number } | null = null;
+
   constructor() {
     effect(() => {
-      if (this.native) return;
       const host = this.host()?.nativeElement;
       const track = this.playback.track();
       const hasVideo = this.playback.hasVideo();
-      if (host && hasVideo && track) {
-        this.engine.attachVideoHost(host);
-      } else if (host) {
-        this.engine.detachVideoHost(host);
+      const presentation = this.playback.presentation();
+
+      if (!this.native) {
+        if (host && hasVideo && track) this.engine.attachVideoHost(host);
+        else if (host) this.engine.detachVideoHost(host);
+        return;
+      }
+
+      this.bindHost(host);
+      if (host && hasVideo && presentation === 'video') {
+        // The frame is display:none in audio-only, so wait for layout before
+        // reporting its rect; scrolling later only updates the same rect.
+        this.scheduleSync();
+      } else if (!hasVideo || presentation === 'audio-only') {
+        void this.detachNative();
       }
     });
+
+    // Starting a video from an episode below the fold should bring the stage
+    // into view, not leave the user staring at a list while audio plays.
+    let wasVideo = false;
+    effect(() => {
+      const isVideo = this.playback.hasVideo() && this.playback.presentation() === 'video';
+      if (isVideo && !wasVideo) requestAnimationFrame(() => this.reveal());
+      wasVideo = isVideo;
+    });
+
     this.destroyRef.onDestroy(() => {
       if (!this.native) this.engine.detachVideoHost(this.host()?.nativeElement);
+      this.resizeObserver?.disconnect();
+      this.scrollTarget?.removeEventListener('scroll', this.onViewportChange);
+      window.removeEventListener('resize', this.onViewportChange);
+      if (this.syncFrame) cancelAnimationFrame(this.syncFrame);
+      void this.detachNative();
     });
+  }
+
+  /** Brings the sticky stage into view when an episode starts below the fold. */
+  reveal(): void {
+    const host = this.host()?.nativeElement;
+    if (!host) return;
+    const rect = host.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) {
+      host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    this.scheduleSync();
   }
 
   protected async togglePresentation(): Promise<void> {
     const next = this.playback.presentation() === 'video' ? 'audio-only' : 'video';
     await this.playback.setPresentation(next);
     if (!this.native) return;
-    const plugin = this.nativePlugin();
-    const method =
-      next === 'video'
-        ? (plugin?.showVideo ?? plugin?.attachVideoSurface)
-        : (plugin?.hideVideo ?? plugin?.detachVideoSurface);
-    await method?.call(plugin).catch(() => undefined);
+    if (next === 'audio-only') await this.detachNative();
+    else this.scheduleSync();
   }
 
   protected pipSupported(): boolean {
@@ -178,31 +238,127 @@ export class PodcastVideoStageComponent {
     }
   }
 
+  private bindHost(host: HTMLElement | undefined): void {
+    if (!host || host === this.boundHost) return;
+    this.boundHost = host;
+    this.resizeObserver?.disconnect();
+    this.scrollTarget?.removeEventListener('scroll', this.onViewportChange);
+    window.removeEventListener('resize', this.onViewportChange);
+    this.resizeObserver = new ResizeObserver(() => this.scheduleSync());
+    this.resizeObserver.observe(host);
+    this.scrollTarget = this.nearestScrollParent(host);
+    this.scrollTarget?.addEventListener('scroll', this.onViewportChange, { passive: true });
+    window.addEventListener('resize', this.onViewportChange, { passive: true });
+  }
+
+  private readonly onViewportChange = (): void => this.scheduleSync();
+
+  private scheduleSync(): void {
+    if (!this.native || this.syncFrame) return;
+    this.syncFrame = requestAnimationFrame(() => {
+      this.syncFrame = 0;
+      void this.syncNativeSurface();
+    });
+  }
+
+  private async syncNativeSurface(): Promise<void> {
+    const host = this.host()?.nativeElement;
+    if (!host) return;
+    if (this.playback.presentation() !== 'video' || !this.playback.hasVideo()) {
+      await this.detachNative();
+      return;
+    }
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      await this.detachNative();
+      return;
+    }
+    const density = window.devicePixelRatio || 1;
+    const bounds = {
+      left: Math.round(rect.left * density),
+      top: Math.round(rect.top * density),
+      width: Math.round(rect.width * density),
+      height: Math.round(rect.height * density),
+    };
+    if (
+      this.lastBounds &&
+      this.lastBounds.left === bounds.left &&
+      this.lastBounds.top === bounds.top &&
+      this.lastBounds.width === bounds.width &&
+      this.lastBounds.height === bounds.height
+    ) {
+      return;
+    }
+    const plugin = this.nativePlugin();
+    if (!plugin) return;
+    if (this.attached) {
+      this.lastBounds = bounds;
+      await plugin.updateVideoSurface?.(bounds).catch(() => undefined);
+      return;
+    }
+    const result = await plugin
+      .setPresentation?.({
+        mode: 'video',
+        posterUrl: this.playback.track()?.artworkUrl ?? null,
+        ...bounds,
+      })
+      .catch(() => undefined);
+    if (result !== undefined) {
+      // Android returns an explicit attached flag; iOS owns its AVPlayerLayer
+      // and reports no flag, so a successful setPresentation is enough.
+      this.attached = (result as { attached?: boolean }).attached !== false;
+    }
+    if (!this.attached) {
+      const attached = await plugin.attachVideoSurface?.(bounds).catch(() => undefined);
+      this.attached = Boolean((attached as { attached?: boolean } | undefined)?.attached);
+    }
+    if (this.attached) this.lastBounds = bounds;
+  }
+
+  private async detachNative(): Promise<void> {
+    this.attached = false;
+    this.lastBounds = null;
+    const plugin = this.nativePlugin();
+    await plugin?.detachVideoSurface?.().catch(() => undefined);
+  }
+
+  private nearestScrollParent(element: HTMLElement): HTMLElement | null {
+    let node = element.parentElement;
+    while (node) {
+      const overflow = getComputedStyle(node).overflowY;
+      if (overflow === 'auto' || overflow === 'scroll') return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
   private nativePlugin():
     | {
-        showVideo?: () => Promise<unknown>;
-        hideVideo?: () => Promise<unknown>;
-        attachVideoSurface?: () => Promise<unknown>;
+        setPresentation?: (options: Record<string, unknown>) => Promise<unknown>;
+        attachVideoSurface?: (bounds: Record<string, number>) => Promise<unknown>;
+        updateVideoSurface?: (bounds: Record<string, number>) => Promise<unknown>;
         detachVideoSurface?: () => Promise<unknown>;
         enterPictureInPicture?: () => Promise<unknown>;
         startPictureInPicture?: () => Promise<unknown>;
       }
     | undefined {
-    return (window as unknown as {
-      Capacitor?: {
-        Plugins?: Record<
-          string,
-          {
-            showVideo?: () => Promise<unknown>;
-            hideVideo?: () => Promise<unknown>;
-            attachVideoSurface?: () => Promise<unknown>;
-            detachVideoSurface?: () => Promise<unknown>;
-            enterPictureInPicture?: () => Promise<unknown>;
-            startPictureInPicture?: () => Promise<unknown>;
-          }
-        >;
-      };
-    }).Capacitor?.Plugins?.['Statocyst'];
+    return (
+      window as unknown as {
+        Capacitor?: {
+          Plugins?: Record<
+            string,
+            {
+              setPresentation?: (options: Record<string, unknown>) => Promise<unknown>;
+              attachVideoSurface?: (bounds: Record<string, number>) => Promise<unknown>;
+              updateVideoSurface?: (bounds: Record<string, number>) => Promise<unknown>;
+              detachVideoSurface?: () => Promise<unknown>;
+              enterPictureInPicture?: () => Promise<unknown>;
+              startPictureInPicture?: () => Promise<unknown>;
+            }
+          >;
+        };
+      }
+    ).Capacitor?.Plugins?.['Statocyst'];
   }
 
   protected async fullscreen(): Promise<void> {

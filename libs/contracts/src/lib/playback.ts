@@ -79,6 +79,8 @@ export interface Track {
   mediaKind?: MediaKind;
   /** Primary presentation; absent on older hosts means audio. */
   mediaForm?: MediaForm;
+  /** True when the episode has a video form, even if audio is primary. */
+  videoAvailable?: boolean;
   trackNo?: number | null;
   year?: number | null;
   genre?: string | null;

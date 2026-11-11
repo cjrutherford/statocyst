@@ -2,6 +2,7 @@ package net.christopherrutherford.statocyst;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -59,6 +60,12 @@ public class MainActivity extends BridgeActivity {
         if (VideoPresentation.shouldEnterPip(this)) {
             VideoPresentation.enterPip(this);
         }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        VideoPresentation.onPipModeChanged(isInPictureInPictureMode);
     }
 
     @Override

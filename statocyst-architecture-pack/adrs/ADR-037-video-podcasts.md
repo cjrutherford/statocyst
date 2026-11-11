@@ -50,16 +50,12 @@ scope.
    artifact. A user who wants a YouTube-only show must use the publisher's podcast feed or
    the YouTube app.
 
-4. **Audio is the default when both forms exist; the feed/tier decides what is available.**
-   If an item publishes audio and video, audio is the primary for background listening and
-   video is retained as an alternate. A feed-level preference can choose video as the
-   default. Some publishers expose different enclosures by subscription tier (for example,
-   a member feed with video and a public feed with audio); Statocyst uses whichever feed the
-   user actually subscribed to and never guesses a tier or fetches a different one. If the
-   subscribed feed is video-only, video is the effective source. The user can switch
-   presentation at any time without losing position. MVP-6 does not add premium/member-feed
-   authentication or a feed-URL importer; it respects whatever feed is already in the
-   library.
+4. **Video is the default when the episode has a video form; audio-only is an explicit toggle.**
+   A video-form episode, or an episode whose alternates include video, starts in video
+   presentation. Audio-only remains available per episode and is preserved while that episode
+   is current. When an episode has only audio, audio is used. The feed/subscription tier decides
+   what is actually available; Statocyst uses the subscribed feed and never guesses or fetches a
+   different tier. MVP-6 does not add premium/member-feed authentication or a feed-URL importer.
 
 5. **Downloads are per episode, publisher-authorized and user-chosen.**
    Video pins are a user action, never automatic. The download sheet offers the original
@@ -70,10 +66,11 @@ scope.
    publisher advertised.
 
 6. **All three platforms ship together.**
-   Desktop embeds video in Now Playing. Android and iOS use a native full-screen video
-   surface plus native PiP in v1; an embedded mobile surface is a later refinement. Car
-   surfaces remain audio-only and never render video. No platform is claimed VERIFIED until
-   its background/screen-off and video-surface evidence exists.
+   Desktop embeds video in the podcast view. Android and iOS place the native surface over the
+   in-page video stage, so the app chrome and episode list stay visible, with native PiP on top
+   of the same surface and session. Car surfaces remain audio-only and never render video. No
+   platform is claimed VERIFIED until its background/screen-off and video-surface evidence
+   exists.
 
 7. **Video-only episodes stay in the podcast library.**
    A video-only episode is included in the normal episode list and queue, with a video
