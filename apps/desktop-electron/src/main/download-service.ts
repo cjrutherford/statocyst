@@ -246,7 +246,7 @@ export class DownloadService {
             '-i',
             source,
             '-vf',
-            `scale=-2:${variant === 'video-480p' ? 480 : 720}`,
+            `scale=-2:min(ih\\,${variant === 'video-480p' ? 480 : 720})`,
             '-c:v',
             'libx264',
             '-preset',

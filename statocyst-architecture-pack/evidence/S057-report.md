@@ -1,0 +1,22 @@
+# Evidence report: S057
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; JDK 21; Android SDK present; no attached device/emulator
+- **Files changed:** Room v8 schema/migration, `VideoPresentation.kt` surface/PiP, plugin presentation methods, queue media-form metadata, Media3 Transformer compression, direct podcast downloads, `PodcastUrls`, manifest PiP flag, tests.
+- **Acceptance criteria and actual observations:**
+  - Android Kotlin compilation, unit tests and `assembleDebug` pass.
+  - The existing Media3 player remains the only player; a single native `SurfaceView` is attached/detached for video.
+  - Background/screen-off detaches the surface and disables video decoding while audio continues (code path present).
+  - `setPresentation` switches audio/video alternates by replacing the current item at the same position; PiP is available when supported.
+  - Download profiles include audio-only/480p/720p and Media3 Transformer handles the local transcode path.
+- **Commands run with exit codes:**
+  - `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug --offline` → 0
+  - `./gradlew :app:compileDebugAndroidTestKotlin` → 0
+  - `./gradlew :app:lintDebug` → 1 (pre-existing project-wide lint findings)
+- **Tests not run (why):** No `adb` device/emulator; screen-off, PiP, surface detach and offline playback require runtime evidence.
+- **Artifacts:** APK build output; Android migration test `VideoMigrationTest.kt`; `TransformerCompressor.kt`.
+- **Safety/security considerations:** Direct podcast downloads use protocol/credential/local-address validation and redirect revalidation.
+- **Known limitations and deferred follow-up:** Runtime gates are BLOCKED; the video surface is a raw `SurfaceView`, no native player chrome.
+- **Milestone gate affected:** MVP-6 S057.
+- **Reviewer and date:** Agent, 2026-11-11.

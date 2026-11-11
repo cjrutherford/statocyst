@@ -21,7 +21,7 @@ Each MVP is a **vertical slice and independently demonstrated stage**, never imp
 - `adrs/`: consolidated architecture decisions, clearly flagging implementation validation gates.
 - `roadmap/MILESTONES.md`: milestone-by-milestone completion conditions.
 - `roadmap/PODCASTS.md`: MVP-5 podcast architecture, data model, platform plan and release gate.
-- `roadmap/VIDEO_PODCASTS.md`: MVP-6 video podcasts, platform plan and release gate (planned; ADR-037 proposed).
+- `roadmap/VIDEO_PODCASTS.md`: MVP-6 video podcasts, platform plan and release gate (in progress; ADR-037 accepted, runtime gates open).
 - `slices/`: bounded agent work packets, one at a time.
 - `AGENTS.md`: execution contract for coding agents.
 - `contracts/`: initial language-neutral playback, queue and capability contracts, plus `video-podcast.md` for the planned media-form sketch.

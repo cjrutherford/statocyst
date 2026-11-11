@@ -53,7 +53,7 @@ Release requires the ten-point gate in `roadmap/PODCASTS.md` §18 and evidence i
 `evidence/S042-report.md`–`S053-report.md`.
 
 ## MVP-6 — Video podcasts (S054–S061)
-**Status: PLANNED (2026-11-11).** Decision: ADR-037 (proposed). Plan: `roadmap/VIDEO_PODCASTS.md`.
+**Status: IN_PROGRESS / IMPLEMENTED_UNVERIFIED (2026-11-11).** Decision: ADR-037. Plan: `roadmap/VIDEO_PODCASTS.md`.
 
 Video podcast episodes become a presentation of the existing podcast media kind, not a new
 kind: `media_form` plus alternate enclosures, a real video surface, PiP/fullscreen and

@@ -1,0 +1,21 @@
+# Evidence report: S060
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; ffmpeg 8.0.1; Android JDK 21; no iOS toolchain/device
+- **Files changed:** desktop ffmpeg compression adapter, Android `TransformerCompressor` + Media3 Transformer dependency, iOS `AVAssetExportSession` compression, download presets/wiring.
+- **Acceptance criteria and actual observations:**
+  - Desktop audio-only extraction from an MP4 and 480p H.264/AAC compression were executed by a unit test; both outputs were non-empty and verified.
+  - Presets avoid upscaling on desktop via `min(ih, target)`; Android probes source height and avoids upscaling; iOS uses 640x480/1280x720 export presets.
+  - Failed/cancelled output is removed and no final record is committed.
+  - Android compiles and the transformer code is annotated as unstable Media3 API; iOS code is static-only.
+- **Commands run with exit codes:**
+  - `corepack pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts -t "extracts audio"` → 0 (audio-only + 480p assertions)
+  - Android `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug` → 0
+  - iOS static structure/SQL checks → 0
+- **Tests not run (why):** Real-device compression timing, quality and cancellation; iOS export runtime; Bluetooth/thermal behavior.
+- **Artifacts:** generated 1-second MP4 test source; compression test assertions.
+- **Safety/security considerations:** Desktop compression uses a user-provided/system `ffmpeg`; no ffmpeg binary is bundled. No arbitrary user arguments are accepted.
+- **Known limitations and deferred follow-up:** Desktop without ffmpeg shows a clear failure; the UI does not pre-disable presets yet. Android audio-only is 64 kbps but not guaranteed mono. iOS compressed variant is not persisted across relaunch.
+- **Milestone gate affected:** MVP-6 S060.
+- **Reviewer and date:** Agent, 2026-11-11.

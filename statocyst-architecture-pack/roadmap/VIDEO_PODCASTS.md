@@ -1,6 +1,6 @@
 # MVP-6 — Video podcasts
 
-**Status:** PLANNED (2026-11-11). Design intent only; no implementation is asserted.
+**Status:** IN_PROGRESS / IMPLEMENTED_UNVERIFIED (2026-11-11). Shared model, parser, desktop video, Android build and iOS source are present; runtime and iOS gates remain open.
 **Decision record:** ADR-037.
 **Slice range:** S054–S061.
 **Depends on:** MVP-5 podcast gate (`roadmap/PODCASTS.md` §18). S054/S055 may start

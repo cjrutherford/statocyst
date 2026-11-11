@@ -1,0 +1,21 @@
+# Evidence report: S056
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; Node 24.22.1; Electron 45; no dedicated video E2E run
+- **Files changed:** desktop audio engine (one audio/video element manager), Now Playing video stage, playback service presentation command, protocol video MIME and alternate-form selection, podcasts view filter/stage, background throttling and power-save guard.
+- **Acceptance criteria and actual observations:**
+  - Desktop build/typecheck pass with a `<video>` path selected from `mediaForm`.
+  - `setPresentation` reloads the same authoritative entry at the current position; audio-only/background detaches the surface conceptually (element hidden/paused video track).
+  - Video MIME types are served through `statocyst-media:`; `?form=` selects the alternate enclosure.
+  - Podcasts view includes a Video filter and a poster/meta stage; mini player has no second video element.
+- **Commands run with exit codes:**
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop:build --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop:typecheck --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop-electron:test --skip-nx-cache` → 0
+- **Tests not run (why):** A real video RSS E2E with a visible/embedded surface, PiP and minimize was not run; the existing E2E suite covers audio podcasts only.
+- **Artifacts:** desktop build output; `apps/desktop/src/app/components/podcast-video-stage.component.ts`.
+- **Safety/security considerations:** Playback still uses the existing protocol/SSRF path; no new remote origin or credential path.
+- **Known limitations and deferred follow-up:** PiP/fullscreen need runtime verification on the reference Linux desktop; video E2E remains open.
+- **Milestone gate affected:** MVP-6 S056.
+- **Reviewer and date:** Agent, 2026-11-11.

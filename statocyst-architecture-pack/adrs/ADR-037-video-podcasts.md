@@ -1,6 +1,6 @@
 # Video podcasts
 
-**Status:** Proposed (2026-11-11).
+**Status:** Accepted design intent (scope confirmed 2026-11-11); implementation unverified.
 **Date:** 2026-11-11
 **Target:** MVP-6 — Video podcasts on desktop, Android and iOS (S054–S061).
 **Related:** ADR-019 (background playback), ADR-029 (security), ADR-033 (libSQL Android),

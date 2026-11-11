@@ -1,0 +1,21 @@
+# Evidence report: S059
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; Node 24.22.1; ffmpeg 8.0.1; Android JDK 21; no iOS toolchain/device
+- **Files changed:** desktop download resolver/variant selection, IPC/preload/download store variant plumbing, podcasts download-format picker, Android direct-enclosure download and compression profile plumbing, iOS direct enclosure/variant download.
+- **Acceptance criteria and actual observations:**
+  - Desktop downloads direct podcast enclosures, prefers a published audio alternate for audio-only, and writes a verified record.
+  - Video pins are a user action through the new format picker; original/audio/480p/720p options are exposed.
+  - Compression output is verified by size/hash before the final rename.
+  - Android compiles with the same profile variants; iOS code is present but unbuilt.
+- **Commands run with exit codes:**
+  - `corepack pnpm exec vitest run --config apps/desktop-electron/vitest.config.ts -t "extracts audio"` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop-electron:test --skip-nx-cache` → 0
+  - Android `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug` → 0
+- **Tests not run (why):** Device-level offline playback and iOS download queue runtime are not available on this host.
+- **Artifacts:** `download-service.spec.ts` compression test; build logs.
+- **Safety/security considerations:** Download URLs pass the existing HTTP(S)/SSRF policy; the YouTube path is absent.
+- **Known limitations and deferred follow-up:** Desktop download view reports `variant: original` because the desktop download table does not persist the preset; Android/iOS persist the profile. A one-pin-per-episode representation is retained.
+- **Milestone gate affected:** MVP-6 S059.
+- **Reviewer and date:** Agent, 2026-11-11.

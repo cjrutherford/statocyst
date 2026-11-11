@@ -72,6 +72,8 @@ interface PlaybackSnapshot {
   // ...existing fields
   mediaForm: 'audio' | 'video';
   presentation: Presentation;
+  /** True when the episode has a video form even if audio is the primary. */
+  videoAvailable?: boolean;
 }
 
 type PlaybackCommand =
