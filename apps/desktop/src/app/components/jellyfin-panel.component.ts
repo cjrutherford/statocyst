@@ -104,9 +104,12 @@ import { ToastStore } from '../core/toast.store';
 
           @if (quickConnectCode() && quickConnectUrl() === server.url) {
             <div class="quick-connect" role="status" aria-live="polite">
-              <span class="quick-connect__label">Enter this code in your Jellyfin web UI:</span>
+              <span class="quick-connect__label">Enter this code in Jellyfin:</span>
               <span class="quick-connect__code">{{ quickConnectCode() }}</span>
-              <span class="quick-connect__hint">Waiting for approval…</span>
+              <span class="quick-connect__hint">
+                Open Settings → Quick Connect, choose your user (Jellyfin 12.1+), then enter the
+                code. Waiting for approval…
+              </span>
               <button type="button" class="btn btn--quiet" (click)="cancelQuickConnect()">
                 Cancel
               </button>
@@ -328,6 +331,8 @@ export class JellyfinPanelComponent implements OnDestroy {
   protected readonly quickConnectCode = signal<string | null>(null);
   protected readonly quickConnectSecret = signal<string | null>(null);
   private quickConnectTimer: ReturnType<typeof setInterval> | null = null;
+  private quickConnectPolling = false;
+  private quickConnectStartedAt = 0;
 
   protected async addServer(event: Event): Promise<void> {
     event.preventDefault();
@@ -388,16 +393,31 @@ export class JellyfinPanelComponent implements OnDestroy {
 
   private startQuickConnectPolling(url: string, secret: string): void {
     if (this.quickConnectTimer) clearInterval(this.quickConnectTimer);
+    this.quickConnectStartedAt = Date.now();
     this.quickConnectTimer = setInterval(async () => {
-      const poll = await this.jellyfin.pollQuickConnect(url, secret);
-      if (!poll.ok) {
+      // A slow poll must not overlap the next tick, and a poll that started
+      // before the user cancelled must not sign in a newer code.
+      if (this.quickConnectPolling || this.quickConnectSecret() !== secret) return;
+      if (Date.now() - this.quickConnectStartedAt > 10 * 60 * 1000) {
         this.cancelQuickConnect();
-        this.toasts.error('Quick Connect failed', poll.error.message);
+        this.toasts.error('Quick Connect expired', 'The code expired. Start again for a new code.');
         return;
       }
-      if (poll.value.authenticated) {
-        this.cancelQuickConnect();
-        await this.jellyfin.loginWithQuickConnect(url, secret);
+      this.quickConnectPolling = true;
+      try {
+        const poll = await this.jellyfin.pollQuickConnect(url, secret);
+        if (this.quickConnectSecret() !== secret) return;
+        if (!poll.ok) {
+          this.cancelQuickConnect();
+          this.toasts.error('Quick Connect failed', poll.error.message);
+          return;
+        }
+        if (poll.value.authenticated) {
+          this.cancelQuickConnect();
+          await this.jellyfin.loginWithQuickConnect(url, secret);
+        }
+      } finally {
+        this.quickConnectPolling = false;
       }
     }, 3000);
   }
@@ -407,6 +427,8 @@ export class JellyfinPanelComponent implements OnDestroy {
       clearInterval(this.quickConnectTimer);
       this.quickConnectTimer = null;
     }
+    this.quickConnectPolling = false;
+    this.quickConnectStartedAt = 0;
     this.quickConnectCode.set(null);
     this.quickConnectUrl.set(null);
     this.quickConnectSecret.set(null);

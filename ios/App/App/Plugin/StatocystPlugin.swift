@@ -1254,8 +1254,12 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             return
         }
         ioQueue.async {
-            let authenticated = JellyfinClient.quickConnectStatus(baseUrl: url, secret: secret)
-            call.resolve(["authenticated": authenticated])
+            do {
+                let authenticated = try JellyfinClient.quickConnectStatus(baseUrl: url, secret: secret)
+                call.resolve(["authenticated": authenticated])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
         }
     }
 

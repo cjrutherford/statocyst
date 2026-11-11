@@ -164,7 +164,10 @@ object JellyfinClient {
     fun quickConnectStatus(baseUrl: String, secret: String): Boolean {
         val url = baseUrl.trimEnd('/')
         val (code, body) = request("GET", "$url/QuickConnect/Connect?secret=$secret")
-        if (code != 200) return false
+        // Jellyfin returns 404 once the code expires or was already exchanged.
+        // Without this the UI would keep saying "Waiting for approval" forever.
+        if (code == 404) throw Exception("Quick Connect code expired. Start again for a new code.")
+        if (code != 200) throw Exception("Quick Connect unavailable (HTTP $code)")
         val json = JSONObject(body)
         return json.optBoolean("Authenticated", false)
     }

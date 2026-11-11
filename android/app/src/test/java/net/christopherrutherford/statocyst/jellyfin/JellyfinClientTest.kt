@@ -45,6 +45,8 @@ class JellyfinClientTest {
                 }
                 req.path == "/QuickConnect/Initiate" && req.method == "POST" ->
                     json(JSONObject().put("Secret", "sec").put("Code", "123456"))
+                req.path == "/QuickConnect/Connect" && req.query == "secret=expired" ->
+                    FakeHttpServer.Response(404)
                 req.path == "/QuickConnect/Connect" ->
                     json(JSONObject().put("Authenticated", req.query == "secret=sec"))
                 req.path == "/Users/AuthenticateWithQuickConnect" && req.method == "POST" ->
@@ -167,6 +169,12 @@ class JellyfinClientTest {
         assertEquals("123456", init.code)
         assertTrue(JellyfinClient.quickConnectStatus(server.url, init.secret))
         assertFalse(JellyfinClient.quickConnectStatus(server.url, "wrong"))
+        try {
+            JellyfinClient.quickConnectStatus(server.url, "expired")
+            fail("An expired Quick Connect secret should not look like a pending one")
+        } catch (error: Exception) {
+            assertTrue(error.message!!.contains("expired"))
+        }
         assertEquals(goodToken, JellyfinClient.authenticateWithQuickConnect(server.url, init.secret).accessToken)
     }
 

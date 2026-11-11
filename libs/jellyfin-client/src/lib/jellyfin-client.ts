@@ -281,10 +281,20 @@ export async function quickConnectStatus(
 ): Promise<JellyfinQuickConnectStatus> {
   const normalized = normalizeBaseUrl(baseUrl);
   if (!normalized) throw new JellyfinError('INVALID_URL', 'The server URL is not valid');
-  const body = await requestJson(fetchImpl, `${normalized}/QuickConnect/Connect?secret=${encodeURIComponent(secret)}`, {
-    method: 'GET',
-    headers: { Authorization: authorizationHeader(identity) },
-  });
+  let body: unknown;
+  try {
+    body = await requestJson(fetchImpl, `${normalized}/QuickConnect/Connect?secret=${encodeURIComponent(secret)}`, {
+      method: 'GET',
+      headers: { Authorization: authorizationHeader(identity) },
+    });
+  } catch (error) {
+    // Jellyfin returns 404 once the code expires or was already exchanged.
+    // Without this the UI would keep saying "Waiting for approval" forever.
+    if (error instanceof JellyfinError && error.status === 404) {
+      throw new JellyfinError('AUTH_FAILED', 'Quick Connect code expired. Start again for a new code.', 404);
+    }
+    throw error;
+  }
   const record = body as Record<string, unknown>;
   return {
     authenticated: record['Authenticated'] === true,

@@ -6,6 +6,7 @@ import {
   JellyfinError,
   listAudioItems,
   normalizeBaseUrl,
+  quickConnectStatus,
   whoami,
   type ClientIdentity,
   type FetchLike,
@@ -153,6 +154,19 @@ describe('JellyfinError', () => {
     expect(error.code).toBe('AUTH_FAILED');
     expect(error.status).toBe(400);
     expect(error.name).toBe('JellyfinError');
+  });
+});
+
+describe('quickConnectStatus', () => {
+  it('maps an expired code to a clear error instead of pending forever', async () => {
+    const fetchImpl = mockFetch(() => new Response('', { status: 404 }));
+    await expect(
+      quickConnectStatus('https://jelly.example.com', 'gone', IDENTITY, fetchImpl),
+    ).rejects.toMatchObject({
+      code: 'AUTH_FAILED',
+      status: 404,
+      message: expect.stringContaining('expired'),
+    });
   });
 });
 
