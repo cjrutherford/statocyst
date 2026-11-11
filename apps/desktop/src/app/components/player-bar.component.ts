@@ -547,20 +547,34 @@ export class PlayerBarComponent {
   protected readonly volumeOpen = signal(false);
   protected readonly pulsing = signal(false);
 
-  protected readonly podcastMode = computed(() => this.podcastPlayback.active());
+  protected readonly podcastMode = computed(() => {
+    if (this.podcastPlayback.active()) return true;
+    // The podcast store can initialize before its episode rows are registered.
+    // The track itself still tells the bar which player owns it, so tapping it
+    // opens the podcast screen (and its video stage), never the music stage.
+    const track = this.playback.track();
+    return track?.mediaKind === 'podcast' || track?.sourceKind === 'podcast';
+  });
+  private readonly podcastReady = computed(() => this.podcastPlayback.track() !== null);
   protected readonly track = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.track() : this.playback.track(),
+    this.podcastMode()
+      ? (this.podcastPlayback.track() ?? this.playback.track())
+      : this.playback.track(),
   );
   protected readonly state = computed(() =>
-    this.podcastMode()
+    this.podcastMode() && this.podcastReady()
       ? this.podcastPlayback.snapshot().state
       : this.playback.snapshot().state,
   );
   protected readonly isPlaying = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.isPlaying() : this.playback.isPlaying(),
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.isPlaying()
+      : this.playback.isPlaying(),
   );
   protected readonly rate = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.rate() : this.playback.snapshot().rate,
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.rate()
+      : this.playback.snapshot().rate,
   );
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(
@@ -573,14 +587,16 @@ export class PlayerBarComponent {
   protected readonly displayPosition = computed(() =>
     this.dragging()
       ? this.dragValue()
-      : this.podcastMode()
+      : this.podcastMode() && this.podcastReady()
         ? this.podcastPlayback.positionMs()
         : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
     Math.max(
       1,
-      this.podcastMode() ? this.podcastPlayback.durationMs() : this.playback.durationMs(),
+      this.podcastMode() && this.podcastReady()
+        ? this.podcastPlayback.durationMs()
+        : this.playback.durationMs(),
     ),
   );
   protected readonly progressPercent = computed(() =>
