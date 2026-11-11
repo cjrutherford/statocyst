@@ -55,6 +55,8 @@ export class PodcastPlaybackStore {
   readonly durationMs = signal(0);
   readonly ready = signal(false);
   readonly lastError = signal<string | null>(null);
+  /** The entry the user explicitly switched to audio-only; a new entry clears it. */
+  private readonly audioOnlyEntryId = signal<string | null>(null);
 
   readonly track = computed(() => this.snapshot().track);
   readonly active = computed(() => {
@@ -68,7 +70,22 @@ export class PodcastPlaybackStore {
   });
   readonly rate = computed(() => this.snapshot().rate);
   readonly mediaForm = computed(() => this.snapshot().mediaForm);
-  readonly presentation = computed(() => this.snapshot().presentation);
+  /**
+   * Native state events can arrive before a form switch and briefly report
+   * audio-only. A video-capable episode still presents as video unless the user
+   * explicitly chose audio-only for this entry.
+   */
+  readonly presentation = computed<'audio-only' | 'video'>(() => {
+    const snapshot = this.snapshot();
+    if (snapshot.presentation === 'video') return 'video';
+    if (
+      snapshot.track?.videoAvailable === true &&
+      snapshot.currentEntryId !== this.audioOnlyEntryId()
+    ) {
+      return 'video';
+    }
+    return snapshot.presentation;
+  });
   readonly hasVideo = computed(
     () =>
       this.snapshot().track?.videoAvailable === true ||
@@ -132,7 +149,9 @@ export class PodcastPlaybackStore {
       this.lastError.set(result.error.message);
       return result;
     }
+    const previousEntryId = this.snapshot().currentEntryId;
     this.snapshot.set(result.value);
+    if (result.value.currentEntryId !== previousEntryId) this.audioOnlyEntryId.set(null);
     this.positionMs.set(result.value.positionMs);
     this.durationMs.set(result.value.durationMs);
     this.lastError.set(null);
@@ -228,6 +247,9 @@ export class PodcastPlaybackStore {
   }
 
   async setPresentation(mode: 'audio-only' | 'video'): Promise<void> {
+    this.audioOnlyEntryId.set(
+      mode === 'audio-only' ? this.snapshot().currentEntryId : null,
+    );
     await this.command({ type: 'setPresentation', mode });
   }
 
@@ -255,6 +277,9 @@ export class PodcastPlaybackStore {
       case 'stateChanged':
         if (event.snapshot.context !== 'podcast') break;
         this.stateRevision += 1;
+        if (event.snapshot.currentEntryId !== this.snapshot().currentEntryId) {
+          this.audioOnlyEntryId.set(null);
+        }
         this.snapshot.set(event.snapshot);
         this.positionMs.set(event.snapshot.positionMs);
         this.durationMs.set(event.snapshot.durationMs);
