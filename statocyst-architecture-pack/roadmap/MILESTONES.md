@@ -51,3 +51,25 @@ chapters/transcripts and publishing an aggregate feed are explicitly deferred.
 
 Release requires the ten-point gate in `roadmap/PODCASTS.md` §18 and evidence in
 `evidence/S042-report.md`–`S053-report.md`.
+
+## MVP-6 — Video podcasts and optional YouTube sources (S054–S062)
+**Status: PLANNED (2026-11-11).** Decision: ADR-037 (proposed). Plan: `roadmap/VIDEO_PODCASTS.md`.
+
+Video podcast episodes become a presentation of the existing podcast media kind, not a new
+kind: `media_form` plus alternate enclosures, a real video surface, PiP/fullscreen and
+audio-only mode. Audio remains authoritative and continues when the window is minimized,
+the app is backgrounded or the screen is locked. RSS video podcasts work on desktop,
+Android and iOS.
+
+Podcast-length YouTube videos can be added as episodes through an optional, separately
+installed, user-run **Statocyst Companion**. The companion owns extraction, cookies and
+PO-token handling; core Statocyst contains no YouTube extractor. The feature is off by
+default, explicitly experimental, and not available on iOS because there is no supported
+on-device extractor and it creates App Store risk. YouTube extraction is against YouTube's
+terms; the RSS video path is the compliant path. No content is re-hosted or redistributed.
+
+Desktop, Android (via companion), and iOS (RSS video only) do not ship as parity claims.
+Platform gates are recorded independently: a failed companion, PiP or screen-off gate is
+BLOCKED, not “working”. Release requires the ten-point gate in `roadmap/VIDEO_PODCASTS.md`
+§9 and evidence in `evidence/S054-report.md`–`S062-report.md`. Do not start MVP-6 release
+work before the MVP-5 gate passes or the product owner explicitly re-scopes.

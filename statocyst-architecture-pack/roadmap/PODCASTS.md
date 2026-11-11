@@ -3,6 +3,9 @@
 **Status:** IMPLEMENTED_UNVERIFIED (2.1.1, 2026-11-08). Desktop, Android, iOS and in-car browse are implemented and building. Runtime/device and performance evidence remains open; MVP-5 is not yet VERIFIED.
 **Decision record:** ADR-036.
 **Slice range:** S042–S053.
+**Follow-on:** Video podcasts and the optional YouTube companion are planned separately as
+MVP-6 (`roadmap/VIDEO_PODCASTS.md`, ADR-037, S054–S062). They are not part of this MVP-5
+gate and must not delay it.
 **Platforms:** Electron desktop, Capacitor Android, Capacitor iOS, Android Auto, CarPlay.
 
 ## 1. Objective

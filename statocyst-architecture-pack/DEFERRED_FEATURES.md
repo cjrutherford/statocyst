@@ -24,6 +24,16 @@ Do not build the following in MVP-1..MVP-5 unless a specifically accepted depend
 | Cross-device podcast subscription/resume sync | Expansion | Requires the accepted offline-first sync provider and privacy/tombstone semantics |
 | Global unified music + podcast search and recommendations | Expansion | Media-kind-aware ranking and UI design; MVP-5 keeps podcast search local to Podcasts |
 | Podcast aggregate feed publishing / audio re-hosting | Not planned | Conflicts with local-first aggregation and content licensing; no accepted use case |
-| User-supplied podcast feed URLs / OPML source onboarding | Not planned | Product decision: discovery-only via existing directories (ADR-036) |
+| User-supplied podcast feed URLs / OPML source onboarding | Not planned | Product decision: discovery-only via existing directories (ADR-036); the YouTube source is an explicit exception for a host-owned adapter, not a general RSS URL form |
+| Video podcast playback (RSS video enclosures) | **Promoted to MVP-6** | Planned in S054–S058 under ADR-037; requires MVP-5 gate first or explicit re-scope |
+| Podcast-length YouTube sources via a local companion | **Promoted to MVP-6 (desktop/Android only)** | Planned in S059–S061 under ADR-037; opt-in, unofficial, against YouTube ToS, no core extractor, no iOS support |
+| Bundling yt-dlp/ffmpeg/Python/NewPipe in core or store builds | Not planned | Legal/ToS, GPL linking and App Store risk; extraction stays in a separately distributed companion |
+| On-device YouTube extraction on iOS | Not planned | No supported extractor, App Store rejection risk; iOS ships RSS video only |
+| HLS playback for video podcasts | Deferred after MVP-6 | v1 requires progressive audio/video from the companion; HLS needs a renderer/native strategy |
+| Embedded video inside the mobile WebView | Deferred after MVP-6 | v1 uses a native full-screen surface and PiP; an embedded surface needs native overlay geometry |
+| Video live streams, premieres and Shorts as podcast episodes | Not planned | Classification excludes them by default; live playback is a different capability |
+| RSS video downloads / large video pins | MVP-6, opt-in | Planned in S055/S056; size warning, quota, audio-only alternate |
+| Persistent YouTube downloads / pins | Not planned | Adds copyright and ToS exposure on top of stream extraction; YouTube sources are streaming-only |
+| Cross-device video resume, casting and AirPlay/Chromecast | Expansion | Requires the accepted sync/casting design; not part of MVP-6 |
 
 Every deferred item must have rationale, owner (if known), blocking prerequisite and acceptance criteria before promotion into an active slice.
