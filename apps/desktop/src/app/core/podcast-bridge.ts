@@ -183,6 +183,37 @@ export function createCapacitorPodcastBridge(options: NativePodcastOptions): Pod
         etag: feed.etag ?? null,
         lastModified: feed.lastModified ?? null,
       });
+      if (fetched?.status === 304) {
+        // Conditional refresh: the publisher says the feed is unchanged. Keep
+        // the library rows and only advance the fetch bookkeeping.
+        await saveFeed(
+          {
+            feedUrl: feed.feedUrl,
+            title: feed.title,
+            author: feed.author,
+            descriptionText: feed.descriptionText,
+            imageUrl: feed.imageUrl,
+            language: feed.language,
+            explicit: feed.explicit,
+            categories: feed.categories,
+            feedType: 'rss',
+            lastFetchedAt: new Date().toISOString(),
+            lastSuccessAt: new Date().toISOString(),
+            nextFetchAt: nextFetch(feed.refreshIntervalMinutes),
+            fetchError: null,
+            failureCount: 0,
+            refreshIntervalMinutes: feed.refreshIntervalMinutes,
+            defaultSpeed: feed.defaultSpeed,
+            skipIntroSeconds: feed.skipIntroSeconds,
+            skipOutroSeconds: feed.skipOutroSeconds,
+            autoQueue: feed.autoQueue,
+            episodeSort: feed.episodeSort,
+            subscribed: feed.subscribed,
+          },
+          [],
+        );
+        return { newEpisodes: 0, error: null };
+      }
       if (!fetched?.body) throw new Error('The feed response is empty');
       const parsed = await parsePodcastFeed(String(fetched.body), {
         feedUrl: feed.feedUrl,

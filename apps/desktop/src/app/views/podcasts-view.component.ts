@@ -55,7 +55,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
             <sc-icon name="refresh" />
             {{ store.refreshing() || store.discoveryLoading() ? 'Refreshing…' : 'Refresh' }}
           </button>
-          @if (!store.selectedFeed()) {
+          @if (!store.selectedFeed() && tab() !== 'discovery') {
             <button type="button" class="btn btn--primary" (click)="selectTab('discovery')">
               <sc-icon name="plus" />
               Discover
@@ -123,70 +123,88 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 
             @if (settingsOpen()) {
               <form class="panel show-settings" (submit)="$event.preventDefault()">
-                <label>
-                  Refresh every
-                  <select [value]="feed.refreshIntervalMinutes" (change)="setInterval(feed, $event)">
-                    <option [value]="15">15 minutes</option>
-                    <option [value]="30">30 minutes</option>
-                    <option [value]="60">1 hour</option>
-                    <option [value]="180">3 hours</option>
-                    <option [value]="720">12 hours</option>
-                    <option [value]="1440">1 day</option>
-                  </select>
-                </label>
-                <label>
-                  Default speed
-                  <select [value]="feed.defaultSpeed" (change)="setSpeed(feed, $event)">
-                    <option [value]="0.8">0.8×</option>
-                    <option [value]="1">1×</option>
-                    <option [value]="1.25">1.25×</option>
-                    <option [value]="1.5">1.5×</option>
-                    <option [value]="1.75">1.75×</option>
-                    <option [value]="2">2×</option>
-                  </select>
-                </label>
-                <label>
-                  Skip intro
-                  <select [value]="feed.skipIntroSeconds" (change)="setSkip(feed, 'intro', $event)">
-                    <option [value]="0">Off</option>
-                    <option [value]="15">15 s</option>
-                    <option [value]="30">30 s</option>
-                    <option [value]="45">45 s</option>
-                  </select>
-                </label>
-                <label>
-                  Skip outro
-                  <select [value]="feed.skipOutroSeconds" (change)="setSkip(feed, 'outro', $event)">
-                    <option [value]="0">Off</option>
-                    <option [value]="15">15 s</option>
-                    <option [value]="30">30 s</option>
-                    <option [value]="45">45 s</option>
-                  </select>
-                </label>
-                <label>
-                  Episode order
-                  <select [value]="feed.episodeSort" (change)="setSort(feed, $event)">
-                    <option value="newest">Newest first</option>
-                    <option value="oldest">Oldest first</option>
-                  </select>
-                </label>
-                <label>
-                  Default format
-                  <select
-                    [value]="feed.defaultMediaForm || 'audio'"
-                    (change)="setMediaForm(feed, $event)"
-                  >
-                    <option value="audio">Audio</option>
-                    <option value="video">Video</option>
-                  </select>
-                </label>
-                <label class="check">
+                <div class="settings-head">
+                  <div>
+                    <p class="eyebrow">Show defaults</p>
+                    <h3>Playback & feed</h3>
+                  </div>
+                  <p class="hint">These defaults apply to new episodes from this show.</p>
+                </div>
+                <div class="settings-grid">
+                  <label class="field">
+                    <span class="field__label">Refresh every</span>
+                    <select (change)="setInterval(feed, $event)">
+                      <option value="15" [selected]="feed.refreshIntervalMinutes === 15">15 minutes</option>
+                      <option value="30" [selected]="feed.refreshIntervalMinutes === 30">30 minutes</option>
+                      <option value="60" [selected]="feed.refreshIntervalMinutes === 60">1 hour</option>
+                      <option value="180" [selected]="feed.refreshIntervalMinutes === 180">3 hours</option>
+                      <option value="720" [selected]="feed.refreshIntervalMinutes === 720">12 hours</option>
+                      <option value="1440" [selected]="feed.refreshIntervalMinutes === 1440">1 day</option>
+                    </select>
+                    <span class="field__hint">How often Statocyst checks for new episodes.</span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Playback speed</span>
+                    <select (change)="setSpeed(feed, $event)">
+                      <option value="0.8" [selected]="feed.defaultSpeed === 0.8">0.8×</option>
+                      <option value="1" [selected]="feed.defaultSpeed === 1">1×</option>
+                      <option value="1.25" [selected]="feed.defaultSpeed === 1.25">1.25×</option>
+                      <option value="1.5" [selected]="feed.defaultSpeed === 1.5">1.5×</option>
+                      <option value="1.75" [selected]="feed.defaultSpeed === 1.75">1.75×</option>
+                      <option value="2" [selected]="feed.defaultSpeed === 2">2×</option>
+                    </select>
+                    <span class="field__hint">Applied when this show starts playing.</span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Skip intro</span>
+                    <select (change)="setSkip(feed, 'intro', $event)">
+                      <option value="0" [selected]="feed.skipIntroSeconds === 0">Off</option>
+                      <option value="15" [selected]="feed.skipIntroSeconds === 15">15 s</option>
+                      <option value="30" [selected]="feed.skipIntroSeconds === 30">30 s</option>
+                      <option value="45" [selected]="feed.skipIntroSeconds === 45">45 s</option>
+                    </select>
+                    <span class="field__hint">Manual skip button interval.</span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Skip outro</span>
+                    <select (change)="setSkip(feed, 'outro', $event)">
+                      <option value="0" [selected]="feed.skipOutroSeconds === 0">Off</option>
+                      <option value="15" [selected]="feed.skipOutroSeconds === 15">15 s</option>
+                      <option value="30" [selected]="feed.skipOutroSeconds === 30">30 s</option>
+                      <option value="45" [selected]="feed.skipOutroSeconds === 45">45 s</option>
+                    </select>
+                    <span class="field__hint">Manual skip button interval.</span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Episode order</span>
+                    <select [value]="feed.episodeSort" (change)="setSort(feed, $event)">
+                      <option value="newest">Newest first</option>
+                      <option value="oldest">Oldest first</option>
+                    </select>
+                    <span class="field__hint">Used when seeding the podcast queue.</span>
+                  </label>
+                  <label class="field">
+                    <span class="field__label">Preferred format</span>
+                    <select
+                      [value]="feed.defaultMediaForm || 'audio'"
+                      (change)="setMediaForm(feed, $event)"
+                    >
+                      <option value="audio">Audio</option>
+                      <option value="video">Video</option>
+                    </select>
+                    <span class="field__hint">Audio is the default when an episode has both.</span>
+                  </label>
+                </div>
+                <label class="switch-row">
                   <input
                     type="checkbox"
                     [checked]="feed.autoQueue"
                     (change)="setAutoQueue(feed, $event)"
                   />
-                  Queue the next episode automatically
+                  <span>
+                    <span class="field__label">Auto-queue new episodes</span>
+                    <span class="field__hint">Append the next episode when one finishes.</span>
+                  </span>
                 </label>
               </form>
             }
@@ -539,32 +557,86 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 
           @if (tab() === 'discovery') {
             <section class="discovery" aria-labelledby="discovery-heading">
-              <div class="discovery__head">
-                <div class="discovery__intro">
-                  <h2 id="discovery-heading">Discovery</h2>
-                  <p class="hint">
-                    Top shows from Apple Podcasts, grouped by the categories those shows carry.
-                    Search Apple Podcasts and Fyyd when you want something specific.
+              <div class="discovery-hero">
+                <div class="discovery-hero__copy">
+                  <p class="eyebrow">Open podcast directory</p>
+                  <h2 id="discovery-heading">Find your next listen</h2>
+                  <p class="discovery-hero__lede">
+                    Search Apple Podcasts and Fyyd, or start with a show the directories are
+                    surfacing right now. No account, feed URL or API key required.
                   </p>
+                  <form class="search-shell" (submit)="submitSearch($event)">
+                    <sc-icon name="search" class="search-shell__icon" />
+                    <label class="visually-hidden" for="podcast-search">Search podcasts</label>
+                    <input
+                      id="podcast-search"
+                      type="search"
+                      autocomplete="off"
+                      placeholder="Search shows, hosts, or topics"
+                      [value]="searchQuery()"
+                      (input)="searchQuery.set(value($event))"
+                    />
+                    @if (searchQuery()) {
+                      <button
+                        type="button"
+                        class="search-shell__clear"
+                        aria-label="Clear search"
+                        (click)="clearSearch()"
+                      >
+                        <sc-icon name="close" />
+                      </button>
+                    }
+                    <button type="submit" class="btn btn--primary" [disabled]="store.searching()">
+                      {{ store.searching() ? 'Searching…' : 'Search' }}
+                    </button>
+                  </form>
+                  <div class="discovery-hints">
+                    <span><sc-icon name="wave" /> Apple Podcasts + Fyyd</span>
+                    <span>No setup</span>
+                    <span>Subscribe in one tap</span>
+                  </div>
                 </div>
-                <form class="discovery-search" (submit)="submitSearch($event)">
-                  <label class="visually-hidden" for="podcast-search">Search podcasts</label>
-                  <input
-                    id="podcast-search"
-                    type="search"
-                    autocomplete="off"
-                    placeholder="Show, host, or topic"
-                    [value]="searchQuery()"
-                    (input)="searchQuery.set(value($event))"
-                  />
-                  <button type="submit" class="btn btn--primary" [disabled]="store.searching()">
-                    {{ store.searching() ? 'Searching…' : 'Search' }}
-                  </button>
-                </form>
+
+                @if (store.discovery(); as heroDiscovery) {
+                  @if (heroDiscovery.top[0]; as featured) {
+                    <article class="featured-pick">
+                      <sc-artwork
+                        class="featured-pick__art"
+                        [src]="featured.artworkUrl"
+                        [altText]="featured.title"
+                        size="hero"
+                      />
+                      <div class="featured-pick__body">
+                        <p class="eyebrow">Featured right now</p>
+                        <h3>{{ featured.title }}</h3>
+                        <p class="featured-pick__author">{{ featured.author || 'Podcast' }}</p>
+                        @if (featured.descriptionText) {
+                          <p class="featured-pick__desc">{{ featured.descriptionText }}</p>
+                        }
+                        <button
+                          type="button"
+                          class="btn btn--quiet"
+                          [disabled]="isSubscribed(featured)"
+                          (click)="subscribeResult(featured)"
+                        >
+                          {{ isSubscribed(featured) ? 'Subscribed' : 'Subscribe' }}
+                        </button>
+                      </div>
+                    </article>
+                  }
+                }
               </div>
 
               @if (store.searching()) {
-                <p class="hint" role="status">Searching podcast directories…</p>
+                <div class="skeleton-grid" role="status" aria-label="Searching podcast directories">
+                  @for (i of [0, 1, 2]; track i) {
+                    <div class="skeleton-card" aria-hidden="true">
+                      <span class="skeleton skeleton--art"></span>
+                      <span class="skeleton skeleton--line"></span>
+                      <span class="skeleton skeleton--line skeleton--short"></span>
+                    </div>
+                  }
+                </div>
               } @else if (store.searchResults().length > 0) {
                 <div class="section-head">
                   <h2>Search results</h2>
@@ -580,19 +652,22 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                     <article class="result" [style.--i]="i">
                       <sc-artwork [src]="result.artworkUrl" [altText]="result.title" size="md" />
                       <div class="result__meta">
-                        <h3>{{ result.title }}</h3>
-                        <p>
-                          {{ result.author || 'Unknown author' }}
+                        <div class="result__title-row">
+                          <h3>{{ result.title }}</h3>
                           <span class="source-badge">{{ sourceLabel(result.source) }}</span>
-                        </p>
-                        <p class="result__description">{{ result.descriptionText }}</p>
+                        </div>
+                        <p class="result__author">{{ result.author || 'Unknown author' }}</p>
+                        @if (result.descriptionText) {
+                          <p class="result__description">{{ result.descriptionText }}</p>
+                        }
                       </div>
                       <button
                         type="button"
-                        class="btn btn--quiet"
+                        class="btn btn--quiet result__action"
+                        [disabled]="isSubscribed(result)"
                         (click)="subscribeResult(result)"
                       >
-                        Subscribe
+                        {{ isSubscribed(result) ? 'Subscribed' : 'Subscribe' }}
                       </button>
                     </article>
                   }
@@ -606,7 +681,15 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                   </button>
                 </div>
               } @else if (store.discoveryLoading() && !store.discovery()) {
-                <p class="hint" role="status">Loading top podcasts and categories…</p>
+                <div class="skeleton-grid" role="status" aria-label="Loading podcast discovery">
+                  @for (i of [0, 1, 2]; track i) {
+                    <div class="skeleton-card" aria-hidden="true">
+                      <span class="skeleton skeleton--art"></span>
+                      <span class="skeleton skeleton--line"></span>
+                      <span class="skeleton skeleton--line skeleton--short"></span>
+                    </div>
+                  }
+                </div>
               } @else if (store.discoveryError(); as error) {
                 <div class="error-banner" role="alert">
                   <sc-icon name="alert" />
@@ -617,7 +700,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                 </div>
               } @else if (store.discovery(); as discovery) {
                 @if (store.activeCategory(); as category) {
-                  <div class="section-head">
+                  <div class="section-head discovery-section-head">
                     <div class="section-head__title">
                       <button type="button" class="back" (click)="store.clearCategory()">
                         <sc-icon name="previous" />
@@ -625,10 +708,18 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                       </button>
                       <h2>{{ category.name }}</h2>
                     </div>
-                    <span class="count">{{ store.categoryResults().length }}</span>
+                    <span class="count">{{ store.categoryResults().length }} shows</span>
                   </div>
                   @if (store.categoryLoading()) {
-                    <p class="hint" role="status">Loading {{ category.name }} shows…</p>
+                    <div class="skeleton-grid" role="status" aria-label="Loading category shows">
+                      @for (i of [0, 1, 2]; track i) {
+                        <div class="skeleton-card" aria-hidden="true">
+                          <span class="skeleton skeleton--art"></span>
+                          <span class="skeleton skeleton--line"></span>
+                          <span class="skeleton skeleton--line skeleton--short"></span>
+                        </div>
+                      }
+                    </div>
                   } @else if (store.categoryResults().length === 0) {
                     <div class="empty empty--compact">
                       <sc-icon name="search" />
@@ -640,44 +731,86 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                         <article class="result" [style.--i]="i">
                           <sc-artwork [src]="result.artworkUrl" [altText]="result.title" size="md" />
                           <div class="result__meta">
-                            <h3>{{ result.title }}</h3>
-                            <p>
-                              {{ result.author || 'Unknown author' }}
+                            <div class="result__title-row">
+                              <h3>{{ result.title }}</h3>
                               <span class="source-badge">{{ sourceLabel(result.source) }}</span>
-                            </p>
-                            <p class="result__description">{{ result.descriptionText }}</p>
+                            </div>
+                            <p class="result__author">{{ result.author || 'Unknown author' }}</p>
+                            @if (result.descriptionText) {
+                              <p class="result__description">{{ result.descriptionText }}</p>
+                            }
                           </div>
                           <button
                             type="button"
-                            class="btn btn--quiet"
+                            class="btn btn--quiet result__action"
+                            [disabled]="isSubscribed(result)"
                             (click)="subscribeResult(result)"
                           >
-                            Subscribe
+                            {{ isSubscribed(result) ? 'Subscribed' : 'Subscribe' }}
                           </button>
                         </article>
                       }
                     </div>
                   }
                 } @else {
+                  @if (recommendedShows().length > 0) {
+                    <section class="shelf" aria-labelledby="recommended-heading">
+                      <div class="section-head discovery-section-head">
+                        <div>
+                          <h2 id="recommended-heading">Recommended for you</h2>
+                          <p class="section-subtitle">{{ recommendedLabel() }}</p>
+                        </div>
+                        <span class="count">{{ recommendedShows().length }} picks</span>
+                      </div>
+                      <div class="recommendation-grid">
+                        @for (show of recommendedShows(); track show.feedUrl; let i = $index) {
+                          <article class="recommendation-card" [style.--i]="i">
+                            <sc-artwork [src]="show.artworkUrl" [altText]="show.title" size="hero" />
+                            <div class="recommendation-card__body">
+                              <h3>{{ show.title }}</h3>
+                              <p>{{ show.author || 'Podcast' }}</p>
+                              <span class="source-badge">{{ sourceLabel(show.source) }}</span>
+                            </div>
+                            <button
+                              type="button"
+                              class="btn btn--quiet"
+                              [disabled]="isSubscribed(show)"
+                              (click)="subscribeResult(show)"
+                            >
+                              {{ isSubscribed(show) ? 'Subscribed' : 'Subscribe' }}
+                            </button>
+                          </article>
+                        }
+                      </div>
+                    </section>
+                  }
+
                   @if (discovery.top.length > 0) {
                     <section class="shelf" aria-labelledby="top-heading">
-                      <div class="section-head">
-                        <h2 id="top-heading">Top podcasts</h2>
-                        <span class="count">Most popular now</span>
+                      <div class="section-head discovery-section-head">
+                        <div>
+                          <h2 id="top-heading">Popular this week</h2>
+                          <p class="section-subtitle">The directory's current top chart</p>
+                        </div>
+                        <span class="count">{{ discovery.top.length }} shows</span>
                       </div>
                       <div class="top-grid">
                         @for (show of discovery.top; track show.feedUrl; let index = $index) {
                           <article class="top-card" [style.--i]="index">
                             <span class="top-card__rank">{{ index + 1 }}</span>
                             <sc-artwork [src]="show.artworkUrl" [altText]="show.title" size="hero" />
-                            <h3>{{ show.title }}</h3>
-                            <p>{{ show.author || 'Podcast' }}</p>
+                            <div class="top-card__body">
+                              <h3>{{ show.title }}</h3>
+                              <p>{{ show.author || 'Podcast' }}</p>
+                              <span class="source-badge">{{ sourceLabel(show.source) }}</span>
+                            </div>
                             <button
                               type="button"
                               class="btn btn--quiet"
+                              [disabled]="isSubscribed(show)"
                               (click)="subscribeResult(show)"
                             >
-                              Subscribe
+                              {{ isSubscribed(show) ? 'Subscribed' : 'Subscribe' }}
                             </button>
                           </article>
                         }
@@ -687,8 +820,11 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 
                   @if (discovery.categories.length > 0) {
                     <section class="shelf" aria-labelledby="categories-heading">
-                      <div class="section-head">
-                        <h2 id="categories-heading">Browse by category</h2>
+                      <div class="section-head discovery-section-head">
+                        <div>
+                          <h2 id="categories-heading">Browse by category</h2>
+                          <p class="section-subtitle">Explore the shape of the directory</p>
+                        </div>
                         <span class="count">{{ discovery.categories.length }}</span>
                       </div>
                       <div class="category-grid">
@@ -699,6 +835,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                             [style.--i]="i"
                             (click)="browseCategory(category)"
                           >
+                            <span class="category-card__icon"><sc-icon name="wave" /></span>
                             <span class="category-card__name">{{ category.name }}</span>
                             <span class="category-card__count">{{ category.count }} top shows</span>
                           </button>
@@ -709,7 +846,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 
                   @for (shelf of discovery.shelves; track shelf.category.id) {
                     <section class="shelf">
-                      <div class="section-head">
+                      <div class="section-head discovery-section-head">
                         <h2>{{ shelf.category.name }}</h2>
                         <button
                           type="button"
@@ -723,14 +860,18 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                         @for (show of shelf.shows; track show.feedUrl; let i = $index) {
                           <article class="show-tile" [style.--i]="i">
                             <sc-artwork [src]="show.artworkUrl" [altText]="show.title" size="hero" />
-                            <h3>{{ show.title }}</h3>
-                            <p>{{ show.author || 'Podcast' }}</p>
+                            <div class="show-tile__body">
+                              <h3>{{ show.title }}</h3>
+                              <p>{{ show.author || 'Podcast' }}</p>
+                              <span class="source-badge">{{ sourceLabel(show.source) }}</span>
+                            </div>
                             <button
                               type="button"
                               class="btn btn--quiet"
+                              [disabled]="isSubscribed(show)"
                               (click)="subscribeResult(show)"
                             >
-                              Subscribe
+                              {{ isSubscribed(show) ? 'Subscribed' : 'Subscribe' }}
                             </button>
                           </article>
                         }
@@ -1632,6 +1773,486 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
           opacity: 1;
         }
       }
+
+      /* Discovery revamp */
+      .discovery {
+        gap: clamp(22px, 3vw, 36px);
+      }
+      .discovery-hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(270px, 0.7fr);
+        gap: clamp(16px, 2.6vw, 34px);
+        align-items: center;
+        padding: clamp(18px, 2.6vw, 34px);
+        border: 1px solid var(--line);
+        border-radius: calc(var(--radius) + 6px);
+        background:
+          radial-gradient(circle at 88% 18%, rgba(167, 139, 250, 0.16), transparent 34%),
+          radial-gradient(circle at 6% 100%, rgba(56, 225, 255, 0.13), transparent 38%),
+          linear-gradient(135deg, var(--surface-2), var(--surface-1));
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .discovery-hero::after {
+        content: '';
+        position: absolute;
+        inset: auto -8% -45% 38%;
+        height: 220px;
+        border-radius: 50%;
+        border: 1px solid rgba(56, 225, 255, 0.12);
+        box-shadow: 0 0 0 34px rgba(56, 225, 255, 0.035), 0 0 0 70px rgba(167, 139, 250, 0.025);
+        pointer-events: none;
+      }
+      .discovery-hero__copy {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 10px;
+        align-content: center;
+      }
+      .discovery-hero h2 {
+        margin: 0;
+        font-size: clamp(1.65rem, 2.7vw, 2.5rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .discovery-hero__lede {
+        margin: 0;
+        max-width: 58ch;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.6;
+      }
+      .search-shell {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 640px;
+        margin-top: 3px;
+        padding: 5px 5px 5px 13px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: var(--surface-1);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        transition: border-color 140ms ease, box-shadow 140ms ease;
+      }
+      .search-shell:focus-within {
+        border-color: rgba(56, 225, 255, 0.52);
+        box-shadow: 0 0 0 3px rgba(56, 225, 255, 0.1);
+      }
+      .search-shell__icon {
+        flex: 0 0 auto;
+        color: var(--cyan);
+      }
+      .search-shell input {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 0.86rem;
+        padding: 8px 2px;
+      }
+      .search-shell input::placeholder {
+        color: var(--muted-dim);
+      }
+      .search-shell .btn {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        padding: 8px 16px;
+      }
+      .search-shell__clear {
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        border-radius: 50%;
+        background: var(--surface-row-hover);
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .search-shell__clear:hover {
+        color: var(--text);
+      }
+      .discovery-hints {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        color: var(--muted-dim);
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .discovery-hints span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .featured-pick {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 13px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid rgba(56, 225, 255, 0.18);
+        border-radius: var(--radius);
+        background: rgba(4, 12, 26, 0.36);
+        backdrop-filter: blur(14px);
+      }
+      .featured-pick__art {
+        width: 100%;
+        border-radius: var(--radius-sm);
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+      }
+      .featured-pick__body {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+        align-content: center;
+      }
+      .featured-pick h3 {
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.2;
+      }
+      .featured-pick__author {
+        margin: 0;
+        color: var(--cyan);
+        font-size: 0.76rem;
+      }
+      .featured-pick__desc {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 0.73rem;
+        line-height: 1.45;
+      }
+      .featured-pick .btn {
+        justify-self: start;
+        margin-top: 4px;
+      }
+      .discovery-section-head {
+        align-items: flex-end;
+      }
+      .section-subtitle {
+        margin: 2px 0 0;
+        color: var(--muted-dim);
+        font-size: 0.73rem;
+      }
+      .recommendation-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+        gap: 10px;
+      }
+      .recommendation-card,
+      .top-card,
+      .show-tile {
+        transition: border-color 150ms ease, transform 150ms ease, background 150ms ease;
+      }
+      .recommendation-card {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface-1);
+      }
+      .recommendation-card:hover,
+      .top-card:hover,
+      .show-tile:hover {
+        border-color: var(--line-strong);
+        background: var(--surface-2);
+        transform: translateY(-2px);
+      }
+      .recommendation-card sc-artwork,
+      .top-card sc-artwork,
+      .show-tile sc-artwork {
+        width: 100%;
+        border-radius: var(--radius-sm);
+      }
+      .recommendation-card__body,
+      .top-card__body,
+      .show-tile__body {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .recommendation-card h3,
+      .top-card h3,
+      .show-tile h3 {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin: 0;
+        font-size: 0.86rem;
+        line-height: 1.3;
+      }
+      .recommendation-card p,
+      .top-card p,
+      .show-tile p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.72rem;
+        line-height: 1.35;
+      }
+      .recommendation-card .btn,
+      .top-card .btn,
+      .show-tile .btn {
+        justify-self: start;
+        margin-top: 3px;
+      }
+      .category-card {
+        display: grid;
+        grid-template-columns: 36px minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        gap: 1px 10px;
+        align-items: center;
+        padding: 11px 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: linear-gradient(135deg, var(--surface-1), var(--surface-3));
+        text-align: left;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+        transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+      }
+      .category-card:hover {
+        border-color: var(--line-strong);
+        background: var(--surface-2);
+        transform: translateY(-1px);
+      }
+      .category-card__icon {
+        grid-row: 1 / span 2;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: var(--cyan);
+        background: radial-gradient(circle at 35% 30%, rgba(56, 225, 255, 0.24), rgba(167, 139, 250, 0.12));
+        border: 1px solid rgba(56, 225, 255, 0.18);
+      }
+      .category-card__name {
+        font-size: 0.84rem;
+        font-weight: 600;
+      }
+      .category-card__count {
+        color: var(--muted-dim);
+        font-size: 0.68rem;
+      }
+      .result {
+        align-items: flex-start;
+        background: linear-gradient(135deg, var(--surface-1), var(--surface-3));
+      }
+      .result sc-artwork {
+        flex: 0 0 auto;
+      }
+      .result__title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .result__title-row h3 {
+        margin: 0;
+        font-size: 0.9rem;
+      }
+      .result__author {
+        color: var(--cyan);
+        font-size: 0.72rem;
+      }
+      .result__description {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 0.75rem;
+        line-height: 1.45;
+      }
+      .result__action {
+        align-self: center;
+        flex: 0 0 auto;
+      }
+      .skeleton-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 8px;
+      }
+      .skeleton-card {
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        gap: 8px 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface-1);
+      }
+      .skeleton {
+        display: block;
+        border-radius: 8px;
+        background: linear-gradient(
+          90deg,
+          rgba(148, 197, 255, 0.06) 20%,
+          rgba(148, 197, 255, 0.15) 38%,
+          rgba(148, 197, 255, 0.06) 56%
+        );
+        background-size: 400% 100%;
+        animation: skeleton-shimmer 1.5s ease infinite;
+      }
+      .skeleton--art {
+        grid-row: 1 / span 2;
+        width: 72px;
+        height: 72px;
+      }
+      .skeleton--line {
+        width: 84%;
+        height: 12px;
+        align-self: end;
+      }
+      .skeleton--short {
+        width: 52%;
+      }
+      @keyframes skeleton-shimmer {
+        0% { background-position: 100% 0; }
+        100% { background-position: 0 0; }
+      }
+      @media (max-width: 980px) {
+        .discovery-hero {
+          grid-template-columns: 1fr;
+        }
+        .featured-pick {
+          max-width: 560px;
+        }
+      }
+      @media (max-width: 640px) {
+        .discovery-hero {
+          padding: 16px;
+        }
+        .discovery-hero h2 {
+          font-size: 1.6rem;
+        }
+        .discovery-hero__lede {
+          font-size: 0.8rem;
+        }
+        .search-shell {
+          flex-wrap: nowrap;
+          border-radius: 999px;
+          padding: 4px 4px 4px 10px;
+        }
+        .search-shell input {
+          flex: 1 1 auto;
+          font-size: 0.8rem;
+          padding: 7px 2px;
+        }
+        .search-shell .btn {
+          width: auto;
+          padding: 7px 12px;
+          font-size: 0.76rem;
+        }
+        .search-shell__clear {
+          width: 22px;
+          height: 22px;
+        }
+        .discovery-hints {
+          font-size: 0.6rem;
+        }
+        .featured-pick {
+          grid-template-columns: 88px minmax(0, 1fr);
+        }
+        .recommendation-grid {
+          grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+        }
+      }
+
+      .show-settings {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        padding: clamp(14px, 2vw, 22px);
+      }
+      .show-settings label,
+      .show-settings .field {
+        color: var(--text);
+        font-size: inherit;
+        letter-spacing: normal;
+        text-transform: none;
+      }
+      .settings-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .settings-head h3 {
+        margin: 2px 0 0;
+        font-size: 1.05rem;
+      }
+      .settings-head .hint {
+        max-width: 44ch;
+        text-align: right;
+      }
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+      }
+      .field {
+        display: grid;
+        gap: 5px;
+      }
+      .field__label {
+        color: var(--muted);
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .field select {
+        width: 100%;
+      }
+      .field__hint {
+        color: var(--muted-dim);
+        font-size: 0.7rem;
+        line-height: 1.4;
+      }
+      .switch-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding-top: 13px;
+        border-top: 1px solid var(--line);
+        color: var(--text);
+        font-size: 0.82rem;
+      }
+      .switch-row input {
+        margin-top: 2px;
+      }
+      .switch-row > span {
+        display: grid;
+        gap: 3px;
+      }
+      @media (max-width: 640px) {
+        .settings-head .hint {
+          text-align: left;
+        }
+      }
     `,
   ],
 })
@@ -1673,6 +2294,48 @@ export class PodcastsViewComponent {
       return true;
     });
   });
+
+  protected readonly subscribedUrls = computed(
+    () => new Set(this.store.feeds().map((feed) => feed.feedUrl)),
+  );
+
+  /**
+   * Local recommendation shelf: prefer categories the user already follows,
+   * then fall back to the directory's top chart. No remote personalization.
+   */
+  protected readonly recommendedShows = computed(() => {
+    const discovery = this.store.discovery();
+    if (!discovery) return [];
+    const subscribed = this.subscribedUrls();
+    const preferred = new Set(
+      this.store
+        .feeds()
+        .flatMap((feed) => feed.categories.map((category) => category.toLowerCase())),
+    );
+    const affinity = discovery.shelves
+      .filter((shelf) => preferred.has(shelf.category.name.toLowerCase()))
+      .flatMap((shelf) => shelf.shows);
+    const seen = new Set<string>();
+    return [...affinity, ...discovery.top, ...discovery.shelves.flatMap((shelf) => shelf.shows)]
+      .filter((show) => {
+        if (subscribed.has(show.feedUrl) || seen.has(show.feedUrl)) return false;
+        seen.add(show.feedUrl);
+        return true;
+      })
+      .slice(0, 8);
+  });
+
+  protected readonly recommendedLabel = computed(() => {
+    const category = this.store
+      .feeds()
+      .flatMap((feed) => feed.categories)
+      .find((value) => value.trim().length > 0);
+    return category ? `Because you follow ${category}` : 'Popular with listeners right now';
+  });
+
+  protected isSubscribed(result: PodcastSearchResult): boolean {
+    return this.subscribedUrls().has(result.feedUrl);
+  }
 
   protected readonly downloadedEpisodes = computed(() => {
     const isDownloaded = this.downloads.isDownloaded();
