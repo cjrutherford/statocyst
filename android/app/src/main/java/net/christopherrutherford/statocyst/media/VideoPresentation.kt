@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Rational
 import android.view.Gravity
 import android.view.TextureView
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -62,6 +63,9 @@ object VideoPresentation {
 
     @Volatile
     private var pipRequested = false
+
+    /** Activity children hidden while PiP shows only the video. */
+    private var hiddenForPip: List<Pair<View, Int>> = emptyList()
 
     /** Records the renderer's requested presentation and the current media metadata. */
     @JvmStatic
@@ -265,9 +269,19 @@ object VideoPresentation {
      * On exit, restore the in-page stage rect; the renderer re-syncs on resume.
      */
     @JvmStatic
-    fun onPipModeChanged(inPip: Boolean) {
+    fun onPipModeChanged(activity: Activity?, inPip: Boolean) {
         val frame = overlay ?: return
+        val root = activity?.findViewById<ViewGroup>(android.R.id.content)
         if (inPip) {
+            // PiP scales the whole Activity; hide the WebView and app chrome so
+            // the window shows the video, not a miniature copy of the app.
+            hiddenForPip = root?.let { group ->
+                (0 until group.childCount)
+                    .map { group.getChildAt(it) }
+                    .filter { it !== frame && it.visibility == View.VISIBLE }
+                    .map { it to it.visibility }
+            }.orEmpty()
+            hiddenForPip.forEach { it.first.visibility = View.GONE }
             frame.layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -279,6 +293,8 @@ object VideoPresentation {
             )
             frame.requestLayout()
         } else {
+            hiddenForPip.forEach { it.first.visibility = it.second }
+            hiddenForPip = emptyList()
             bounds?.let { applyBounds(frame, it) }
             texture?.let { applySurfaceAspect(it) }
         }

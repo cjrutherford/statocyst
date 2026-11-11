@@ -65,7 +65,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
-        VideoPresentation.onPipModeChanged(isInPictureInPictureMode);
+        VideoPresentation.onPipModeChanged(this, isInPictureInPictureMode);
     }
 
     @Override
