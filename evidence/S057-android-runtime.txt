@@ -1,0 +1,9 @@
+## Before screen off
+  mWakefulness=Awake
+      state=PlaybackState {state=PLAYING(3), position=0, buffered position=93646, speed=1.0, updated=618410, actions=7339995, custom actions=[Action:mName='Shuffle, mIcon=2131165336, mExtras=Bundle[mParcelledData.dataSize=140], Action:mName='Repeat, mIcon=2131165331, mExtras=Bundle[mParcelledData.dataSize=140], Action:mName='Favorite, mIcon=2131165304, mExtras=Bundle[mParcelledData.dataSize=140]], active item id=0, error=null}
+## After 15s screen off
+  mWakefulness=Asleep
+      state=PlaybackState {state=PLAYING(3), position=14971, buffered position=120000, speed=1.0, updated=633480, actions=7339995, custom actions=[Action:mName='Shuffle, mIcon=2131165336, mExtras=Bundle[mParcelledData.dataSize=140], Action:mName='Repeat, mIcon=2131165331, mExtras=Bundle[mParcelledData.dataSize=140], Action:mName='Favorite, mIcon=2131165304, mExtras=Bundle[mParcelledData.dataSize=140]], active item id=0, error=null}
+  * Task{9a29b82 #11 type=standard A=10219:com.hopefulaspirationsindustries.statocyst U=0 visible=true visibleRequested=false mode=pinned translucent=false sz=1}
+      mLastReportedMultiWindowMode=true mLastReportedPictureInPictureMode=true
+        mLastReportedMultiWindowMode=false mLastReportedPictureInPictureMode=false
