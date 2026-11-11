@@ -1,4 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import type { MediaForm, PodcastEnclosure } from '@statocyst/contracts';
 import { PodcastParseError } from './errors';
 import { decodeEntities, extractLinks, stripHtml } from './text';
 import type { ParsedPodcastEpisode, ParsedPodcastFeed, ParsePodcastFeedOptions } from './types';
@@ -21,6 +22,56 @@ const parser = new XMLParser({
 
 const DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
 const DEFAULT_MAX_EPISODES = 2_000;
+const MAX_ALTERNATES = 8;
+
+/** Conservative extension hints. MIME and `medium` win over these. */
+const AUDIO_EXTENSIONS = new Set([
+  'aac',
+  'aif',
+  'aiff',
+  'flac',
+  'm4a',
+  'm4b',
+  'mp3',
+  'oga',
+  'ogg',
+  'opus',
+  'wav',
+  'wma',
+]);
+const VIDEO_EXTENSIONS = new Set([
+  'avi',
+  'm2ts',
+  'm4v',
+  'mkv',
+  'mov',
+  'mp4',
+  'mpeg',
+  'mpg',
+  'ogv',
+  'ts',
+  'webm',
+]);
+
+interface RawEnclosure {
+  url: string;
+  type: string | null;
+  medium: string | null;
+  lengthBytes: number | null;
+  width: number | null;
+  height: number | null;
+  bitrate: number | null;
+}
+
+interface EpisodeMedia {
+  enclosureUrl: string;
+  enclosureType: string | null;
+  enclosureLengthBytes: number | null;
+  mediaForm: MediaForm;
+  alternates: PodcastEnclosure[];
+  videoWidth: number | null;
+  videoHeight: number | null;
+}
 
 export async function parsePodcastFeed(
   xml: string,
@@ -201,17 +252,29 @@ function parseRssItem(
   context: EpisodeContext,
   baseUrl: string,
 ): ParsedEpisodeBase | null {
-  const enclosure = asArray(item['enclosure']).find((value) => attribute(value, 'url')) ?? item['enclosure'];
-  const enclosureRaw = attribute(enclosure, 'url') ?? textOf(enclosure);
-  if (!enclosureRaw) return null;
-  const enclosureUrl = resolveHttpUrl(enclosureRaw, baseUrl);
-  if (!enclosureUrl) return null;
-  const safety = checkHttpUrl(enclosureUrl, {
-    allowLocalNetwork: context.allowLocalNetwork,
-  });
-  if (!safety.ok) return null;
+  const rawEnclosures: RawEnclosure[] = [];
+  for (const value of asArray(item['enclosure'])) {
+    const raw = attribute(value, 'url') ?? textOf(value);
+    if (raw) {
+      rawEnclosures.push(
+        rawEnclosure(raw, {
+          type: attribute(value, 'type'),
+          lengthBytes: parseInteger(attribute(value, 'length')),
+        }),
+      );
+    }
+  }
+  for (const value of mediaContentValues(item)) {
+    const content = mediaContentRaw(value);
+    if (content) rawEnclosures.push(content);
+  }
+  for (const value of asArray(item['podcast:alternateEnclosure'])) {
+    rawEnclosures.push(...alternateEnclosureRaws(value));
+  }
+  const media = selectEpisodeMedia(rawEnclosures, baseUrl, context.allowLocalNetwork);
+  if (!media) return null;
 
-  const guid = (textOf(item['guid']) || enclosureUrl).trim();
+  const guid = (textOf(item['guid']) || media.enclosureUrl).trim();
   const descriptionRaw =
     textOf(item['content:encoded']) ||
     textOf(item['description']) ||
@@ -223,6 +286,10 @@ function parseRssItem(
   );
   const image =
     attribute(item['itunes:image'], 'href') ?? textOf(asObject(item['image'])?.['url']) ?? null;
+  const posterUrl =
+    resolveSafeOptionalHttpUrl(image, baseUrl, context.allowLocalNetwork) ??
+    resolveSafeOptionalHttpUrl(firstMediaThumbnail(item), baseUrl, context.allowLocalNetwork) ??
+    null;
   const transcript = asArray(item['podcast:transcript']).find((value) => attribute(value, 'url'));
   return {
     guid,
@@ -230,9 +297,8 @@ function parseRssItem(
     descriptionText: stripHtml(descriptionRaw) || null,
     links: extractLinks(descriptionRaw, baseUrl),
     link: resolveOptionalHttpUrl(textOf(item['link']), baseUrl),
-    enclosureUrl,
-    enclosureType: attribute(enclosure, 'type') ?? null,
-    enclosureLengthBytes: parseInteger(attribute(enclosure, 'length')),
+    ...media,
+    posterUrl,
     durationMs: parseDuration(textOf(item['itunes:duration'])),
     publishedAt,
     seasonNo: parseInteger(textOf(item['itunes:season'])),
@@ -252,33 +318,47 @@ function parseAtomEntry(
   baseUrl: string,
 ): ParsedEpisodeBase | null {
   const links = asArray(entry['link']);
-  const enclosure = links.find(
-    (link) =>
-      attribute(link, 'rel') === 'enclosure' ||
-      (attribute(link, 'type') ?? '').toLowerCase().startsWith('audio/'),
-  );
-  const enclosureRaw =
-    attribute(enclosure, 'href') ??
-    attribute(entry['media:content'], 'url') ??
-    attribute(entry['media:content'], 'href');
-  if (!enclosureRaw) return null;
-  const enclosureUrl = resolveHttpUrl(enclosureRaw, baseUrl);
-  if (!enclosureUrl) return null;
-  const safety = checkHttpUrl(enclosureUrl, {
-    allowLocalNetwork: context.allowLocalNetwork,
-  });
-  if (!safety.ok) return null;
+  const rawEnclosures: RawEnclosure[] = [];
+  for (const link of links) {
+    const type = attribute(link, 'type');
+    const rel = (attribute(link, 'rel') ?? '').toLowerCase();
+    const mime = (type ?? '').trim().toLowerCase();
+    if (rel !== 'enclosure' && !mime.startsWith('audio/') && !mime.startsWith('video/')) {
+      continue;
+    }
+    const raw = attribute(link, 'href') ?? attribute(link, 'url');
+    if (raw) {
+      rawEnclosures.push(
+        rawEnclosure(raw, {
+          type,
+          lengthBytes: parseInteger(attribute(link, 'length')),
+        }),
+      );
+    }
+  }
+  for (const value of mediaContentValues(entry)) {
+    const content = mediaContentRaw(value);
+    if (content) rawEnclosures.push(content);
+  }
+  for (const value of asArray(entry['podcast:alternateEnclosure'])) {
+    rawEnclosures.push(...alternateEnclosureRaws(value));
+  }
+  const media = selectEpisodeMedia(rawEnclosures, baseUrl, context.allowLocalNetwork);
+  if (!media) return null;
 
-  const guid = (textOf(entry['id']) || enclosureUrl).trim();
+  const guid = (textOf(entry['id']) || media.enclosureUrl).trim();
   const descriptionRaw =
     textOf(entry['content']) || textOf(entry['summary']) || textOf(entry['itunes:summary']) || '';
   const alternate = links.find(
     (link) => attribute(link, 'rel') === 'alternate' || attribute(link, 'rel') === undefined,
   );
   const publishedAt = parseDate(textOf(entry['published']) || textOf(entry['updated']));
-  const image =
-    attribute(entry['itunes:image'], 'href') ??
-    attribute(entry['media:thumbnail'], 'url') ??
+  const episodeImage = attribute(entry['itunes:image'], 'href') ?? null;
+  const thumbnail = firstMediaThumbnail(entry);
+  const image = episodeImage ?? thumbnail;
+  const posterUrl =
+    resolveSafeOptionalHttpUrl(episodeImage, baseUrl, context.allowLocalNetwork) ??
+    resolveSafeOptionalHttpUrl(thumbnail, baseUrl, context.allowLocalNetwork) ??
     null;
   const transcript = asArray(entry['podcast:transcript']).find((value) => attribute(value, 'url'));
   return {
@@ -287,9 +367,8 @@ function parseAtomEntry(
     descriptionText: stripHtml(descriptionRaw) || null,
     links: extractLinks(descriptionRaw, baseUrl),
     link: resolveOptionalHttpUrl(attribute(alternate, 'href'), baseUrl),
-    enclosureUrl,
-    enclosureType: attribute(enclosure, 'type') ?? null,
-    enclosureLengthBytes: parseInteger(attribute(enclosure, 'length')),
+    ...media,
+    posterUrl,
     durationMs: parseDuration(textOf(entry['itunes:duration'])),
     publishedAt,
     seasonNo: parseInteger(textOf(entry['itunes:season'])),
@@ -301,6 +380,228 @@ function parseAtomEntry(
     transcriptUrl: resolveOptionalHttpUrl(attribute(transcript, 'url'), baseUrl),
     transcriptType: attribute(transcript, 'type') ?? null,
   };
+}
+
+function rawEnclosure(
+  url: string,
+  values: Partial<Omit<RawEnclosure, 'url'>>,
+): RawEnclosure {
+  return {
+    url,
+    type: values.type ?? null,
+    medium: values.medium ?? null,
+    lengthBytes: values.lengthBytes ?? null,
+    width: values.width ?? null,
+    height: values.height ?? null,
+    bitrate: values.bitrate ?? null,
+  };
+}
+
+function mediaContentValues(item: Record<string, unknown>): unknown[] {
+  const values = [...asArray(item['media:content'])];
+  for (const group of asArray(item['media:group'])) {
+    const object = asObject(group);
+    if (object) values.push(...asArray(object['media:content']));
+  }
+  return values;
+}
+
+function mediaContentRaw(value: unknown): RawEnclosure | null {
+  const url = attribute(value, 'url') ?? attribute(value, 'href');
+  if (!url) return null;
+  const medium = attribute(value, 'medium');
+  return rawEnclosure(url, {
+    type: attribute(value, 'type'),
+    medium,
+    lengthBytes: parseInteger(attribute(value, 'fileSize') ?? attribute(value, 'length')),
+    width: parseInteger(attribute(value, 'width')),
+    height: parseInteger(attribute(value, 'height')),
+    bitrate: parseInteger(attribute(value, 'bitrate')),
+  });
+}
+
+/**
+ * Podcast 2.0 `<podcast:alternateEnclosure>` carries one or more
+ * `<podcast:source uri="…">` children. Metadata on the parent applies to each
+ * source; a source-level `contentType` overrides the parent `type`.
+ */
+function alternateEnclosureRaws(value: unknown): RawEnclosure[] {
+  const object = asObject(value);
+  if (!object) return [];
+  const parentType = attribute(value, 'type');
+  const medium = attribute(value, 'medium');
+  const lengthBytes = parseInteger(attribute(value, 'length'));
+  const bitrate = parseInteger(attribute(value, 'bitrate'));
+  const width = parseInteger(attribute(value, 'width'));
+  const height = parseInteger(attribute(value, 'height'));
+  const raws: RawEnclosure[] = [];
+  for (const source of asArray(object['podcast:source'])) {
+    const url =
+      attribute(source, 'uri') ??
+      attribute(source, 'url') ??
+      attribute(source, 'href');
+    if (!url) continue;
+    raws.push(
+      rawEnclosure(url, {
+        type: attribute(source, 'contentType') ?? parentType,
+        medium,
+        lengthBytes,
+        width,
+        height,
+        bitrate,
+      }),
+    );
+  }
+  const directUrl = attribute(value, 'url') ?? attribute(value, 'href');
+  if (directUrl) {
+    raws.push(
+      rawEnclosure(directUrl, { type: parentType, medium, lengthBytes, width, height, bitrate }),
+    );
+  }
+  return raws;
+}
+
+function firstMediaThumbnail(item: Record<string, unknown>): string | null {
+  const values = [...asArray(item['media:thumbnail'])];
+  for (const group of asArray(item['media:group'])) {
+    const object = asObject(group);
+    if (object) values.push(...asArray(object['media:thumbnail']));
+  }
+  for (const value of values) {
+    const url = attribute(value, 'url') ?? attribute(value, 'href') ?? textOf(value);
+    if (url) return url;
+  }
+  return null;
+}
+
+/**
+ * Validate and deduplicate every advertised enclosure, then choose one primary.
+ * Audio is primary whenever an audio form exists; the feed-level preference is
+ * applied by ingestion, not here. Video metadata is kept even when audio wins.
+ */
+function selectEpisodeMedia(
+  values: readonly RawEnclosure[],
+  baseUrl: string,
+  allowLocalNetwork: boolean | undefined,
+): EpisodeMedia | null {
+  const ordered: RawEnclosure[] = [];
+  const byUrl = new Map<string, RawEnclosure>();
+  for (const value of values) {
+    const url = validateEnclosureUrl(value.url, baseUrl, allowLocalNetwork);
+    if (!url) continue;
+    const existing = byUrl.get(url);
+    if (!existing) {
+      const copy = { ...value, url };
+      byUrl.set(url, copy);
+      ordered.push(copy);
+      continue;
+    }
+    // The same URL may be advertised by several elements; merge the richest
+    // metadata without letting a later element overwrite an earlier one.
+    existing.type ??= value.type;
+    existing.medium ??= value.medium;
+    existing.lengthBytes ??= value.lengthBytes;
+    existing.width ??= value.width;
+    existing.height ??= value.height;
+    existing.bitrate ??= value.bitrate;
+  }
+  if (ordered.length === 0) return null;
+
+  const classified = ordered.map((value) => ({
+    ...value,
+    form: classifyMediaForm(value),
+  }));
+  const primary = classified.find((value) => value.form === 'audio') ?? classified[0];
+  const alternates: PodcastEnclosure[] = [];
+  const retained = new Set<string>([primary.url]);
+  for (const value of classified) {
+    if (retained.has(value.url)) continue;
+    if (alternates.length >= MAX_ALTERNATES) break;
+    retained.add(value.url);
+    alternates.push(toPodcastEnclosure(value));
+  }
+  // Do not let a long audio-only alternates list hide the video form.
+  if (alternates.length === MAX_ALTERNATES && primary.form === 'audio') {
+    const video = classified.find((value) => value.form === 'video' && !retained.has(value.url));
+    if (video) {
+      retained.delete(alternates[alternates.length - 1].url);
+      alternates[alternates.length - 1] = toPodcastEnclosure(video);
+    }
+  }
+
+  const video =
+    classified.find(
+      (value) => value.form === 'video' && value.width !== null && value.height !== null,
+    ) ??
+    classified.find(
+      (value) => value.form === 'video' && (value.width !== null || value.height !== null),
+    ) ??
+    classified.find((value) => value.form === 'video');
+  return {
+    enclosureUrl: primary.url,
+    enclosureType: primary.type,
+    enclosureLengthBytes: primary.lengthBytes,
+    mediaForm: primary.form,
+    alternates,
+    videoWidth: video?.width ?? null,
+    videoHeight: video?.height ?? null,
+  };
+}
+
+function validateEnclosureUrl(
+  raw: string,
+  baseUrl: string,
+  allowLocalNetwork: boolean | undefined,
+): string | null {
+  const resolved = resolveHttpUrl(raw, baseUrl);
+  if (!resolved) return null;
+  const safety = checkHttpUrl(resolved, { allowLocalNetwork });
+  return safety.ok ? resolved : null;
+}
+
+function classifyMediaForm(value: RawEnclosure): MediaForm {
+  const mime = (value.type ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (mime.startsWith('audio/')) return 'audio';
+  if (mime.startsWith('video/')) return 'video';
+  const medium = (value.medium ?? '').trim().toLowerCase();
+  if (medium === 'audio' || medium === 'video') return medium;
+  const extension = urlExtension(value.url);
+  if (extension && VIDEO_EXTENSIONS.has(extension)) return 'video';
+  if (extension && AUDIO_EXTENSIONS.has(extension)) return 'audio';
+  // Unknown or application/octet-stream: never assume video.
+  return 'audio';
+}
+
+function urlExtension(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    const match = /\.([a-z0-9]+)$/i.exec(path);
+    return match ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function toPodcastEnclosure(value: RawEnclosure & { form: MediaForm }): PodcastEnclosure {
+  return {
+    url: value.url,
+    type: value.type,
+    form: value.form,
+    lengthBytes: value.lengthBytes,
+    width: value.width,
+    height: value.height,
+    bitrate: value.bitrate,
+  };
+}
+
+function resolveSafeOptionalHttpUrl(
+  value: string | null | undefined,
+  baseUrl: string,
+  allowLocalNetwork: boolean | undefined,
+): string | null {
+  const resolved = resolveOptionalHttpUrl(value, baseUrl);
+  if (!resolved) return null;
+  return checkHttpUrl(resolved, { allowLocalNetwork }).ok ? resolved : null;
 }
 
 /** Must match the persistence layer's stable media identity. */

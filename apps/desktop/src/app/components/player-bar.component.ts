@@ -42,7 +42,7 @@ import { formatDuration } from '../core/format';
           <span class="player__state player__state--waiting">Offline — will resume</span>
         }
         @if (state() === 'error') {
-          <span class="player__state player__state--error">Audio error</span>
+          <span class="player__state player__state--error">Playback error</span>
         }
         <sc-icon name="up" class="player__expand" />
       </button>

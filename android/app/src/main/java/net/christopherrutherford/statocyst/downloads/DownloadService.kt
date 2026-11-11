@@ -87,11 +87,14 @@ class DownloadService : Service() {
             val number = snapshot.done + snapshot.failed + 1
             val waiting = snapshot.entries.firstOrNull { it.state == DownloadState.WAITING }
             val retrying = snapshot.entries.any { it.state == DownloadState.RETRYING }
+            val compressing = snapshot.entries.firstOrNull { it.state == DownloadState.COMPRESSING }
             b.setContentTitle("Downloading ${minOf(number, snapshot.total)} of ${snapshot.total}")
                 .setContentText(
                     when {
                         waiting != null -> waiting.waitingReason ?: "Waiting for network"
                         retrying -> "Retrying after a connection problem"
+                        compressing != null -> "Compressing for offline use" +
+                            (compressing.progressPercent?.let { " ($it%)" } ?: "")
                         snapshot.failed > 0 -> "${snapshot.failed} failed so far"
                         else -> "Keeping your music available offline"
                     },

@@ -24,6 +24,8 @@ data class PreparedTrack(
     val uri: String,
     val remote: Boolean,
     val transcoded: Boolean = false,
+    /** Overrides the catalog form when the pinned copy is audio-only. */
+    val mediaForm: String? = null,
 )
 
 /**
@@ -49,10 +51,12 @@ class SourceResolver(private val context: Context) {
      */
     suspend fun prepare(trackId: String, mode: AdaptiveQuality.Mode? = null, stalled: Boolean = false): PreparedTrack? = withContext(Dispatchers.IO) {
         val entity = dao.getById(trackId) ?: return@withContext null
-        val local = downloads.verifiedFile(trackId) ?: cache.lookup(trackId)
+        val pinned = downloads.verifiedFile(trackId)
+        val local = pinned ?: cache.lookup(trackId)
             ?: StreamFailover.alternates(dao, entity).firstNotNullOfOrNull { downloads.verifiedFile(it.id) ?: cache.lookup(it.id) }
         if (local != null) {
-            return@withContext localUri(local)?.let { PreparedTrack(entity, it, remote = false) }
+            val form = if (pinned != null) downloads.playbackMediaForm(trackId, entity.mediaForm) else entity.mediaForm
+            return@withContext localUri(local)?.let { PreparedTrack(entity, it, remote = false, mediaForm = form) }
         }
         if (entity.sourceKind.startsWith("jellyfin")) {
             val transcode = (mode ?: AdaptiveQuality.modeFor(context, entity, stalled)) == AdaptiveQuality.Mode.TRANSCODE

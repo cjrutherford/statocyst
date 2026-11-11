@@ -3,13 +3,18 @@ import type { EngineCommand, EngineEvent, EngineLoadRequest } from '@statocyst/c
 import { bridge } from './bridge';
 
 /**
- * Renderer-side transport. It owns exactly one `<audio>` element and follows
- * load/command messages from the authoritative main-process playback service.
- * All observable state is reported back as typed engine events.
+ * Renderer-side transport. It owns exactly one active media element: `<audio>`
+ * for audio episodes and `<video>` for video episodes. The main process remains
+ * authoritative for the queue and controls; this service only follows load and
+ * command messages. Video is a presentation surface, never a second player.
  */
 @Injectable({ providedIn: 'root' })
 export class AudioEngineService {
   private readonly audio = new Audio();
+  private readonly video = document.createElement('video');
+  private active: HTMLMediaElement = this.audio;
+  private mediaForm: 'audio' | 'video' = 'audio';
+  private videoHost: HTMLElement | null = null;
   private token = 0;
   private started = false;
   private loading = false;
@@ -25,31 +30,77 @@ export class AudioEngineService {
     this.started = true;
     this.audio.preload = 'auto';
     this.audio.volume = 0.85;
+    this.video.preload = 'auto';
+    this.video.volume = 0.85;
+    this.video.playsInline = true;
+    this.video.controls = false;
+    this.video.setAttribute('playsinline', '');
+    this.video.style.display = 'block';
+    this.video.style.width = '100%';
+    this.video.style.height = '100%';
+    this.video.style.objectFit = 'contain';
+    this.video.style.background = '#020813';
+    this.bindElement(this.audio);
+    this.bindElement(this.video);
 
     bridge().engine.onLoad((request) => this.load(request));
     bridge().engine.onCommand((command) => this.command(command));
+  }
 
-    this.audio.addEventListener('loadedmetadata', () => this.onLoadedMetadata());
-    this.audio.addEventListener('durationchange', () => {
-      if (this.audio.duration > 0) this.reportReady();
+  /** The element the video surface should host; null when audio is active. */
+  get videoElement(): HTMLVideoElement | null {
+    return this.mediaForm === 'video' ? this.video : null;
+  }
+
+  /**
+   * Attach the video element to a DOM host. The element is moved, never
+   * cloned, so playback continues while the stage is shown or hidden.
+   */
+  attachVideoHost(host: HTMLElement): void {
+    if (this.videoHost === host) return;
+    this.detachVideoHost();
+    this.videoHost = host;
+    if (this.mediaForm === 'video') host.appendChild(this.video);
+  }
+
+  detachVideoHost(host?: HTMLElement): void {
+    if (host && this.videoHost !== host) return;
+    if (this.video.parentElement) this.video.parentElement.removeChild(this.video);
+    this.videoHost = null;
+  }
+
+  private bindElement(element: HTMLMediaElement): void {
+    element.addEventListener('loadedmetadata', () => {
+      if (element === this.active) this.onLoadedMetadata();
     });
-    this.audio.addEventListener('timeupdate', () => this.onTimeUpdate());
-    this.audio.addEventListener('play', () => {
-      if (!this.loading && !this.endedReported) this.reportState('playing');
+    element.addEventListener('durationchange', () => {
+      if (element === this.active && element.duration > 0) this.reportReady();
     });
-    this.audio.addEventListener('playing', () => {
-      if (!this.endedReported) this.reportState('playing');
+    element.addEventListener('timeupdate', () => {
+      if (element === this.active) this.onTimeUpdate();
     });
-    this.audio.addEventListener('pause', () => {
-      if (this.loading || this.endedReported || this.audio.ended) return;
+    element.addEventListener('play', () => {
+      if (element === this.active && !this.loading && !this.endedReported) {
+        this.reportState('playing');
+      }
+    });
+    element.addEventListener('playing', () => {
+      if (element === this.active && !this.endedReported) this.reportState('playing');
+    });
+    element.addEventListener('pause', () => {
+      if (element !== this.active || this.loading || this.endedReported || element.ended) return;
       this.reportTime(true);
       this.reportState('paused');
     });
-    this.audio.addEventListener('waiting', () => {
-      if (!this.endedReported) this.reportState('buffering');
+    element.addEventListener('waiting', () => {
+      if (element === this.active && !this.endedReported) this.reportState('buffering');
     });
-    this.audio.addEventListener('ended', () => this.onEnded());
-    this.audio.addEventListener('error', () => this.onError());
+    element.addEventListener('ended', () => {
+      if (element === this.active) this.onEnded();
+    });
+    element.addEventListener('error', () => {
+      if (element === this.active) this.onError();
+    });
   }
 
   private load(request: EngineLoadRequest): void {
@@ -60,12 +111,28 @@ export class AudioEngineService {
     this.endedReported = false;
     this.lastErrorCode = null;
     this.pendingSeekMs = request.startPositionMs > 0 ? request.startPositionMs : null;
+
     this.audio.pause();
-    this.audio.volume = Math.min(1, Math.max(0, request.volume));
-    this.audio.muted = request.muted;
-    this.audio.playbackRate = Math.min(3, Math.max(0.5, request.playbackRate || 1));
-    this.audio.src = request.url;
-    this.audio.load();
+    this.video.pause();
+    this.mediaForm = request.mediaForm ?? 'audio';
+    this.active = this.mediaForm === 'video' ? this.video : this.audio;
+
+    if (this.mediaForm === 'video') {
+      this.video.poster = request.posterUrl ?? '';
+      if (this.videoHost) {
+        if (this.video.parentElement !== this.videoHost) this.videoHost.appendChild(this.video);
+      } else if (this.video.parentElement) {
+        this.video.parentElement.removeChild(this.video);
+      }
+    } else if (this.video.parentElement) {
+      this.video.parentElement.removeChild(this.video);
+    }
+
+    this.active.volume = Math.min(1, Math.max(0, request.volume));
+    this.active.muted = request.muted;
+    this.active.playbackRate = Math.min(3, Math.max(0.5, request.playbackRate || 1));
+    this.active.src = request.url;
+    this.active.load();
     if (request.autoplay) this.tryPlay();
   }
 
@@ -78,14 +145,14 @@ export class AudioEngineService {
         break;
       case 'pause':
         this.autoplayWanted = false;
-        this.audio.pause();
+        this.active.pause();
         break;
       case 'seek': {
-        const maximum = Number.isFinite(this.audio.duration) ? this.audio.duration : Infinity;
+        const maximum = Number.isFinite(this.active.duration) ? this.active.duration : Infinity;
         const seconds = Math.max(0, Math.min(command.positionMs / 1000, maximum));
-        if (this.audio.readyState >= 1) {
+        if (this.active.readyState >= 1) {
           try {
-            this.audio.currentTime = seconds;
+            this.active.currentTime = seconds;
           } catch {
             this.pendingSeekMs = command.positionMs;
           }
@@ -96,18 +163,18 @@ export class AudioEngineService {
         break;
       }
       case 'volume':
-        this.audio.volume = Math.min(1, Math.max(0, command.volume));
-        this.audio.muted = command.muted;
+        this.active.volume = Math.min(1, Math.max(0, command.volume));
+        this.active.muted = command.muted;
         break;
       case 'rate':
-        this.audio.playbackRate = Math.min(3, Math.max(0.5, command.rate));
+        this.active.playbackRate = Math.min(3, Math.max(0.5, command.rate));
         break;
     }
   }
 
   private tryPlay(): void {
     const token = this.token;
-    this.audio
+    this.active
       .play()
       .then(() => {
         if (token !== this.token) return;
@@ -123,7 +190,7 @@ export class AudioEngineService {
           message:
             error?.name === 'NotAllowedError'
               ? 'Playback was blocked by the operating system audio policy'
-              : `The audio engine could not start this track (${error?.message ?? 'unknown error'})`,
+              : `The media engine could not start this episode (${error?.message ?? 'unknown error'})`,
         });
       });
   }
@@ -133,7 +200,7 @@ export class AudioEngineService {
     if (hadPendingSeek !== null) {
       this.pendingSeekMs = null;
       try {
-        this.audio.currentTime = hadPendingSeek / 1000;
+        this.active.currentTime = hadPendingSeek / 1000;
       } catch {
         // A later durationchange will retry via the same pending value.
         this.pendingSeekMs = hadPendingSeek;
@@ -142,7 +209,7 @@ export class AudioEngineService {
     this.loading = false;
     this.reportReady();
     this.reportTime(true);
-    if (this.autoplayWanted && this.audio.paused) this.tryPlay();
+    if (this.autoplayWanted && this.active.paused) this.tryPlay();
   }
 
   private onTimeUpdate(): void {
@@ -160,9 +227,9 @@ export class AudioEngineService {
    */
   private reportHealth(now: number): void {
     if (now - this.lastHealthReport < 2000) return;
-    const buffered = this.audio.buffered;
+    const buffered = this.active.buffered;
     if (!buffered || buffered.length === 0) return;
-    const position = Number.isFinite(this.audio.currentTime) ? this.audio.currentTime : 0;
+    const position = Number.isFinite(this.active.currentTime) ? this.active.currentTime : 0;
     let ahead = 0;
     for (let index = 0; index < buffered.length; index += 1) {
       if (buffered.start(index) <= position && buffered.end(index) >= position) {
@@ -181,7 +248,7 @@ export class AudioEngineService {
   }
 
   private onError(): void {
-    const mediaError = this.audio.error;
+    const mediaError = this.active.error;
     if (!mediaError) return;
     if (this.lastErrorCode === mediaError.code) return;
     this.lastErrorCode = mediaError.code;
@@ -194,14 +261,14 @@ export class AudioEngineService {
       token: this.token,
       code: unsupported ? 'UNSUPPORTED_MEDIA' : 'MEDIA_UNAVAILABLE',
       message: unsupported
-        ? 'This file cannot be decoded by the desktop audio engine'
-        : 'The audio file is unavailable or unreadable',
+        ? 'This media cannot be decoded by the desktop engine'
+        : 'The media is unavailable or unreadable',
     });
   }
 
   private reportReady(): void {
-    const durationMs = Number.isFinite(this.audio.duration)
-      ? Math.max(0, Math.round(this.audio.duration * 1000))
+    const durationMs = Number.isFinite(this.active.duration)
+      ? Math.max(0, Math.round(this.active.duration * 1000))
       : 0;
     this.report({ type: 'ready', token: this.token, durationMs });
   }
@@ -214,8 +281,8 @@ export class AudioEngineService {
     const now = Date.now();
     if (!force && now - this.lastTimeReport < 220) return;
     this.lastTimeReport = now;
-    const positionSeconds = Number.isFinite(this.audio.currentTime) ? this.audio.currentTime : 0;
-    const durationSeconds = Number.isFinite(this.audio.duration) ? this.audio.duration : 0;
+    const positionSeconds = Number.isFinite(this.active.currentTime) ? this.active.currentTime : 0;
+    const durationSeconds = Number.isFinite(this.active.duration) ? this.active.duration : 0;
     this.report({
       type: 'time',
       token: this.token,

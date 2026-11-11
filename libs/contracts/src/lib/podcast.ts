@@ -1,6 +1,6 @@
-import type { MediaKind, PlaybackContext, Result, Track } from './playback';
+import type { MediaForm, MediaKind, PlaybackContext, Result, Track } from './playback';
 
-export type { MediaKind, PlaybackContext };
+export type { MediaForm, MediaKind, PlaybackContext };
 
 /** Public directories used for discovery. Feeds are always resolved from the publisher. */
 export type PodcastDirectorySource = 'apple' | 'fyyd' | 'podcast-index' | 'gpodder';
@@ -24,6 +24,8 @@ export interface PodcastFeed {
   skipOutroSeconds: number;
   autoQueue: boolean;
   episodeSort: 'newest' | 'oldest';
+  /** Preferred presentation when an episode has both forms; absent means audio. */
+  defaultMediaForm?: MediaForm;
   lastFetchedAt: string | null;
   lastSuccessAt: string | null;
   /** HTTP validators used by the host for conditional refresh; optional on older hosts. */
@@ -43,12 +45,24 @@ export interface PodcastFeedPatch {
   skipOutroSeconds?: number;
   autoQueue?: boolean;
   episodeSort?: 'newest' | 'oldest';
+  defaultMediaForm?: MediaForm;
   subscribed?: boolean;
 }
 
 export interface PodcastEpisodeLink {
   title: string | null;
   url: string;
+}
+
+/** One usable media enclosure advertised by a feed. */
+export interface PodcastEnclosure {
+  url: string;
+  type: string | null;
+  form: MediaForm;
+  lengthBytes: number | null;
+  width: number | null;
+  height: number | null;
+  bitrate: number | null;
 }
 
 export interface PodcastEpisode extends Track {
@@ -67,6 +81,13 @@ export interface PodcastEpisode extends Track {
   explicit: boolean;
   enclosureUrl: string;
   enclosureType: string | null;
+  /** Primary presentation; absent on older hosts means audio. */
+  mediaForm: MediaForm;
+  /** Additional usable enclosures, excluding the primary. */
+  alternates: PodcastEnclosure[];
+  posterUrl: string | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
   playbackSpeed: number | null;
   resumePositionMs: number;
   played: boolean;

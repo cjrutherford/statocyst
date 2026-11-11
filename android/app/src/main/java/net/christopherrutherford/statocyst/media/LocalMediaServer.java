@@ -398,7 +398,7 @@ public final class LocalMediaServer {
             ext = dot >= 0 ? name.substring(dot + 1) : "";
         }
         String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase(Locale.US));
-        if (mime != null && mime.startsWith("audio/")) return mime;
+        if (mime != null && (mime.startsWith("audio/") || mime.startsWith("video/"))) return mime;
         switch (ext.toLowerCase(Locale.US)) {
             case "flac": return "audio/flac";
             case "opus": return "audio/opus";

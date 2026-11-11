@@ -1,4 +1,4 @@
-import type { PodcastEpisodeLink } from '@statocyst/contracts';
+import type { MediaForm, PodcastEnclosure, PodcastEpisodeLink } from '@statocyst/contracts';
 
 export type PodcastFeedType = 'rss' | 'atom';
 
@@ -11,6 +11,15 @@ export interface ParsedPodcastEpisode {
   enclosureUrl: string;
   enclosureType: string | null;
   enclosureLengthBytes: number | null;
+  /** Form of the primary enclosure; audio wins when both forms are advertised. */
+  mediaForm: MediaForm;
+  /** Additional usable enclosures, excluding the primary. Bounded to 8. */
+  alternates: PodcastEnclosure[];
+  /** Episode image, then media:thumbnail, then null. */
+  posterUrl: string | null;
+  /** Dimensions of the first video enclosure, when the feed declares them. */
+  videoWidth: number | null;
+  videoHeight: number | null;
   durationMs: number;
   publishedAt: string | null;
   seasonNo: number | null;

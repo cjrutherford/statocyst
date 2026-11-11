@@ -1,5 +1,6 @@
 import type {
   CommandError,
+  MediaForm,
   PlaybackCommand,
   PlaybackContext,
   PlaybackEvent,
@@ -17,6 +18,9 @@ export type DensityPreference = 'comfortable' | 'compact';
 export type QualityPreference = 'lossless' | 'auto';
 /** Quality of the offline copy. Original is the untouched file; Balanced/Saver are transcodes. */
 export type DownloadProfile = 'original' | 'balanced' | 'saver';
+
+/** Podcast download output. `original` keeps the publisher enclosure. */
+export type PodcastDownloadVariant = 'original' | 'audio-only' | 'video-480p' | 'video-720p';
 
 export interface Settings {
   theme: ThemePreference;
@@ -42,6 +46,8 @@ export interface Settings {
   podcastAllowLocalNetwork: boolean;
   /** Refresh due podcast feeds after the app becomes interactive. */
   podcastRefreshOnLaunch: boolean;
+  /** Video presentation preference; absent on older hosts means auto. */
+  videoPreference?: 'auto' | 'audio-only' | 'ask';
 }
 
 export interface AppInfo {
@@ -120,6 +126,10 @@ export interface EngineLoadRequest {
   volume: number;
   muted: boolean;
   playbackRate: number;
+  /** Primary presentation; absent on older hosts means audio. */
+  mediaForm?: MediaForm;
+  /** Cached poster for the video surface, when the episode has one. */
+  posterUrl?: string | null;
 }
 
 export type EngineState = 'playing' | 'paused' | 'buffering';
@@ -210,6 +220,12 @@ export interface DownloadView {
   bitRate?: number | null;
   /** Original file size in bytes, for the space saved by a transcode. */
   sourceBytes?: number;
+  /** Form of the stored copy; absent on older records means audio. */
+  mediaForm?: MediaForm;
+  /** Chosen podcast download variant; absent on older records means original. */
+  variant?: PodcastDownloadVariant;
+  /** Output height for a compressed video copy, when known. */
+  height?: number | null;
 }
 
 export interface DownloadProgress {
@@ -280,7 +296,11 @@ export interface DownloadsBridge {
    */
   readonly supported?: boolean;
   /** Downloads a track to the protected (non-evictable) store and verifies it. */
-  download(trackId: string, profile?: DownloadProfile): Promise<Result<DownloadSummary>>;
+  download(
+    trackId: string,
+    profile?: DownloadProfile,
+    variant?: PodcastDownloadVariant,
+  ): Promise<Result<DownloadSummary>>;
   remove(trackId: string): Promise<Result<{ removed: boolean }>>;
   list(): Promise<DownloadView[]>;
   stats(): Promise<DownloadStats>;

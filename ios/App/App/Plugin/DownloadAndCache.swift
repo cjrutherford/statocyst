@@ -1,18 +1,49 @@
 import Foundation
+import AVFoundation
 import CryptoKit
 
 struct DownloadCancelledError: Error {}
+
+/** Fixed download copies. Compression never runs during playback. */
+enum DownloadVariant: String, CaseIterable {
+    case original
+    case audioOnly = "audio-only"
+    case video480p = "video-480p"
+    case video720p = "video-720p"
+
+    var isCompressed: Bool { self != .original }
+
+    var outputContainer: String? {
+        switch self {
+        case .original: return nil
+        case .audioOnly: return "m4a"
+        case .video480p, .video720p: return "mp4"
+        }
+    }
+
+    /// Human-readable preset label; never presented as lossless.
+    var label: String {
+        switch self {
+        case .original: return "Original"
+        case .audioOnly: return "Audio only"
+        case .video480p: return "480p"
+        case .video720p: return "720p"
+        }
+    }
+}
 
 protocol DownloadEvents: AnyObject {
     func isCancelled() -> Bool
     func progress(received: Int64, total: Int64?)
     func waiting()
     func retrying(attempt: Int, reason: String)
+    func compressing(progress: Double)
 }
 
 extension DownloadEvents {
     func waiting() {}
     func retrying(attempt: Int, reason: String) {}
+    func compressing(progress: Double) {}
 }
 
 final class ClosureDownloadEvents: DownloadEvents {
@@ -20,16 +51,19 @@ final class ClosureDownloadEvents: DownloadEvents {
     private let onWaiting: () -> Void
     private let onRetrying: (Int, String) -> Void
     private let onProgress: (Int64, Int64?) -> Void
+    private let onCompressing: (Double) -> Void
 
     init(
         cancelledCheck: @escaping () -> Bool = { false },
         onWaiting: @escaping () -> Void = {},
         onRetrying: @escaping (Int, String) -> Void = { _, _ in },
-        onProgress: @escaping (Int64, Int64?) -> Void
+        onProgress: @escaping (Int64, Int64?) -> Void,
+        onCompressing: @escaping (Double) -> Void = { _ in }
     ) {
         self.cancelledCheck = cancelledCheck
         self.onWaiting = onWaiting
         self.onRetrying = onRetrying
+        self.onCompressing = onCompressing
         self.onProgress = onProgress
     }
 
@@ -37,6 +71,7 @@ final class ClosureDownloadEvents: DownloadEvents {
     func progress(received: Int64, total: Int64?) { onProgress(received, total) }
     func waiting() { onWaiting() }
     func retrying(attempt: Int, reason: String) { onRetrying(attempt, reason) }
+    func compressing(progress: Double) { onCompressing(progress) }
 }
 
 /**
@@ -57,6 +92,10 @@ enum DownloadStore {
         var totalBytes: Int64?
         var attempt: Int
         var error: String?
+        /// Optional so pending entries written before MVP-6 still decode.
+        var variant: String?
+        /// Optional compression progress (0...1) while a variant is being transcoded.
+        var progress: Double?
     }
 
     private static let lock = NSLock()
@@ -149,6 +188,7 @@ final class DownloadManager {
     struct Outcome {
         let entity: DownloadEntity
         let alreadyPresent: Bool
+        let variant: DownloadVariant
     }
 
     static let shared = DownloadManager()
@@ -157,6 +197,7 @@ final class DownloadManager {
     private static var trackLocks: [String: NSLock] = [:]
 
     private let db: StatocystDatabase
+    private let podcasts = PodcastRepository.shared
     let directory: URL
 
     init(db: StatocystDatabase = .shared) {
@@ -167,15 +208,20 @@ final class DownloadManager {
 
     func download(
         trackId: String,
+        variant: DownloadVariant = .original,
         onProgress: @escaping (Int64, Int64?, Bool, String?) -> Void
     ) throws -> Outcome {
         let events = ClosureDownloadEvents { received, total in
             onProgress(received, total, false, nil)
         }
-        return try download(trackId: trackId, events: events)
+        return try download(trackId: trackId, variant: variant, events: events)
     }
 
-    func download(trackId: String, events: DownloadEvents) throws -> Outcome {
+    func download(
+        trackId: String,
+        variant: DownloadVariant = .original,
+        events: DownloadEvents
+    ) throws -> Outcome {
         // Serialises direct `downloadTrack` calls with the native queue for the
         // same track. A waiting caller re-checks the verified file once it wins
         // the lock, so it normally becomes an `alreadyPresent` result.
@@ -189,53 +235,275 @@ final class DownloadManager {
         }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-        if let _ = verifiedFile(trackId), let existing = db.getDownload(trackId) {
+        if variant == .original, verifiedFile(trackId) != nil, let existing = db.getDownload(trackId) {
             DownloadStore.clearResumeData(trackId: trackId)
-            return Outcome(entity: existing, alreadyPresent: true)
+            return Outcome(entity: existing, alreadyPresent: true, variant: variant)
         }
 
-        let ext = (track.ext.isEmpty ? (track.format ?? "bin") : track.ext).lowercased()
-        let finalURL = directory.appendingPathComponent("\(trackId).\(ext)")
-        let partURL = directory.appendingPathComponent("\(trackId).\(ext).part")
-        let podcastRemote = track.sourceKind == "podcast" &&
-            (URL(string: track.path)?.scheme?.lowercased().hasPrefix("http") ?? false)
-        let isRemote = track.sourceKind.hasPrefix("jellyfin") || podcastRemote
-
-        // If an earlier run moved a complete background download into the staging
-        // path but died before hashing/moving it, finish that work before fetching
-        // the whole track again.
-        if isRemote, track.sizeBytes > 0,
-           let attrs = try? FileManager.default.attributesOfItem(atPath: partURL.path),
-           let stagedSize = attrs[.size] as? Int64,
-           stagedSize == track.sizeBytes,
-           let entity = try? finalizePart(trackId: trackId, partURL: partURL, container: track.format ?? track.ext) {
+        // A compressed/alternate variant must not inherit resume data from a
+        // different enclosure; the bytes are not interchangeable.
+        if variant != .original {
             DownloadStore.clearResumeData(trackId: trackId)
-            events.progress(received: entity.sizeBytes, total: entity.sizeBytes)
-            return Outcome(entity: entity, alreadyPresent: false)
         }
 
-        try? FileManager.default.removeItem(at: finalURL)
-        if !isRemote {
-            // Local imports cannot be resumed; a stale part file would only confuse the copy.
-            try? FileManager.default.removeItem(at: partURL)
-        }
+        // A compressed variant replaces the record for this track. Only one pin per
+        // episode is represented by the download table, so ask for the variant you
+        // want to keep. (Variant is not persisted yet; see the TODO in this file.)
+        let source = try resolveDownloadSource(track: track, variant: variant)
 
-        do {
-            if isRemote {
-                try copyRemote(track: track, trackId: trackId, target: partURL, events: events)
-            } else {
-                try copyLocal(track: track, target: partURL, events: events)
+        if !source.requiresTranscode {
+            let ext = source.ext
+            let finalURL = directory.appendingPathComponent("\(trackId).\(ext)")
+            let partURL = directory.appendingPathComponent("\(trackId).\(ext).part")
+            let isRemote = source.isRemote
+
+            // If an earlier run moved a complete background download into the staging
+            // path but died before hashing/moving it, finish that work before fetching
+            // the whole track again. This recovery is only valid for the original
+            // enclosure; alternate/variant parts use their own names below.
+            if variant == .original, isRemote, track.sizeBytes > 0,
+               let attrs = try? FileManager.default.attributesOfItem(atPath: partURL.path),
+               let stagedSize = attrs[.size] as? Int64,
+               stagedSize == track.sizeBytes,
+               let entity = try? finalizePart(trackId: trackId, partURL: partURL, container: track.format ?? track.ext) {
+                DownloadStore.clearResumeData(trackId: trackId)
+                events.progress(received: entity.sizeBytes, total: entity.sizeBytes)
+                return Outcome(entity: entity, alreadyPresent: false, variant: variant)
             }
-            let entity = try finalizePart(trackId: trackId, partURL: partURL, container: track.format ?? track.ext)
-            DownloadStore.clearResumeData(trackId: trackId)
-            events.progress(received: entity.sizeBytes, total: entity.sizeBytes)
-            return Outcome(entity: entity, alreadyPresent: false)
-        } catch {
-            if !isRemote {
+
+            try? FileManager.default.removeItem(at: finalURL)
+            if !isRemote || variant != .original {
+                // Local imports cannot be resumed; a stale part file would only
+                // confuse the copy. Alternate/variant parts may belong to another
+                // enclosure, so they always start clean.
                 try? FileManager.default.removeItem(at: partURL)
             }
-            // Remote failures keep the resume data and any completed part file so a retry can continue.
+
+            do {
+                try transfer(
+                    source: source,
+                    track: track,
+                    trackId: trackId,
+                    target: partURL,
+                    events: events
+                )
+                let container = variant == .original
+                    ? (track.format ?? track.ext)
+                    : source.ext
+                let entity = try finalizePart(trackId: trackId, partURL: partURL, container: container)
+                DownloadStore.clearResumeData(trackId: trackId)
+                events.progress(received: entity.sizeBytes, total: entity.sizeBytes)
+                return Outcome(entity: entity, alreadyPresent: false, variant: variant)
+            } catch {
+                if !isRemote {
+                    try? FileManager.default.removeItem(at: partURL)
+                }
+                // Remote failures keep the resume data and any completed part file so a retry can continue.
+                throw error
+            }
+        }
+
+        // Compression path: download the publisher's bytes to a staging part, then
+        // run AVAssetExportSession into a second part. Only the transcoded file is
+        // hashed and renamed, so a failure/cancel never commits a corrupt download.
+        // TODO(S060): compressed variants restart from zero rather than resuming;
+        // background-relaunch adoption still finalizes the original enclosure.
+        let sourcePart = directory.appendingPathComponent(
+            "\(trackId).\(variant.rawValue).source.\(source.ext).part"
+        )
+        guard let outputContainer = variant.outputContainer else {
+            throw NSError(domain: "DownloadManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Unsupported download variant"])
+        }
+        let outputPart = directory.appendingPathComponent("\(trackId).\(variant.rawValue).\(outputContainer).part")
+        try? FileManager.default.removeItem(at: sourcePart)
+        try? FileManager.default.removeItem(at: outputPart)
+        do {
+            try transfer(
+                source: source,
+                track: track,
+                trackId: trackId,
+                target: sourcePart,
+                events: events
+            )
+            try transcode(source: sourcePart, variant: variant, output: outputPart, events: events)
+            let entity = try finalizePart(trackId: trackId, partURL: outputPart, container: outputContainer)
+            try? FileManager.default.removeItem(at: sourcePart)
+            DownloadStore.clearResumeData(trackId: trackId)
+            events.progress(received: entity.sizeBytes, total: entity.sizeBytes)
+            return Outcome(entity: entity, alreadyPresent: false, variant: variant)
+        } catch {
+            try? FileManager.default.removeItem(at: outputPart)
+            try? FileManager.default.removeItem(at: sourcePart)
+            DownloadStore.clearResumeData(trackId: trackId)
             throw error
+        }
+    }
+
+    private struct ResolvedDownloadSource {
+        /// Explicit HTTP(S) enclosure URL. Nil means a Jellyfin item resolved from the session.
+        let url: String?
+        let ext: String
+        let form: String
+        let isRemote: Bool
+        let requiresTranscode: Bool
+    }
+
+    private func resolveDownloadSource(
+        track: MediaItemEntity,
+        variant: DownloadVariant
+    ) throws -> ResolvedDownloadSource {
+        let primaryForm = StatocystDatabase.normalizedMediaForm(track.mediaForm)
+        let primaryExt = (track.ext.isEmpty ? (track.format ?? "bin") : track.ext).lowercased()
+
+        if variant == .original {
+            let podcastRemote = track.sourceKind == "podcast" && isHTTPURL(track.path)
+            return ResolvedDownloadSource(
+                url: podcastRemote ? track.path : nil,
+                ext: primaryExt,
+                form: primaryForm,
+                isRemote: track.sourceKind.hasPrefix("jellyfin") || podcastRemote,
+                requiresTranscode: false
+            )
+        }
+
+        guard track.sourceKind == "podcast", isHTTPURL(track.path) else {
+            throw NSError(
+                domain: "DownloadManager",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Only podcast enclosures support compressed download variants"]
+            )
+        }
+
+        switch variant {
+        case .original:
+            return ResolvedDownloadSource(url: track.path, ext: primaryExt, form: primaryForm, isRemote: true, requiresTranscode: false)
+        case .audioOnly:
+            if primaryForm == "audio" {
+                return ResolvedDownloadSource(url: track.path, ext: primaryExt, form: "audio", isRemote: true, requiresTranscode: false)
+            }
+            if let alternate = podcasts.mediaSourceForMedia(mediaItemId: track.id, form: "audio") {
+                let ext = PodcastRepository.extensionFor(type: alternate.type, url: alternate.url)
+                return ResolvedDownloadSource(url: alternate.url, ext: ext, form: "audio", isRemote: true, requiresTranscode: false)
+            }
+            // Video-only episode: extract the container's audio track.
+            return ResolvedDownloadSource(url: track.path, ext: primaryExt, form: primaryForm, isRemote: true, requiresTranscode: true)
+        case .video480p, .video720p:
+            if primaryForm == "video" {
+                return ResolvedDownloadSource(url: track.path, ext: primaryExt, form: "video", isRemote: true, requiresTranscode: true)
+            }
+            guard let alternate = podcasts.mediaSourceForMedia(mediaItemId: track.id, form: "video") else {
+                throw NSError(
+                    domain: "DownloadManager",
+                    code: 400,
+                    userInfo: [NSLocalizedDescriptionKey: "This episode does not publish a video enclosure"]
+                )
+            }
+            let ext = PodcastRepository.extensionFor(type: alternate.type, url: alternate.url)
+            return ResolvedDownloadSource(url: alternate.url, ext: ext, form: "video", isRemote: true, requiresTranscode: true)
+        }
+    }
+
+    private func transfer(
+        source: ResolvedDownloadSource,
+        track: MediaItemEntity,
+        trackId: String,
+        target: URL,
+        events: DownloadEvents
+    ) throws {
+        if source.isRemote {
+            try copyRemote(
+                track: track,
+                sourceURL: source.url,
+                trackId: trackId,
+                target: target,
+                events: events
+            )
+        } else {
+            try copyLocal(track: track, target: target, events: events)
+        }
+    }
+
+    private func isHTTPURL(_ value: String) -> Bool {
+        guard let scheme = URL(string: value)?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
+    /**
+     * Fixed, spoken-word/space-saving presets. A smaller source is re-encoded at
+     * source size (`HighestQuality`) rather than upscaled into the preset frame.
+     */
+    private func transcode(
+        source: URL,
+        variant: DownloadVariant,
+        output: URL,
+        events: DownloadEvents
+    ) throws {
+        guard let outputContainer = variant.outputContainer else {
+            throw NSError(domain: "DownloadManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Unsupported download variant"])
+        }
+        let asset = AVURLAsset(url: source)
+        var preset = Self.exportPreset(for: variant)
+        if variant != .audioOnly,
+           let videoTrack = asset.tracks(withMediaType: .video).first {
+            let height = abs(videoTrack.naturalSize.height)
+            let targetHeight: CGFloat = variant == .video480p ? 480 : 720
+            if height > 0, height <= targetHeight {
+                preset = AVAssetExportPresetHighestQuality
+            }
+        }
+        guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
+            throw NSError(domain: "DownloadManager", code: 500, userInfo: [NSLocalizedDescriptionKey: "Compression is unavailable for this file"])
+        }
+        let fileType: AVFileType = variant == .audioOnly ? .m4a : .mp4
+        guard session.supportedFileTypes.contains(fileType) else {
+            throw NSError(domain: "DownloadManager", code: 500, userInfo: [NSLocalizedDescriptionKey: "This file cannot be written as \(outputContainer)"])
+        }
+        try? FileManager.default.removeItem(at: output)
+        session.outputURL = output
+        session.outputFileType = fileType
+        session.shouldOptimizeForNetworkUse = true
+
+        let semaphore = DispatchSemaphore(value: 0)
+        session.exportAsynchronously { semaphore.signal() }
+        while semaphore.wait(timeout: .now() + 0.5) == .timedOut {
+            if events.isCancelled() {
+                session.cancelExport()
+                _ = semaphore.wait(timeout: .now() + 5)
+                try? FileManager.default.removeItem(at: output)
+                throw DownloadCancelledError()
+            }
+            events.compressing(progress: Double(session.progress))
+        }
+
+        switch session.status {
+        case .completed:
+            break
+        case .cancelled:
+            try? FileManager.default.removeItem(at: output)
+            throw DownloadCancelledError()
+        default:
+            try? FileManager.default.removeItem(at: output)
+            throw NSError(
+                domain: "DownloadManager",
+                code: 500,
+                userInfo: [NSLocalizedDescriptionKey: "Compression failed: \(session.error?.localizedDescription ?? "unknown error")"]
+            )
+        }
+
+        let size = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? 0
+        guard size > 0 else {
+            try? FileManager.default.removeItem(at: output)
+            throw NSError(domain: "DownloadManager", code: 500, userInfo: [NSLocalizedDescriptionKey: "Compression produced an empty file"])
+        }
+        events.compressing(progress: 1.0)
+    }
+
+    private static func exportPreset(for variant: DownloadVariant) -> String {
+        switch variant {
+        case .audioOnly: return AVAssetExportPresetAppleM4A
+        case .video480p: return AVAssetExportPreset640x480
+        case .video720p: return AVAssetExportPreset1280x720
+        case .original: return AVAssetExportPresetPassthrough
         }
     }
 
@@ -257,6 +525,18 @@ final class DownloadManager {
             try? FileManager.default.removeItem(at: finalURL)
         }
         try FileManager.default.moveItem(at: partURL, to: finalURL)
+
+        // One pin per episode: drop files left by a previously chosen variant so a
+        // re-download with a different preset does not leak the old copy.
+        if let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) {
+            for file in files
+            where file.lastPathComponent.hasPrefix("\(trackId).") && file.path != finalURL.path {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
 
         let now = ISO8601DateFormatter().string(from: Date())
         let entity = DownloadEntity(
@@ -343,11 +623,15 @@ final class DownloadManager {
         }
     }
 
-    private func copyRemote(track: MediaItemEntity, trackId: String, target: URL, events: DownloadEvents) throws {
-        if track.sourceKind == "podcast" {
-            guard let url = URL(string: track.path),
-                  let scheme = url.scheme?.lowercased(),
-                  scheme == "http" || scheme == "https" else {
+    private func copyRemote(
+        track: MediaItemEntity,
+        sourceURL: String?,
+        trackId: String,
+        target: URL,
+        events: DownloadEvents
+    ) throws {
+        if let sourceURL = sourceURL {
+            guard let url = URL(string: sourceURL), isHTTPURL(sourceURL) else {
                 throw NSError(domain: "DownloadManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid podcast enclosure URL"])
             }
             var request = URLRequest(url: url, timeoutInterval: 60)
@@ -1113,7 +1397,7 @@ func fetchStream(url: URL, token: String, target: URL, events: DownloadEvents) t
 // MARK: - DownloadQueue & DownloadCenter
 
 enum DownloadQueueState: String {
-    case queued, active, retrying, waiting, failed, done
+    case queued, active, retrying, waiting, failed, done, compressing
 
     var isPending: Bool {
         return self != .failed && self != .done
@@ -1127,6 +1411,8 @@ struct DownloadQueueEntry {
     var totalBytes: Int64?
     var attempt: Int
     var error: String?
+    var variant: DownloadVariant = .original
+    var compressProgress: Double? = nil
 }
 
 struct DownloadQueueSnapshot {
@@ -1155,7 +1441,9 @@ private extension DownloadQueueEntry {
             receivedBytes: receivedBytes,
             totalBytes: totalBytes,
             attempt: attempt,
-            error: error
+            error: error,
+            variant: variant.rawValue,
+            progress: compressProgress
         )
     }
 
@@ -1166,6 +1454,8 @@ private extension DownloadQueueEntry {
         self.totalBytes = storeEntry.totalBytes
         self.attempt = storeEntry.attempt
         self.error = storeEntry.error
+        self.variant = DownloadVariant(rawValue: storeEntry.variant ?? "") ?? .original
+        self.compressProgress = storeEntry.progress
     }
 }
 
@@ -1246,12 +1536,17 @@ final class DownloadCenter {
     }
 
     func enqueue(_ trackIds: [String]) -> Int {
+        return enqueue(trackIds.map { (trackId: $0, variant: DownloadVariant.original) })
+    }
+
+    func enqueue(_ requests: [(trackId: String, variant: DownloadVariant)]) -> Int {
         var added: [String] = []
         lock.lock()
         if !entries.isEmpty && !entries.contains(where: { $0.state.isPending }) {
             entries.removeAll { $0.state == .done }
         }
-        for id in trackIds where !id.isEmpty {
+        for request in requests where !request.trackId.isEmpty {
+            let id = request.trackId
             if let idx = entries.firstIndex(where: { $0.trackId == id }) {
                 if entries[idx].state != .failed { continue }
                 let previous = entries[idx]
@@ -1261,10 +1556,19 @@ final class DownloadCenter {
                     receivedBytes: previous.receivedBytes,
                     totalBytes: previous.totalBytes,
                     attempt: 0,
-                    error: nil
+                    error: nil,
+                    variant: request.variant
                 )
             } else {
-                entries.append(DownloadQueueEntry(trackId: id, state: .queued, receivedBytes: 0, totalBytes: nil, attempt: 0, error: nil))
+                entries.append(DownloadQueueEntry(
+                    trackId: id,
+                    state: .queued,
+                    receivedBytes: 0,
+                    totalBytes: nil,
+                    attempt: 0,
+                    error: nil,
+                    variant: request.variant
+                ))
             }
             cancelledIds.remove(id)
             added.append(id)
@@ -1285,9 +1589,11 @@ final class DownloadCenter {
 
     func retryFailed() -> Int {
         lock.lock()
-        let failedIds = entries.filter { $0.state == .failed }.map { $0.trackId }
+        let failed = entries
+            .filter { $0.state == .failed }
+            .map { (trackId: $0.trackId, variant: $0.variant) }
         lock.unlock()
-        return enqueue(failedIds)
+        return enqueue(failed)
     }
 
     func cancelAll() {
@@ -1440,6 +1746,8 @@ final class DownloadCenter {
         entries[idx].state = .active
         entries[idx].attempt = 0
         entries[idx].error = nil
+        entries[idx].compressProgress = nil
+        let variant = entries[idx].variant
         persistPendingLocked(force: true)
         lock.unlock()
         publish()
@@ -1476,6 +1784,21 @@ final class DownloadCenter {
                     if let total = total {
                         self.entries[i].totalBytes = max(self.entries[i].totalBytes ?? 0, total)
                     }
+                    self.entries[i].compressProgress = nil
+                    self.persistPendingLocked()
+                }
+                self.lock.unlock()
+                self.publish()
+            },
+            onCompressing: { [weak self] progress in
+                guard let self = self else { return }
+                self.lock.lock()
+                if let i = self.entries.firstIndex(where: { $0.trackId == trackId }),
+                   self.entries[i].state != .done {
+                    self.entries[i].state = .compressing
+                    self.entries[i].totalBytes = nil
+                    self.entries[i].compressProgress = min(1.0, max(0.0, progress))
+                    self.entries[i].error = nil
                     self.persistPendingLocked()
                 }
                 self.lock.unlock()
@@ -1485,7 +1808,7 @@ final class DownloadCenter {
 
         var shouldRestart = false
         do {
-            let outcome = try manager.download(trackId: trackId, events: events)
+            let outcome = try manager.download(trackId: trackId, variant: variant, events: events)
             DownloadStore.clearResumeData(trackId: trackId)
             lock.lock()
             runningIds.remove(trackId)
@@ -1497,6 +1820,7 @@ final class DownloadCenter {
                 entries[i].totalBytes = outcome.entity.sizeBytes
                 entries[i].attempt = 0
                 entries[i].error = nil
+                entries[i].compressProgress = nil
             }
             persistPendingLocked(force: true)
             lock.unlock()

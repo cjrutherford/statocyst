@@ -12,6 +12,18 @@
         "one"
       ]
     },
+    "mediaForm": {
+      "enum": [
+        "audio",
+        "video"
+      ]
+    },
+    "presentation": {
+      "enum": [
+        "audio-only",
+        "video"
+      ]
+    },
     "playbackState": {
       "enum": [
         "idle",
@@ -91,6 +103,9 @@
             "podcast"
           ]
         },
+        "mediaForm": {
+          "$ref": "#/$defs/mediaForm"
+        },
         "trackNo": {
           "type": [
             "integer",
@@ -169,7 +184,9 @@
         "track",
         "context",
         "active",
-        "rate"
+        "rate",
+        "mediaForm",
+        "presentation"
       ],
       "additionalProperties": false,
       "properties": {
@@ -224,6 +241,15 @@
           "type": "number",
           "minimum": 0.5,
           "maximum": 3
+        },
+        "mediaForm": {
+          "$ref": "#/$defs/mediaForm"
+        },
+        "presentation": {
+          "$ref": "#/$defs/presentation"
+        },
+        "videoAvailable": {
+          "type": "boolean"
         }
       }
     },
@@ -525,6 +551,22 @@
               "type": "number",
               "minimum": 0.5,
               "maximum": 3
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "mode"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "setPresentation"
+            },
+            "mode": {
+              "$ref": "#/$defs/presentation"
             }
           }
         },

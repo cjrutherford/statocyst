@@ -23,6 +23,9 @@ const EMPTY_SNAPSHOT: PlaybackSnapshot = {
   rate: 1,
   context: 'music',
   active: true,
+  mediaForm: 'audio',
+  presentation: 'audio-only',
+  videoAvailable: false,
   track: null,
 };
 

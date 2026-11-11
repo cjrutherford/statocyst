@@ -2,7 +2,6 @@ package net.christopherrutherford.statocyst.podcast
 
 import java.io.BufferedInputStream
 import java.net.HttpURLConnection
-import java.net.InetAddress
 import java.net.URL
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,7 +27,7 @@ class PodcastTransport(
         lastModified: String? = null,
         allowHtml: Boolean = true,
     ): PodcastFetchResult {
-        var current = validate(rawUrl, allowLocalNetwork)
+        var current = PodcastUrls.validate(rawUrl, allowLocalNetwork)
         repeat(6) { hop ->
             val connection = (current.openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = false
@@ -54,7 +53,7 @@ class PodcastTransport(
                 ) {
                     val location = connection.getHeaderField("Location")
                         ?: throw IllegalStateException("The feed redirected without a location")
-                    current = validate(URL(current, location).toString(), allowLocalNetwork)
+                    current = PodcastUrls.validate(URL(current, location).toString(), allowLocalNetwork)
                     return@repeat
                 }
                 if (status == 304) {
@@ -91,7 +90,7 @@ class PodcastTransport(
     }
 
     fun fetchImage(rawUrl: String, allowLocalNetwork: Boolean, maxBytes: Int = 8 * 1024 * 1024): ByteArray? {
-        val current = validate(rawUrl, allowLocalNetwork)
+        val current = PodcastUrls.validate(rawUrl, allowLocalNetwork)
         val connection = (current.openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 15_000
@@ -139,22 +138,6 @@ class PodcastTransport(
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun validate(rawUrl: String, allowLocalNetwork: Boolean): URL {
-        val url = URL(rawUrl)
-        require(url.protocol == "http" || url.protocol == "https") { "Only HTTP(S) feed URLs are allowed" }
-        require(url.userInfo == null) { "URLs with embedded credentials are not allowed" }
-        val addresses = InetAddress.getAllByName(url.host)
-        for (address in addresses) {
-            val alwaysBlocked = address.isAnyLocalAddress || address.isLinkLocalAddress ||
-                address.isMulticastAddress
-            if (alwaysBlocked) throw IllegalStateException("Link-local or metadata addresses are not allowed")
-            if (!allowLocalNetwork && (address.isLoopbackAddress || address.isSiteLocalAddress)) {
-                throw IllegalStateException("Private or loopback feed addresses are not allowed")
-            }
-        }
-        return url
     }
 
     private fun readLimited(stream: java.io.InputStream, limit: Int): ByteArray {

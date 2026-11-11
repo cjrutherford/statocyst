@@ -86,6 +86,9 @@ function createWindow(): BrowserWindow {
       sandbox: true,
       spellcheck: false,
       autoplayPolicy: 'no-user-gesture-required',
+      // Podcast video may be hidden while audio continues; do not throttle the
+      // renderer into pausing or drifting when the window is minimized.
+      backgroundThrottling: false,
       devTools: !app.isPackaged || process.env['STATOCYST_DEVTOOLS'] === '1',
     },
   });
@@ -208,7 +211,7 @@ async function startServices(): Promise<IpcContext> {
   });
   await playback.init();
 
-  const resolveDirectAudio = async (track: StoredTrack) => {
+  const resolveDirectMedia = async (track: StoredTrack) => {
     if (track.sourceKind !== 'podcast') return null;
     const checked = checkHttpUrl(track.path, {
       allowLocalNetwork: settings.get().podcastAllowLocalNetwork,
@@ -222,7 +225,7 @@ async function startServices(): Promise<IpcContext> {
     logger,
     identity: jellyfinIdentity,
     resolveRemoteTrack: (sourceId) => jellyfin.resolveRemoteTrack(sourceId),
-    resolveDirectAudio,
+    resolveDirectMedia,
   });
 
   cache = new CacheManager({
@@ -232,7 +235,7 @@ async function startServices(): Promise<IpcContext> {
     identity: jellyfinIdentity,
     getBudgetBytes: () => settings.get().cacheBudgetBytes,
     resolveRemoteTrack: (sourceId) => jellyfin.resolveRemoteTrack(sourceId),
-    resolveDirectAudio,
+    resolveDirectMedia,
   });
 
   // Artwork, downloads and cache are created on demand.
@@ -260,10 +263,24 @@ async function startServices(): Promise<IpcContext> {
   };
 
   const protocolMeter = registerProtocols({
-    lookupTrack: async (trackId) => {
+    lookupTrack: async (trackId, form) => {
       const track = await db.getTrack(trackId).catch(() => null);
       if (!track) return null;
-      const base = { id: track.id, path: track.path, artworkPath: track.artworkPath };
+      const episode =
+        track.sourceKind === 'podcast'
+          ? await db.getPodcastEpisodeByMediaItemId(trackId).catch(() => null)
+          : null;
+      const alternate = form
+        ? episode?.alternates.find((candidate) => candidate.form === form)
+        : undefined;
+      const selectedPath = alternate?.url ?? track.path;
+      const selectedForm = alternate?.form ?? track.mediaForm;
+      const base = {
+        id: track.id,
+        path: selectedPath,
+        artworkPath: track.artworkPath,
+        mediaForm: selectedForm,
+      };
       // Prefer a verified local download for any source kind, so offline and
       // pinned content play without touching the network.
       const verified = await downloads!.getVerifiedDownload(trackId);
@@ -277,7 +294,7 @@ async function startServices(): Promise<IpcContext> {
       }
       if (track.sourceKind !== 'jellyfin' && track.sourceKind !== 'podcast') return base;
       if (track.sourceKind === 'podcast') {
-        const checked = checkHttpUrl(track.path, {
+        const checked = checkHttpUrl(selectedPath, {
           allowLocalNetwork: settings.get().podcastAllowLocalNetwork,
         });
         if (!checked.ok) {

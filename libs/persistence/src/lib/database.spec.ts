@@ -411,6 +411,42 @@ describe('podcast catalog', () => {
     await db.close();
   });
 
+  it('persists video form, alternates, poster and dimensions', async () => {
+    const { db } = await open();
+    const feed = await seedFeed(db);
+    await db.savePodcastEpisodes(feed.id, [
+      episodeInput({
+        feedId: feed.id,
+        enclosureUrl: 'https://cdn.example.com/episodes/1.mp4',
+        enclosureType: 'video/mp4',
+        mediaForm: 'video',
+        alternates: [
+          {
+            url: 'https://cdn.example.com/episodes/1.m4a',
+            type: 'audio/mp4',
+            form: 'audio',
+            lengthBytes: 48_000_000,
+            width: null,
+            height: null,
+            bitrate: 128_000,
+          },
+        ],
+        posterUrl: 'https://cdn.example.com/episodes/1.jpg',
+        videoWidth: 1920,
+        videoHeight: 1080,
+      }),
+    ]);
+    const [episode] = await db.listPodcastEpisodes(feed.id);
+    expect(episode.mediaForm).toBe('video');
+    expect(episode.alternates).toHaveLength(1);
+    expect(episode.alternates[0]?.form).toBe('audio');
+    expect(episode.posterUrl).toBe('https://cdn.example.com/episodes/1.jpg');
+    expect(episode.videoWidth).toBe(1920);
+    expect(episode.videoHeight).toBe(1080);
+    expect((await db.listAllTracks()).find((row) => row.id === episode.id)?.mediaForm).toBe('video');
+    await db.close();
+  });
+
   it('upserts episodes idempotently and preserves progress', async () => {
     const { db } = await open();
     const feed = await seedFeed(db);
@@ -588,6 +624,7 @@ describe('podcast catalog', () => {
     expect(await db.foreignKeyCheck()).toBe(0);
     expect((await db.listTracks())[0].title).toBe('Pre-migration track');
     expect((await db.listTracks())[0].mediaKind).toBe('music');
+    expect((await db.listTracks())[0].mediaForm).toBe('audio');
     expect(await db.loadQueue()).toEqual([{ entryId: 'entry-1', trackId: 'track-1' }]);
     expect(await db.loadPlaybackState()).toEqual({
       currentEntryId: 'entry-1',

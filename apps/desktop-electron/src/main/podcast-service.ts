@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import type {
   ErrorCode,
+  MediaForm,
   PodcastChangeEvent,
   PodcastDirectoryStatus,
   PodcastDiscovery,
@@ -178,12 +179,18 @@ export class PodcastService {
         skipOutroSeconds: existing?.skipOutroSeconds,
         autoQueue: existing?.autoQueue,
         episodeSort: existing?.episodeSort,
+        defaultMediaForm: existing?.defaultMediaForm,
         subscribed: true,
       });
       const saved = await this.database.savePodcastEpisodes(
         feed.id,
         loaded.parsed.episodes.map((episode) =>
-          toEpisodeUpsert(feed.id, episode, this.now().toISOString()),
+          toEpisodeUpsert(
+            feed.id,
+            episode,
+            this.now().toISOString(),
+            feed.defaultMediaForm,
+          ),
         ),
       );
       this.options.logger.info('podcast.feed.added', {
@@ -616,7 +623,12 @@ export class PodcastService {
       const saved = await this.database.savePodcastEpisodes(
         updated.id,
         parsed.episodes.map((episode) =>
-          toEpisodeUpsert(updated.id, episode, this.now().toISOString()),
+          toEpisodeUpsert(
+            updated.id,
+            episode,
+            this.now().toISOString(),
+            updated.defaultMediaForm,
+          ),
         ),
       );
       const newEpisodes = saved.filter((episode) => !episode.duplicate).length;
@@ -788,6 +800,7 @@ function toPodcastFeed(feed: StoredPodcastFeed): PodcastFeed {
     skipOutroSeconds: feed.skipOutroSeconds,
     autoQueue: feed.autoQueue,
     episodeSort: feed.episodeSort,
+    defaultMediaForm: feed.defaultMediaForm,
     lastFetchedAt: feed.lastFetchedAt,
     lastSuccessAt: feed.lastSuccessAt,
     etag: feed.etag,
@@ -812,6 +825,7 @@ function toPodcastEpisode(episode: StoredPodcastEpisode): PodcastEpisode {
     sourceLabel: episode.sourceLabel,
     sourceKind: 'podcast',
     mediaKind: 'podcast',
+    mediaForm: episode.mediaForm,
     trackNo: episode.trackNo,
     year: episode.year,
     genre: episode.genre,
@@ -832,6 +846,10 @@ function toPodcastEpisode(episode: StoredPodcastEpisode): PodcastEpisode {
     explicit: episode.explicit,
     enclosureUrl: episode.enclosureUrl,
     enclosureType: episode.enclosureType,
+    alternates: episode.alternates,
+    posterUrl: episode.posterUrl,
+    videoWidth: episode.videoWidth,
+    videoHeight: episode.videoHeight,
     playbackSpeed: episode.playbackSpeed,
     resumePositionMs: episode.resumePositionMs,
     played: episode.played,
@@ -845,7 +863,39 @@ function toEpisodeUpsert(
   feedId: string,
   episode: Awaited<ReturnType<typeof parsePodcastFeed>>['episodes'][number],
   firstSeenAt: string,
+  preferredForm: MediaForm,
 ): PodcastEpisodeUpsert {
+  let mediaForm = episode.mediaForm;
+  let enclosureUrl = episode.enclosureUrl;
+  let enclosureType = episode.enclosureType;
+  let enclosureLengthBytes = episode.enclosureLengthBytes;
+  let videoWidth = episode.videoWidth;
+  let videoHeight = episode.videoHeight;
+  let alternates = episode.alternates;
+  if (preferredForm === 'video' && mediaForm === 'audio') {
+    const video = episode.alternates.find((alternate) => alternate.form === 'video');
+    if (video) {
+      const previousPrimary = {
+        url: enclosureUrl,
+        type: enclosureType,
+        form: mediaForm,
+        lengthBytes: enclosureLengthBytes,
+        width: null,
+        height: null,
+        bitrate: null,
+      } as const;
+      mediaForm = 'video';
+      enclosureUrl = video.url;
+      enclosureType = video.type;
+      enclosureLengthBytes = video.lengthBytes;
+      videoWidth = video.width;
+      videoHeight = video.height;
+      alternates = [
+        previousPrimary,
+        ...episode.alternates.filter((alternate) => alternate.url !== video.url),
+      ].slice(0, 8);
+    }
+  }
   return {
     feedId,
     guid: episode.guid,
@@ -854,9 +904,14 @@ function toEpisodeUpsert(
     descriptionText: episode.descriptionText,
     links: episode.links,
     link: episode.link,
-    enclosureUrl: episode.enclosureUrl,
-    enclosureType: episode.enclosureType,
-    enclosureLengthBytes: episode.enclosureLengthBytes,
+    enclosureUrl,
+    enclosureType,
+    enclosureLengthBytes,
+    mediaForm,
+    alternates,
+    posterUrl: episode.posterUrl,
+    videoWidth,
+    videoHeight,
     durationMs: episode.durationMs,
     publishedAt: episode.publishedAt,
     seasonNo: episode.seasonNo,
@@ -899,6 +954,13 @@ function validatePatch(patch: PodcastFeedPatch): string | null {
     patch.episodeSort !== 'oldest'
   ) {
     return 'Episode sort must be newest or oldest';
+  }
+  if (
+    patch.defaultMediaForm !== undefined &&
+    patch.defaultMediaForm !== 'audio' &&
+    patch.defaultMediaForm !== 'video'
+  ) {
+    return 'Default media form must be audio or video';
   }
   return null;
 }

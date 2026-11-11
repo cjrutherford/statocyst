@@ -108,6 +108,8 @@ dependencies {
     implementation "androidx.media3:media3-session:$media3Version"
     implementation "androidx.media3:media3-common:$media3Version"
     implementation "androidx.media3:media3-datasource:$media3Version"
+    // Download-time compression presets (audio-only/480p/720p). No playback use.
+    implementation "androidx.media3:media3-transformer:$media3Version"
 
     // Room (Android SQLite)
     implementation "androidx.room:room-runtime:$roomVersion"

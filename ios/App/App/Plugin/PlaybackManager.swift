@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import AVKit
 import MediaPlayer
 import Network
 import UIKit
@@ -18,6 +19,8 @@ struct PlaybackStatePayload {
     var shuffle: Bool
     var repeatMode: String
     var error: String?
+    var mediaForm: String
+    var presentation: String
 }
 
 struct PlaybackQueuePayload {
@@ -49,6 +52,21 @@ final class PlaybackManager: NSObject {
     private var endObserver: NSObjectProtocol?
     private var statusObservation: NSKeyValueObservation?
     private var timeControlObservation: NSKeyValueObservation?
+
+    // Video presentation: one AVPlayer, one optional AVPlayerLayer, one PiP controller.
+    private var videoLayer: AVPlayerLayer?
+    private weak var videoContainerView: UIView?
+    private var pictureInPictureController: AVPictureInPictureController?
+    private weak var videoSurfaceController: VideoSurfaceViewController?
+    private var presentationMode: String = "audio-only"
+    private var videoSurfaceRequested = false
+    /** Form of the item currently loaded into the shared player. */
+    private var activeForm: String = "audio"
+    /** Alternate enclosure selected for the current track, if any. */
+    private var sourceOverride: (trackId: String, url: String, form: String)?
+    private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
+    private var backgroundDetachWorkItem: DispatchWorkItem?
 
     private var entries: [PlaybackQueueSlot] = []
     private var currentIndex: Int = -1
@@ -90,6 +108,7 @@ final class PlaybackManager: NSObject {
         configureAudioSession()
         configureRemoteCommandCenter()
         configurePlayerObservers()
+        configureVideoLifecycle()
         configureNetworkMonitor()
         restorePersistedQueue()
     }
@@ -234,6 +253,317 @@ final class PlaybackManager: NSObject {
         }
     }
 
+    // MARK: - Video Presentation (MVP-6)
+
+    /**
+     * Video is a presentation of the existing AVPlayer, never a second player.
+     * The layer is attached only while the user is watching video; audio keeps
+     * playing when it is detached (background, audio-only, music, screen lock).
+     */
+
+    /// The primary form of the current item; `audio` for music and older rows.
+    func currentMediaForm() -> String {
+        guard let slot = currentSlot, let track = db.getMediaItemById(slot.trackId) else {
+            return "audio"
+        }
+        return StatocystDatabase.normalizedMediaForm(track.mediaForm)
+    }
+
+    /// Requested presentation mode: `video` or `audio-only`.
+    func requestedPresentation() -> String {
+        return presentationMode
+    }
+
+    /// True when the current episode has any video enclosure (primary or alternate).
+    func currentHasVideo() -> Bool {
+        return currentMediaForm() == "video" || hasVideoAlternateForCurrentTrack()
+    }
+
+    /**
+     * Presentation is a view choice, not a queue or engine command. Switching to
+     * `audio-only` detaches the layer and stops PiP while audio continues; it does
+     * not reload the item or move the queue.
+     */
+    @discardableResult
+    func setPresentation(mode: String) -> String {
+        let wantsVideo = mode == "video"
+        let primaryForm = currentMediaForm()
+        let canShowVideo = primaryForm == "video" || hasVideoAlternateForCurrentTrack()
+        guard wantsVideo, canShowVideo, currentSlot != nil else {
+            presentationMode = "audio-only"
+            videoSurfaceRequested = false
+            if activeForm == "video", primaryForm == "audio" {
+                switchPresentationSource(to: "audio")
+            }
+            dismissVideoSurface(animated: true)
+            detachVideoLayer()
+            updateNowPlayingMetadata()
+            emitState()
+            return presentationMode
+        }
+        presentationMode = "video"
+        videoSurfaceRequested = true
+        if primaryForm == "audio", activeForm != "video" {
+            switchPresentationSource(to: "video")
+        }
+        videoSurfaceController?.refreshVideoLayer()
+        updateNowPlayingMetadata()
+        emitState()
+        return presentationMode
+    }
+
+    private func hasVideoAlternateForCurrentTrack() -> Bool {
+        guard let slot = currentSlot, let track = db.getMediaItemById(slot.trackId),
+              track.sourceKind == "podcast" else { return false }
+        return PodcastRepository.shared.mediaSourceForMedia(mediaItemId: track.id, form: "video") != nil
+    }
+
+    /**
+     * Whether the verified offline copy for this track matches the requested
+     * form. Variant is not persisted yet, so this is a container-level check.
+     */
+    private func localDownloadMatches(form: String, trackId: String) -> Bool {
+        guard downloads.verifiedFile(trackId) != nil,
+              let container = db.getDownload(trackId)?.container?.lowercased() else {
+            return false
+        }
+        let formOfContainer: String?
+        if container.hasPrefix("audio/") {
+            formOfContainer = "audio"
+        } else if container.hasPrefix("video/") {
+            formOfContainer = "video"
+        } else if ["mp4", "m4v", "mov", "webm", "mkv"].contains(container) {
+            formOfContainer = "video"
+        } else if ["m4a", "mp3", "aac", "ogg", "opus", "wav"].contains(container) {
+            formOfContainer = "audio"
+        } else {
+            formOfContainer = nil
+        }
+        return formOfContainer == form
+    }
+
+    /**
+     * Reloads the same AVPlayer at the current position with the requested form's
+     * enclosure. This is the contract's "reload at the current position" path for
+     * an episode that publishes both forms; it still uses one player and one queue.
+     */
+    private func switchPresentationSource(to form: String) {
+        guard let slot = currentSlot, let track = db.getMediaItemById(slot.trackId) else { return }
+        let wanted = StatocystDatabase.normalizedMediaForm(form)
+        if StatocystDatabase.normalizedMediaForm(track.mediaForm) == wanted {
+            sourceOverride = nil
+        } else {
+            guard track.sourceKind == "podcast",
+                  let alternate = PodcastRepository.shared.mediaSourceForMedia(
+                      mediaItemId: track.id,
+                      form: wanted
+                  ) else { return }
+            sourceOverride = (trackId: slot.trackId, url: alternate.url, form: wanted)
+        }
+        let position = currentPositionMs()
+        _ = loadCurrentItem(startPositionMs: position, autoplay: desiredPlay)
+    }
+
+    /// Shows the native full-screen surface for the current video episode.
+    @discardableResult
+    func presentVideoSurface(from presenter: UIViewController) -> Bool {
+        guard currentSlot != nil,
+              currentMediaForm() == "video" || hasVideoAlternateForCurrentTrack() else { return false }
+        if let existing = videoSurfaceController, existing.presentingViewController != nil {
+            presentationMode = "video"
+            videoSurfaceRequested = true
+            existing.refreshVideoLayer()
+            return true
+        }
+        presentationMode = "video"
+        videoSurfaceRequested = true
+        if currentMediaForm() == "audio", activeForm != "video" {
+            switchPresentationSource(to: "video")
+        }
+        let controller = VideoSurfaceViewController()
+        controller.playback = self
+        controller.modalPresentationStyle = .fullScreen
+        videoSurfaceController = controller
+        presenter.present(controller, animated: true)
+        updateNowPlayingMetadata()
+        emitState()
+        return true
+    }
+
+    @discardableResult
+    func dismissVideoSurface(animated: Bool = true) -> Bool {
+        guard let controller = videoSurfaceController else { return false }
+        videoSurfaceController = nil
+        controller.dismiss(animated: animated)
+        return true
+    }
+
+    /// Attaches the single AVPlayerLayer to a controller-owned container.
+    @discardableResult
+    func attachVideoLayer(to container: UIView) -> Bool {
+        guard presentationMode == "video", activeForm == "video" else { return false }
+        detachVideoLayer()
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspect
+        layer.frame = container.bounds
+        layer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        layer.backgroundColor = UIColor.black.cgColor
+        container.layer.insertSublayer(layer, at: 0)
+        videoLayer = layer
+        videoContainerView = container
+        configurePictureInPicture(layer: layer)
+        videoSurfaceController?.setPlaying(currentStateName() == "playing")
+        return true
+    }
+
+    func layoutVideoLayer(in container: UIView) {
+        guard let layer = videoLayer, videoContainerView === container else { return }
+        layer.frame = container.bounds
+    }
+
+    /// Detaches video decoding without touching the player, queue or audio session.
+    func detachVideoLayer() {
+        if let controller = pictureInPictureController, controller.isPictureInPictureActive {
+            controller.stopPictureInPicture()
+        }
+        pictureInPictureController?.delegate = nil
+        pictureInPictureController = nil
+        videoLayer?.removeFromSuperlayer()
+        videoLayer = nil
+        videoContainerView = nil
+    }
+
+    func pictureInPictureSupported() -> Bool {
+        return AVPictureInPictureController.isPictureInPictureSupported()
+    }
+
+    func pictureInPictureActive() -> Bool {
+        return pictureInPictureController?.isPictureInPictureActive ?? false
+    }
+
+    @discardableResult
+    func startPictureInPicture() -> Bool {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else { return false }
+        if pictureInPictureController == nil, let layer = videoLayer {
+            configurePictureInPicture(layer: layer)
+        }
+        guard let controller = pictureInPictureController else { return false }
+        if controller.isPictureInPictureActive { return true }
+        guard controller.isPictureInPicturePossible else { return false }
+        controller.startPictureInPicture()
+        return true
+    }
+
+    func stopPictureInPicture() {
+        guard let controller = pictureInPictureController, controller.isPictureInPictureActive else { return }
+        controller.stopPictureInPicture()
+    }
+
+    /// Poster for the video stage. Only already-cached podcast artwork is used;
+    /// remote artwork is never hotlinked here.
+    func posterImage() -> UIImage? {
+        guard let slot = currentSlot, let track = db.getMediaItemById(slot.trackId),
+              let path = track.artworkPath, !path.isEmpty else { return nil }
+        return UIImage(contentsOfFile: path)
+    }
+
+    private func configurePictureInPicture(layer: AVPlayerLayer) {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            pictureInPictureController = nil
+            return
+        }
+        if let existing = pictureInPictureController, existing.playerLayer === layer {
+            return
+        }
+        pictureInPictureController?.delegate = nil
+        let controller = AVPictureInPictureController(playerLayer: layer)
+        controller?.delegate = self
+        // The system may promote the inline layer when the app backgrounds.
+        if #available(iOS 14.2, *) {
+            controller?.canStartPictureInPictureAutomaticallyFromInline = true
+        }
+        pictureInPictureController = controller
+    }
+
+    private func configureVideoLifecycle() {
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleDidEnterBackground()
+        }
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleWillEnterForeground()
+        }
+    }
+
+    private func handleDidEnterBackground() {
+        backgroundDetachWorkItem?.cancel()
+        guard videoSurfaceRequested, presentationMode == "video", activeForm == "video" else {
+            detachVideoLayer()
+            return
+        }
+        // Give the system one beat to promote the inline layer into PiP. If it
+        // cannot, detach so video is never decoded behind the lock screen; audio
+        // continues on the same player and session.
+        if pictureInPictureSupported(), !pictureInPictureActive() {
+            _ = startPictureInPicture()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                guard !self.pictureInPictureActive() else { return }
+                self.detachVideoLayer()
+                self.emitState()
+            }
+            backgroundDetachWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        } else if !pictureInPictureActive() {
+            detachVideoLayer()
+        }
+        emitState()
+    }
+
+    private func handleWillEnterForeground() {
+        backgroundDetachWorkItem?.cancel()
+        backgroundDetachWorkItem = nil
+        guard videoSurfaceRequested, presentationMode == "video", activeForm == "video" else { return }
+        if pictureInPictureActive() { return }
+        videoSurfaceController?.refreshVideoLayer()
+        updateNowPlayingMetadata()
+        emitState()
+    }
+
+    private func applyMediaFormToPresentation(track: MediaItemEntity?) {
+        guard let track = track else {
+            activeForm = "audio"
+            presentationMode = "audio-only"
+            videoSurfaceRequested = false
+            dismissVideoSurface(animated: false)
+            detachVideoLayer()
+            return
+        }
+        if sourceOverride?.trackId != track.id {
+            sourceOverride = nil
+        }
+        activeForm = sourceOverride?.form
+            ?? StatocystDatabase.normalizedMediaForm(track.mediaForm)
+        guard presentationMode == "video", activeForm == "video" else {
+            presentationMode = "audio-only"
+            videoSurfaceRequested = false
+            dismissVideoSurface(animated: false)
+            detachVideoLayer()
+            return
+        }
+    }
+
+    private func updateVideoSurfacePlaybackState() {
+        videoSurfaceController?.setPlaying(currentStateName() == "playing")
+    }
+
     // MARK: - Queue & Transport
 
     private var currentSlot: PlaybackQueueSlot? {
@@ -363,6 +693,12 @@ final class PlaybackManager: NSObject {
         currentUsesTranscode = false
         currentIsLocal = false
         recoveryPositionMs = 0
+        presentationMode = "audio-only"
+        videoSurfaceRequested = false
+        activeForm = "audio"
+        sourceOverride = nil
+        dismissVideoSurface(animated: false)
+        detachVideoLayer()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         persistQueue()
         emitQueue()
@@ -555,12 +891,20 @@ final class PlaybackManager: NSObject {
 
         let track = db.getMediaItemById(slot.trackId)
         lastPodcastResumeWriteMs = 0
+        applyMediaFormToPresentation(track: track)
         let wantsTranscode = preferTranscode && qualityPreference == "auto"
-        let resolved = resolvePlaybackURL(
+        var resolved = resolvePlaybackURL(
             trackId: slot.trackId,
             budgetBytes: cacheBudgetBytes,
             preferTranscode: wantsTranscode
         )
+        if let override = sourceOverride, override.trackId == slot.trackId {
+            // A pinned/cached file is authoritative when its container matches the
+            // requested form; otherwise stream the alternate enclosure.
+            if !localDownloadMatches(form: override.form, trackId: slot.trackId) {
+                resolved = (url: override.url, isLocal: false)
+            }
+        }
         guard let urlString = resolved.url, let url = URL(string: urlString) else {
             currentError = "MEDIA_UNAVAILABLE"
             currentErrorIsNetwork = false
@@ -761,6 +1105,7 @@ final class PlaybackManager: NSObject {
 
     private func currentStatePayload() -> PlaybackStatePayload {
         let slot = currentSlot
+        let form = currentMediaForm()
         return PlaybackStatePayload(
             state: currentStateName(),
             entryId: slot?.entryId,
@@ -769,7 +1114,9 @@ final class PlaybackManager: NSObject {
             durationMs: currentDurationMs(),
             shuffle: shuffleEnabled,
             repeatMode: repeatMode,
-            error: currentError
+            error: currentError,
+            mediaForm: form,
+            presentation: form == "video" ? presentationMode : "audio-only"
         )
     }
 
@@ -781,6 +1128,7 @@ final class PlaybackManager: NSObject {
     }
 
     private func emitState() {
+        updateVideoSurfacePlaybackState()
         onStateChanged?(currentStatePayload())
         updateNowPlayingElapsed()
     }
@@ -794,13 +1142,15 @@ final class PlaybackManager: NSObject {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
+        let mediaType: MPNowPlayingInfoMediaType = presentationMode == "video" ? .video : .audio
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
             MPMediaItemPropertyPlaybackDuration: Double(max(currentDurationMs(), track.durationMs)) / 1000.0,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: Double(currentPositionMs()) / 1000.0,
-            MPNowPlayingInfoPropertyPlaybackRate: desiredPlay ? 1.0 : 0.0
+            MPNowPlayingInfoPropertyPlaybackRate: desiredPlay ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyMediaType: NSNumber(value: mediaType.rawValue)
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPRemoteCommandCenter.shared().likeCommand.isActive = db.isFavorite(track.id)
@@ -1115,5 +1465,130 @@ final class PlaybackManager: NSObject {
         currentIndex = saved.currentIndex
         shuffleEnabled = saved.shuffle
         repeatMode = saved.repeatMode
+    }
+}
+
+extension PlaybackManager: AVPictureInPictureControllerDelegate {
+    func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        // PiP owns the detached rendering surface; the player and audio session are unchanged.
+        emitState()
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        if UIApplication.shared.applicationState == .active {
+            videoSurfaceController?.refreshVideoLayer()
+        }
+        emitState()
+    }
+
+    func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: Error
+    ) {
+        // Audio must keep playing; only the video surface goes away.
+        detachVideoLayer()
+        emitState()
+    }
+}
+
+/**
+ * Full-screen container for the existing AVPlayer's layer.
+ *
+ * This controller never owns a player. It hosts the layer supplied by
+ * `PlaybackManager`, shows the cached poster until playback starts, and reports a
+ * named close control for accessibility. Dismissing returns to audio-only.
+ */
+final class VideoSurfaceViewController: UIViewController {
+    weak var playback: PlaybackManager?
+
+    private let videoContainer = UIView()
+    private let posterView = UIImageView()
+    private let closeButton = UIButton(type: .system)
+    private var hasPoster = false
+    private var hasStartedPlayback = false
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        videoContainer.translatesAutoresizingMaskIntoConstraints = false
+        videoContainer.backgroundColor = .black
+        view.addSubview(videoContainer)
+
+        posterView.translatesAutoresizingMaskIntoConstraints = false
+        posterView.contentMode = .scaleAspectFit
+        posterView.backgroundColor = .black
+        posterView.isHidden = true
+        videoContainer.addSubview(posterView)
+
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.setTitle("Done", for: .normal)
+        closeButton.setTitleColor(.white, for: .normal)
+        closeButton.titleLabel?.font = .preferredFont(forTextStyle: .headline)
+        closeButton.accessibilityLabel = "Close video"
+        closeButton.accessibilityHint = "Returns to audio-only playback"
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        view.addSubview(closeButton)
+
+        NSLayoutConstraint.activate([
+            videoContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            videoContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            videoContainer.topAnchor.constraint(equalTo: view.topAnchor),
+            videoContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            posterView.leadingAnchor.constraint(equalTo: videoContainer.leadingAnchor),
+            posterView.trailingAnchor.constraint(equalTo: videoContainer.trailingAnchor),
+            posterView.topAnchor.constraint(equalTo: videoContainer.topAnchor),
+            posterView.bottomAnchor.constraint(equalTo: videoContainer.bottomAnchor),
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16)
+        ])
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshVideoLayer()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        UIAccessibility.post(notification: .screenChanged, argument: closeButton)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let playback = playback else { return }
+        playback.layoutVideoLayer(in: videoContainer)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // A system dismissal (or a caller switching presentation) must not leave a
+        // decoding layer attached. Audio continues on the same player.
+        playback?.detachVideoLayer()
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+
+    func refreshVideoLayer() {
+        guard isViewLoaded, let playback = playback else { return }
+        if !hasPoster, let image = playback.posterImage() {
+            posterView.image = image
+            hasPoster = true
+            posterView.isHidden = false
+        }
+        _ = playback.attachVideoLayer(to: videoContainer)
+        playback.layoutVideoLayer(in: videoContainer)
+        setPlaying(false)
+    }
+
+    func setPlaying(_ playing: Bool) {
+        if playing { hasStartedPlayback = true }
+        posterView.isHidden = hasStartedPlayback || !hasPoster
+    }
+
+    @objc private func closeTapped() {
+        playback?.setPresentation(mode: "audio-only")
     }
 }

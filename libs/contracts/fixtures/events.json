@@ -60,7 +60,10 @@
         },
         "rate": 1,
         "context": "music",
-        "active": true
+        "active": true,
+        "mediaForm": "audio",
+        "presentation": "audio-only",
+        "videoAvailable": false
       }
     },
     {

@@ -67,6 +67,9 @@ interface NativePlayerState {
   durationMs: number;
   shuffle: boolean;
   repeat: PlaybackSnapshot['repeat'];
+  mediaForm?: 'audio' | 'video';
+  presentation?: 'audio-only' | 'video';
+  videoAvailable?: boolean;
 }
 
 interface NativePlayerQueue {
@@ -113,6 +116,9 @@ export class CapacitorBridge {
     rate: 1,
     context: 'music',
     active: true,
+    mediaForm: 'audio',
+    presentation: 'audio-only',
+    videoAvailable: false,
     track: null,
   };
   private tracks = new Map<string, Track>();
@@ -282,6 +288,9 @@ export class CapacitorBridge {
       shuffle: !!raw.shuffle,
       repeat: raw.repeat ?? 'off',
       rate: typeof raw.rate === 'number' ? raw.rate : this.snapshot.rate,
+      mediaForm: raw.mediaForm === 'video' ? 'video' : 'audio',
+      presentation: raw.presentation === 'video' ? 'video' : 'audio-only',
+      videoAvailable: raw.videoAvailable === true || raw.mediaForm === 'video',
       track,
     };
     this.emitState();
@@ -371,6 +380,11 @@ export class CapacitorBridge {
         case 'setRate':
           await plugin.setRate?.({ rate: command.rate });
           this.snapshot = { ...this.snapshot, rate: command.rate };
+          break;
+        case 'setPresentation':
+          await plugin.setPresentation?.({ mode: command.mode });
+          this.snapshot = { ...this.snapshot, presentation: command.mode };
+          this.emitState();
           break;
         default: {
           // enqueue / playNext / remove / reorder / clear: compute the edit,
@@ -471,6 +485,9 @@ export class CapacitorBridge {
         durationMs: track.durationMs,
         positionMs: startPositionMs,
         state: 'error',
+        mediaForm: track.mediaForm ?? 'audio',
+        presentation: track.mediaForm === 'video' ? 'video' : 'audio-only',
+        videoAvailable: track.mediaForm === 'video',
         track,
       };
       this.emitState();
@@ -484,6 +501,9 @@ export class CapacitorBridge {
       durationMs: track.durationMs,
       positionMs: startPositionMs,
       state: autoplay ? 'buffering' : 'paused',
+      mediaForm: track.mediaForm ?? 'audio',
+      presentation: track.mediaForm === 'video' ? 'video' : 'audio-only',
+      videoAvailable: track.mediaForm === 'video',
       track,
     };
     const request: EngineLoadRequest = {
@@ -497,6 +517,8 @@ export class CapacitorBridge {
       volume: this.snapshot.volume,
       muted: this.snapshot.muted,
       playbackRate: this.snapshot.rate,
+      mediaForm: track.mediaForm ?? 'audio',
+      posterUrl: track.artworkUrl ?? null,
     };
     this.onLoadCb?.(request);
   }
@@ -631,6 +653,13 @@ export class CapacitorBridge {
           this.onCommandCb?.({ token: this.token, action: 'rate', rate: command.rate });
         }
         this.snapshot = { ...this.snapshot, rate: command.rate };
+        break;
+      case 'setPresentation':
+        if (this.nativePlayback) {
+          await this.plugin().setPresentation?.({ mode: command.mode });
+        }
+        this.snapshot = { ...this.snapshot, presentation: command.mode };
+        this.emitState();
         break;
     }
     return { ok: true, value: this.snapshotOf() };
@@ -962,6 +991,8 @@ export class CapacitorBridge {
       sourceId: String(raw['sourceId'] ?? sourceKind),
       sourceLabel,
       sourceKind,
+      mediaKind: raw['mediaKind'] === 'podcast' ? 'podcast' : 'music',
+      mediaForm: raw['mediaForm'] === 'video' ? 'video' : 'audio',
       trackNo: (raw['trackNo'] as number | null) ?? null,
       year: (raw['year'] as number | null) ?? null,
       genre: (raw['genre'] as string | null) ?? null,
@@ -1563,9 +1594,19 @@ export class CapacitorBridge {
       this.attachNativeListeners();
       return () => this.queueListeners.delete(listener);
     },
-    download: async (trackId: string, profile?: DownloadProfile): Promise<Result<DownloadSummary>> => {
+    download: async (
+      trackId: string,
+      profile?: DownloadProfile,
+      variant?: import('@statocyst/contracts').PodcastDownloadVariant,
+    ): Promise<Result<DownloadSummary>> => {
       try {
-        const raw = await this.plugin()?.downloadTrack?.({ trackId, profile });
+        const settings = await this.getSettings();
+        const raw = await this.plugin()?.downloadTrack?.({
+          trackId,
+          profile: variant ?? profile,
+          variant: variant ?? profile,
+          allowLocalNetwork: settings.podcastAllowLocalNetwork,
+        });
         return {
           ok: true as const,
           value: {

@@ -5,6 +5,7 @@ import type {
   DownloadQueueSnapshot,
   DownloadStats,
   DownloadProfile,
+  PodcastDownloadVariant,
 } from '@statocyst/contracts';
 import { bridge, bridgeAvailable } from './bridge';
 import { LibraryStore } from './library.store';
@@ -253,7 +254,11 @@ export class DownloadsStore {
   async download(
     trackId: string,
     title?: string,
-    options: { quiet?: boolean; profile?: DownloadProfile } = {},
+    options: {
+      quiet?: boolean;
+      profile?: DownloadProfile;
+      variant?: PodcastDownloadVariant;
+    } = {},
   ): Promise<boolean> {
     if (this.hasQueue) {
       await this.enqueue([trackId], title ? () => title : undefined, options.profile);
@@ -261,7 +266,11 @@ export class DownloadsStore {
     }
     this.progress.set({ trackId, receivedBytes: 0, totalBytes: null, done: false, error: null });
     try {
-      const result = await bridge().downloads.download(trackId, options.profile);
+      const result = await bridge().downloads.download(
+        trackId,
+        options.profile,
+        options.variant,
+      );
       if (!result.ok) {
         this.toasts.error(result.error.message, result.error.code);
         return false;

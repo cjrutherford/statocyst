@@ -2,11 +2,13 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, u
 import type {
   PodcastDiscoveryCategory,
   PodcastEpisode,
+  PodcastDownloadVariant,
   PodcastFeed,
   PodcastSearchResult,
 } from '@statocyst/contracts';
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
+import { PodcastVideoStageComponent } from '../components/podcast-video-stage.component';
 import { bridge } from '../core/bridge';
 import { formatDuration } from '../core/format';
 import { DownloadsStore } from '../core/downloads.store';
@@ -15,13 +17,13 @@ import { PodcastsStore } from '../core/podcasts.store';
 import { ScreenTransitionService } from '../core/screen-transition.service';
 import { ToastStore } from '../core/toast.store';
 
-type EpisodeFilter = 'all' | 'unplayed' | 'in-progress';
+type EpisodeFilter = 'all' | 'unplayed' | 'in-progress' | 'video';
 type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 
 @Component({
   selector: 'sc-podcasts-view',
   standalone: true,
-  imports: [ArtworkComponent, IconComponent],
+  imports: [ArtworkComponent, IconComponent, PodcastVideoStageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="view" aria-labelledby="podcasts-heading">
@@ -76,6 +78,8 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
             <button type="button" class="link-btn" (click)="store.loadFeeds()">Retry</button>
           </div>
         }
+
+        <sc-podcast-video-stage />
 
         @if (store.selectedFeed(); as feed) {
           <section class="show" aria-labelledby="show-title">
@@ -166,6 +170,16 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                     <option value="oldest">Oldest first</option>
                   </select>
                 </label>
+                <label>
+                  Default format
+                  <select
+                    [value]="feed.defaultMediaForm || 'audio'"
+                    (change)="setMediaForm(feed, $event)"
+                  >
+                    <option value="audio">Audio</option>
+                    <option value="video">Video</option>
+                  </select>
+                </label>
                 <label class="check">
                   <input
                     type="checkbox"
@@ -191,6 +205,19 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                   </button>
                 }
               </div>
+              <label class="variant-picker">
+                <span>Save as</span>
+                <select
+                  [value]="downloadVariant()"
+                  (change)="setDownloadVariant($event)"
+                  aria-label="Download format for pinned episodes"
+                >
+                  <option value="original">Original</option>
+                  <option value="audio-only">Audio only</option>
+                  <option value="video-480p">480p</option>
+                  <option value="video-720p">720p</option>
+                </select>
+              </label>
             </div>
 
             @if (episodes().length === 0) {
@@ -228,6 +255,9 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
                         }
                         @if (episode.explicit) {
                           <span class="explicit">Explicit</span>
+                        }
+                        @if (episode.mediaForm === 'video') {
+                          <span class="explicit">Video</span>
                         }
                       </div>
                       @if (episode.resumePositionMs > 0 && !episode.completed) {
@@ -1145,6 +1175,21 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
         display: flex;
         gap: 6px;
       }
+      .variant-picker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.75rem;
+        color: var(--muted);
+      }
+      .variant-picker select {
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-2);
+        color: var(--text);
+        font: inherit;
+      }
       .episode-list {
         list-style: none;
         margin: 0;
@@ -1602,6 +1647,7 @@ export class PodcastsViewComponent {
   protected readonly settingsOpen = signal(false);
   protected readonly confirmingFeedId = signal<string | null>(null);
   protected readonly filter = signal<EpisodeFilter>('all');
+  protected readonly downloadVariant = signal<PodcastDownloadVariant>('original');
   protected readonly expanded = signal<string | null>(null);
   protected readonly hasSearched = signal(false);
 
@@ -1615,6 +1661,7 @@ export class PodcastsViewComponent {
     { id: 'all', label: 'All' },
     { id: 'unplayed', label: 'Unplayed' },
     { id: 'in-progress', label: 'In progress' },
+    { id: 'video', label: 'Video' },
   ];
 
   protected readonly episodes = computed(() => {
@@ -1622,6 +1669,7 @@ export class PodcastsViewComponent {
     return this.store.episodes().filter((episode) => {
       if (filter === 'unplayed') return !episode.played;
       if (filter === 'in-progress') return !episode.completed && episode.resumePositionMs > 0;
+      if (filter === 'video') return episode.mediaForm === 'video';
       return true;
     });
   });
@@ -1761,12 +1809,19 @@ export class PodcastsViewComponent {
     this.play(episode);
   }
 
+  protected setDownloadVariant(event: Event): void {
+    const value = (event.target as HTMLSelectElement).value as PodcastDownloadVariant;
+    this.downloadVariant.set(value);
+  }
+
   protected toggleDownload(episode: PodcastEpisode): void {
     if (this.downloads.isDownloaded()(episode.id)) {
       void this.downloads.remove(episode.id, episode.title);
       return;
     }
-    void this.downloads.download(episode.id, episode.title);
+    void this.downloads.download(episode.id, episode.title, {
+      variant: this.downloadVariant(),
+    });
   }
 
   protected enqueue(episode: PodcastEpisode): void {
@@ -1851,6 +1906,11 @@ export class PodcastsViewComponent {
   protected setSort(feed: PodcastFeed, event: Event): void {
     const sort = this.value(event) === 'oldest' ? 'oldest' : 'newest';
     void this.store.updateFeed(feed.id, { episodeSort: sort });
+  }
+
+  protected setMediaForm(feed: PodcastFeed, event: Event): void {
+    const defaultMediaForm = this.value(event) === 'video' ? 'video' : 'audio';
+    void this.store.updateFeed(feed.id, { defaultMediaForm });
   }
 
   protected setAutoQueue(feed: PodcastFeed, event: Event): void {

@@ -25,6 +25,9 @@ object DownloadCenter {
     /** Quality chosen per track while it is queued. Persisted with the pending list. */
     private val profiles = ConcurrentHashMap<String, DownloadProfile>()
 
+    /** Podcast downloads inherit the feed fetch's local-network opt-in. */
+    private val allowLocal = ConcurrentHashMap<String, Boolean>()
+
     fun queue(context: Context): DownloadQueue = queue ?: synchronized(this) {
         queue ?: create(context.applicationContext).also { queue = it }
     }
@@ -34,8 +37,12 @@ object DownloadCenter {
         context: Context,
         trackIds: Collection<String>,
         profile: DownloadProfile = DownloadProfile.ORIGINAL,
+        allowLocalNetwork: Boolean = false,
     ): Int {
-        for (id in trackIds) profiles[id] = profile
+        for (id in trackIds) {
+            profiles[id] = profile
+            allowLocal[id] = allowLocalNetwork
+        }
         val added = queue(context).enqueue(trackIds)
         if (added > 0) DownloadService.start(context)
         return added
@@ -59,14 +66,22 @@ object DownloadCenter {
         val manager = DownloadManager(app)
         val created = DownloadQueue(
             runner = { id, events ->
-                manager.download(id, profiles[id] ?: DownloadProfile.ORIGINAL, events)
+                manager.download(
+                    id,
+                    profiles[id] ?: DownloadProfile.ORIGINAL,
+                    events,
+                    allowLocal[id] ?: false,
+                )
             },
             persist = { ids ->
                 // Persist the profile next to the id so a relaunch does not silently
                 // turn a data-saver pin back into a lossless one.
                 prefs.edit().putString(
                     PENDING,
-                    ids.joinToString("\n") { id -> "$id|${(profiles[id] ?: DownloadProfile.ORIGINAL).wire}" },
+                    ids.joinToString("\n") { id ->
+                        val profile = profiles[id] ?: DownloadProfile.ORIGINAL
+                        "$id|${profile.wire}|${if (allowLocal[id] == true) 1 else 0}"
+                    },
                 ).apply()
             },
             networkUp = { isOnline(app) && !blockedByWifi(app) },
@@ -82,8 +97,12 @@ object DownloadCenter {
         val ids = saved.map { it.substringBefore('|') }.filter { it.isNotBlank() }
         for (line in saved) {
             val id = line.substringBefore('|')
-            val profile = DownloadProfile.from(line.substringAfter('|', ""))
-            if (id.isNotBlank()) profiles[id] = profile
+            val profile = DownloadProfile.from(line.substringAfter('|', "").substringBefore('|'))
+            val local = line.split('|').getOrNull(2) == "1"
+            if (id.isNotBlank()) {
+                profiles[id] = profile
+                allowLocal[id] = local
+            }
         }
         if (ids.isNotEmpty()) {
             created.enqueue(ids)

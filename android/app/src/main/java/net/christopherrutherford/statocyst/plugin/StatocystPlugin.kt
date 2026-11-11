@@ -41,6 +41,7 @@ import net.christopherrutherford.statocyst.media.AdaptiveQuality
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.QueueItems
 import net.christopherrutherford.statocyst.media.StreamFailover
+import net.christopherrutherford.statocyst.media.VideoPresentation
 import android.content.ComponentName
 import android.os.Handler
 import android.os.Looper
@@ -133,6 +134,7 @@ class StatocystPlugin : Plugin() {
         val etag = call.getString("etag")
         val lastModified = call.getString("lastModified")
         val allowHtml = call.getBoolean("allowHtml") ?: true
+        call.getBoolean("allowLocalNetwork")?.let { rememberPodcastAllowLocal(it) }
         io(call) {
             val result = podcastTransport.fetchText(url, allowLocal, etag, lastModified, allowHtml)
             call.resolve(
@@ -343,6 +345,7 @@ class StatocystPlugin : Plugin() {
             .put("skipOutroSeconds", feed.skipOutroSeconds)
             .put("autoQueue", feed.autoQueue)
             .put("episodeSort", feed.episodeSort)
+            .put("defaultMediaForm", feed.defaultMediaForm)
             .put("lastFetchedAt", feed.lastFetchedAt)
             .put("lastSuccessAt", feed.lastSuccessAt)
             .put("etag", feed.etag)
@@ -369,6 +372,11 @@ class StatocystPlugin : Plugin() {
             .put("explicit", episode.explicit)
             .put("enclosureUrl", episode.enclosureUrl)
             .put("enclosureType", episode.enclosureType)
+            .put("mediaForm", episode.mediaForm)
+            .put("alternates", runCatching { JSONArray(episode.alternatesJson ?: "[]") }.getOrElse { JSONArray() })
+            .put("posterUrl", episode.posterUrl)
+            .put("videoWidth", episode.videoWidth)
+            .put("videoHeight", episode.videoHeight)
             .put("playbackSpeed", episode.playbackSpeed)
             .put("resumePositionMs", episode.resumePositionMs)
             .put("played", episode.played)
@@ -474,10 +482,19 @@ class StatocystPlugin : Plugin() {
     /** The WebView may have been paused while the native player kept going. */
     override fun handleOnResume() {
         super.handleOnResume()
+        VideoPresentation.onHostResumed()
         controller?.let {
+            VideoPresentation.applyTrackSelection(it)
+            if (VideoPresentation.canShowVideo()) VideoPresentation.attach(activity, it)
             emitState(it)
             emitQueue(it)
         }
+    }
+
+    override fun handleOnPause() {
+        super.handleOnPause()
+        // Background/screen-off keeps audio; only the surface goes away. PiP keeps it.
+        VideoPresentation.onHostPaused(activity, controller)
     }
 
     private fun connectController() {
@@ -538,6 +555,16 @@ class StatocystPlugin : Plugin() {
             if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION)) {
                 emitQueue(c)
             }
+            if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) {
+                // A new episode may be audio-only; never leave a black video surface.
+                VideoPresentation.configure(null, QueueItems.mediaFormOf(c.currentMediaItem))
+                VideoPresentation.applyTrackSelection(c)
+                if (VideoPresentation.canShowVideo()) {
+                    VideoPresentation.attach(activity, c)
+                } else {
+                    VideoPresentation.detach(c)
+                }
+            }
             if (c.isPlaying) startTicker()
         }
     }
@@ -584,6 +611,9 @@ class StatocystPlugin : Plugin() {
         .put("repeat", repeatName(c.repeatMode))
         .put("rate", c.playbackParameters.speed)
         .put("error", c.playerError?.errorCodeName)
+        .put("mediaForm", QueueItems.mediaFormOf(c.currentMediaItem))
+        .put("presentation", VideoPresentation.mode)
+        .put("videoAvailable", QueueItems.videoAvailableOf(c.currentMediaItem))
 
     private fun queueJson(c: MediaController): JSObject {
         val entries = JSArray()
@@ -753,6 +783,137 @@ class StatocystPlugin : Plugin() {
         }
     }
 
+    // ------------------------------------------------------- video presentation
+    //
+    // The Media3 service player stays the only engine and the only media session.
+    // These methods attach/detach the one native surface and request native PiP.
+
+    @PluginMethod
+    fun setPresentation(call: PluginCall) {
+        val requested = call.getString("mode")
+        val width = call.getInt("videoWidth")
+        val height = call.getInt("videoHeight")
+        val poster = call.getString("posterUrl")
+        withController(call) { c ->
+            val wantVideo = requested == "video"
+            if (wantVideo && !QueueItems.videoAvailableOf(c.currentMediaItem)) {
+                call.reject("This episode has no video presentation", "UNSUPPORTED_MEDIA")
+                return@withController
+            }
+            // Audio+video feeds publish both forms. Switch the one player to the
+            // requested form without creating a second queue or session.
+            switchMediaForm(c, if (wantVideo) "video" else "audio")
+            VideoPresentation.configure(
+                mode = requested,
+                mediaForm = QueueItems.mediaFormOf(c.currentMediaItem),
+                videoWidth = width,
+                videoHeight = height,
+                posterUrl = poster,
+            )
+            VideoPresentation.applyTrackSelection(c)
+            if (VideoPresentation.canShowVideo()) {
+                VideoPresentation.attach(activity, c)
+            } else {
+                VideoPresentation.detach(c)
+            }
+            call.resolve(presentationJson())
+        }
+    }
+
+    /**
+     * Replaces the current item URI with the requested alternate while preserving
+     * the current position, playback state and media id. No second player.
+     */
+    private fun switchMediaForm(controller: MediaController, form: String) {
+        val current = controller.currentMediaItem ?: return
+        if (QueueItems.mediaFormOf(current) == form) return
+        val alternates = QueueItems.alternatesOf(current) ?: return
+        val array = runCatching { JSONArray(alternates) }.getOrNull() ?: return
+        var url: String? = null
+        for (index in 0 until array.length()) {
+            val entry = array.optJSONObject(index) ?: continue
+            if (entry.optString("form") == form) {
+                val candidate = entry.optString("url")
+                if (candidate.startsWith("http://") || candidate.startsWith("https://")) {
+                    url = candidate
+                    break
+                }
+            }
+        }
+        val target = url ?: return
+        val position = controller.currentPosition.coerceAtLeast(0)
+        val wasPlaying = controller.playWhenReady
+        val metadata = current.mediaMetadata.buildUpon()
+            .setExtras(android.os.Bundle(current.mediaMetadata.extras ?: android.os.Bundle()).apply {
+                putString(QueueItems.EXTRA_MEDIA_FORM, form)
+                putBoolean(QueueItems.EXTRA_VIDEO_AVAILABLE, true)
+            })
+            .build()
+        val replacement = current.buildUpon()
+            .setUri(android.net.Uri.parse(target))
+            .setMediaMetadata(metadata)
+            .build()
+        runCatching {
+            controller.replaceMediaItem(controller.currentMediaItemIndex, replacement)
+            controller.seekTo(position)
+            controller.prepare()
+            if (wasPlaying) controller.play()
+        }
+    }
+
+    @PluginMethod
+    fun attachVideoSurface(call: PluginCall) {
+        withController(call) { c ->
+            VideoPresentation.applyTrackSelection(c)
+            val attached = VideoPresentation.attach(activity, c)
+            call.resolve(presentationJson().put("attached", attached))
+        }
+    }
+
+    @PluginMethod
+    fun detachVideoSurface(call: PluginCall) {
+        withController(call) { c ->
+            VideoPresentation.detach(c)
+            call.resolve(presentationJson().put("attached", false))
+        }
+    }
+
+    @PluginMethod
+    fun enterPictureInPicture(call: PluginCall) {
+        mainHandler.post {
+            val supported = VideoPresentation.pipSupported(activity)
+            val entered = VideoPresentation.enterPip(activity)
+            call.resolve(
+                JSObject()
+                    .put("entered", entered)
+                    .put("supported", supported)
+                    .put("reason", when {
+                        !supported -> "This device does not support picture-in-picture"
+                        VideoPresentation.mediaForm != "video" -> "Not a video episode"
+                        VideoPresentation.mode != VideoPresentation.MODE_VIDEO -> "Audio-only presentation"
+                        !entered -> "Picture-in-picture could not be started"
+                        else -> null
+                    }),
+            )
+        }
+    }
+
+    @PluginMethod
+    fun getVideoPresentation(call: PluginCall) {
+        call.resolve(presentationJson().put("pipSupported", VideoPresentation.pipSupported(activity)))
+    }
+
+    private fun presentationJson(): JSObject {
+        val state = VideoPresentation.state()
+        return JSObject()
+            .put("presentation", state["presentation"])
+            .put("mediaForm", state["mediaForm"])
+            .put("attached", state["attached"])
+            .put("videoWidth", state["videoWidth"])
+            .put("videoHeight", state["videoHeight"])
+            .put("posterUrl", state["posterUrl"])
+    }
+
     @PluginMethod
     fun dbCount(call: PluginCall) {
         io(call) { call.resolve(JSObject().put("count", dao.count())) }
@@ -767,7 +928,8 @@ class StatocystPlugin : Plugin() {
         io(call) {
             try {
                 val profile = DownloadProfile.from(call.getString("profile"))
-                val outcome = downloads.download(trackId, profile) { received, total, done, error ->
+                val allowLocal = call.getBoolean("allowLocalNetwork") ?: podcastAllowLocal()
+                val outcome = downloads.download(trackId, profile, allowLocal) { received, total, done, error ->
                     emit("downloadProgress", JSObject()
                         .put("trackId", trackId)
                         .put("receivedBytes", received)
@@ -797,6 +959,7 @@ class StatocystPlugin : Plugin() {
         val wifiOnly = call.getBoolean("wifiOnly") ?: true
         val quota = call.getLong("quotaBytes") ?: 0L
         val profile = DownloadProfile.from(call.getString("profile"))
+        val allowLocal = call.getBoolean("allowLocalNetwork") ?: podcastAllowLocal()
         DownloadCenter.setPolicy(context, wifiOnly, quota)
         io(call) {
             val tracks = ids.mapNotNull { dao.getById(it) }
@@ -810,7 +973,7 @@ class StatocystPlugin : Plugin() {
                 call.reject(decision.reason ?: "Not enough space for these downloads", "DOWNLOAD_POLICY")
                 return@io
             }
-            val added = DownloadCenter.enqueue(context, ids, profile)
+            val added = DownloadCenter.enqueue(context, ids, profile, allowLocal)
             call.resolve(queueSnapshotJson(DownloadCenter.queue(context).snapshot()).put("added", added))
         }
     }
@@ -870,6 +1033,7 @@ class StatocystPlugin : Plugin() {
                 .put("attempt", e.attempt)
                 .put("error", e.error)
                 .put("waitingReason", e.waitingReason)
+                .put("progressPercent", e.progressPercent)
         }))
 
     @PluginMethod
@@ -885,7 +1049,8 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun listDownloads(call: PluginCall) {
         io(call) {
-            val array = JSArray(downloads.list().map(::downloadJson))
+            val forms = dao.getAll().associate { it.id to it.mediaForm }
+            val array = JSArray(downloads.list().map { downloadJson(it, forms[it.trackId]) })
             call.resolve(JSObject().put("downloads", array))
         }
     }
@@ -1435,6 +1600,15 @@ class StatocystPlugin : Plugin() {
     /** Upper bound for the optional session probe; boot must never wait on it. */
     private val PROBE_TIMEOUT_MS = 4_000L
 
+    private fun podcastAllowLocal(): Boolean =
+        context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+            .getBoolean("podcast_allow_local", false)
+
+    private fun rememberPodcastAllowLocal(value: Boolean) {
+        context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("podcast_allow_local", value).apply()
+    }
+
     private fun io(call: PluginCall? = null, block: suspend () -> Unit) {
         Thread {
             try {
@@ -1475,6 +1649,7 @@ class StatocystPlugin : Plugin() {
         .put("jellyfinImageTag", t.jellyfinImageTag)
         .put("albumId", t.albumId)
         .put("mediaKind", t.mediaKind)
+        .put("mediaForm", t.mediaForm)
         .put("artworkUrl", artworkFor(t))
         .put("artistArtworkUrl", artistArtworkFor(t))
         .put("missing", t.missing)
@@ -1514,7 +1689,7 @@ class StatocystPlugin : Plugin() {
         call.resolve(JSObject().put("enabled", enabled))
     }
 
-    private fun downloadJson(d: DownloadEntity): JSObject = JSObject()
+    private fun downloadJson(d: DownloadEntity, mediaForm: String?): JSObject = JSObject()
         .put("trackId", d.trackId)
         .put("localPath", d.localPath)
         .put("sizeBytes", d.sizeBytes)
@@ -1523,6 +1698,8 @@ class StatocystPlugin : Plugin() {
         .put("verified", d.verified)
         .put("createdAt", d.createdAt)
         .put("profile", d.profile)
+        .put("variant", d.profile)
+        .put("mediaForm", mediaForm ?: "audio")
         .put("codec", d.codec)
         .put("bitRate", d.bitRate)
         .put("sourceBytes", d.sourceBytes)

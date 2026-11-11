@@ -15,6 +15,13 @@ struct PodcastEpisodeRecord {
     let feedTitle: String
 }
 
+/** One usable enclosure selected for a download (primary or alternate). */
+struct PodcastMediaSource {
+    let url: String
+    let type: String?
+    let form: String
+}
+
 /**
  * SQLite-backed podcast storage for the iOS host.
  *
@@ -91,6 +98,31 @@ final class PodcastRepository {
         return queue.sync { episodeRecordLocked(id: id) }
     }
 
+    /// The enclosure for a podcast media item in the requested form.
+    ///
+    /// Returns nil when the feed does not publish that form; the caller must not
+    /// guess a tier or fall back to a different source silently.
+    func mediaSourceForMedia(mediaItemId: String, form: String) -> PodcastMediaSource? {
+        let wanted = StatocystDatabase.normalizedMediaForm(form)
+        return queue.sync {
+            guard let episode = episodeLockedByMedia(mediaItemId) else { return nil }
+            if StatocystDatabase.normalizedMediaForm(episode.mediaForm) == wanted,
+               let url = Self.httpUrl(episode.enclosureUrl) {
+                return PodcastMediaSource(url: url, type: episode.enclosureType, form: wanted)
+            }
+            return Self.alternates(fromJson: episode.alternatesJson).first { $0.form == wanted }
+        }
+    }
+
+    /// The media item's primary form, read from the episode row.
+    func mediaFormForMedia(mediaItemId: String) -> String? {
+        return queue.sync {
+            episodeLockedByMedia(mediaItemId).map {
+                StatocystDatabase.normalizedMediaForm($0.mediaForm)
+            }
+        }
+    }
+
     // MARK: - Writes
 
     @discardableResult
@@ -136,7 +168,9 @@ final class PodcastRepository {
                 subscribed: Self.bool(feedJson, "subscribed", fallback: existing?.subscribed ?? true),
                 lastViewedAt: existing?.lastViewedAt,
                 createdAt: existing?.createdAt ?? now,
-                updatedAt: now
+                updatedAt: now,
+                defaultMediaForm: Self.mediaFormValue(feedJson["defaultMediaForm"])
+                    ?? existing?.defaultMediaForm ?? "audio"
             )
             exec("BEGIN IMMEDIATE;")
             guard insertFeedLocked(feed) else {
@@ -164,6 +198,7 @@ final class PodcastRepository {
             feed.autoQueue = Self.bool(patch, "autoQueue", fallback: feed.autoQueue)
             feed.episodeSort = Self.string(patch, "episodeSort") ?? feed.episodeSort
             feed.subscribed = Self.bool(patch, "subscribed", fallback: feed.subscribed)
+            feed.defaultMediaForm = Self.mediaFormValue(patch["defaultMediaForm"]) ?? feed.defaultMediaForm
             feed.updatedAt = Self.isoNow()
             guard insertFeedLocked(feed) else { return nil }
             return feedRecordLocked(id: id)
@@ -440,9 +475,10 @@ final class PodcastRepository {
                 artworkPath, language, explicit, categoriesJson, feedType, podcastIndexId,
                 etag, lastModified, lastFetchedAt, lastSuccessAt, nextFetchAt, fetchError,
                 failureCount, refreshIntervalMinutes, defaultSpeed, skipIntroSeconds,
-                skipOutroSeconds, autoQueue, episodeSort, subscribed, lastViewedAt, createdAt, updatedAt
+                skipOutroSeconds, autoQueue, episodeSort, subscribed, lastViewedAt, createdAt, updatedAt,
+                defaultMediaForm
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             );
         """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
@@ -477,6 +513,7 @@ final class PodcastRepository {
         bindOptional(stmt, 29, feed.lastViewedAt)
         bind(stmt, 30, feed.createdAt)
         bind(stmt, 31, feed.updatedAt)
+        bind(stmt, 32, StatocystDatabase.normalizedMediaForm(feed.defaultMediaForm))
         return sqlite3_step(stmt) == SQLITE_DONE
     }
 
@@ -495,6 +532,14 @@ final class PodcastRepository {
         let publishedAt = Self.optionalString(json, "publishedAt")
         let year = publishedAt.flatMap { Int($0.prefix(4)) }
         let artworkPath = Self.optionalString(json, "artworkPath") ?? feed.artworkPath
+        let mediaForm = Self.mediaFormValue(json["mediaForm"])
+            ?? existingEpisode?.mediaForm ?? "audio"
+        let alternatesJson: String?
+        if let rawAlternates = json["alternates"] {
+            alternatesJson = Self.alternatesJson(rawAlternates, excluding: enclosure)
+        } else {
+            alternatesJson = existingEpisode?.alternatesJson
+        }
         let media = MediaItemEntity(
             id: mediaId,
             sourceId: "podcast",
@@ -527,7 +572,8 @@ final class PodcastRepository {
             missing: false,
             albumId: nil,
             serverId: "",
-            mediaKind: "podcast"
+            mediaKind: "podcast",
+            mediaForm: mediaForm
         )
         _ = upsertMediaLocked(media)
 
@@ -562,7 +608,12 @@ final class PodcastRepository {
             lastPlayedAt: existingEpisode?.lastPlayedAt,
             firstSeenAt: Self.optionalString(json, "firstSeenAt") ?? existingEpisode?.firstSeenAt ?? now,
             createdAt: existingEpisode?.createdAt ?? now,
-            updatedAt: now
+            updatedAt: now,
+            mediaForm: mediaForm,
+            alternatesJson: alternatesJson,
+            posterUrl: Self.optionalString(json, "posterUrl") ?? existingEpisode?.posterUrl,
+            videoWidth: Self.optionalInt(json, "videoWidth") ?? existingEpisode?.videoWidth,
+            videoHeight: Self.optionalInt(json, "videoHeight") ?? existingEpisode?.videoHeight
         )
         _ = insertEpisodeLocked(episode)
     }
@@ -576,9 +627,10 @@ final class PodcastRepository {
                 enclosureUrl, enclosureType, enclosureLengthBytes, durationMs, publishedAt,
                 seasonNo, episodeNo, episodeType, imageUrl, artworkPath, explicit,
                 chaptersUrl, transcriptUrl, transcriptType, playbackSpeed, resumePositionMs,
-                played, completed, playCount, lastPlayedAt, firstSeenAt, createdAt, updatedAt
+                played, completed, playCount, lastPlayedAt, firstSeenAt, createdAt, updatedAt,
+                mediaForm, alternatesJson, posterUrl, videoWidth, videoHeight
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             );
         """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
@@ -617,6 +669,11 @@ final class PodcastRepository {
         bind(stmt, 29, episode.firstSeenAt)
         bind(stmt, 30, episode.createdAt)
         bind(stmt, 31, episode.updatedAt)
+        bind(stmt, 32, StatocystDatabase.normalizedMediaForm(episode.mediaForm))
+        bindOptional(stmt, 33, episode.alternatesJson)
+        bindOptional(stmt, 34, episode.posterUrl)
+        bindOptionalInt(stmt, 35, episode.videoWidth)
+        bindOptionalInt(stmt, 36, episode.videoHeight)
         return sqlite3_step(stmt) == SQLITE_DONE
     }
 
@@ -645,9 +702,9 @@ final class PodcastRepository {
                 title, artist, album, albumArtist, trackNo, discNo, year, genre,
                 durationMs, bitrate, sampleRate, channels, codec, format,
                 artworkPath, jellyfinImageTag, sourceKind, sourceLabel,
-                addedAt, updatedAt, missing, albumId, serverId, mediaKind
+                addedAt, updatedAt, missing, albumId, serverId, mediaKind, mediaForm
             ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             );
         """
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
@@ -683,6 +740,7 @@ final class PodcastRepository {
         bindOptional(stmt, 30, item.albumId)
         bind(stmt, 31, item.serverId)
         bind(stmt, 32, item.mediaKind)
+        bind(stmt, 33, StatocystDatabase.normalizedMediaForm(item.mediaForm))
         return sqlite3_step(stmt) == SQLITE_DONE
     }
 
@@ -721,7 +779,8 @@ final class PodcastRepository {
             subscribed: sqlite3_column_int(stmt, 27) != 0,
             lastViewedAt: optionalText(stmt, 28),
             createdAt: text(stmt, 29),
-            updatedAt: text(stmt, 30)
+            updatedAt: text(stmt, 30),
+            defaultMediaForm: StatocystDatabase.normalizedMediaForm(optionalText(stmt, 31))
         )
     }
 
@@ -758,7 +817,12 @@ final class PodcastRepository {
             lastPlayedAt: optionalText(stmt, 27),
             firstSeenAt: text(stmt, 28),
             createdAt: text(stmt, 29),
-            updatedAt: text(stmt, 30)
+            updatedAt: text(stmt, 30),
+            mediaForm: StatocystDatabase.normalizedMediaForm(optionalText(stmt, 31)),
+            alternatesJson: optionalText(stmt, 32),
+            posterUrl: optionalText(stmt, 33),
+            videoWidth: optionalInt(stmt, 34),
+            videoHeight: optionalInt(stmt, 35)
         )
     }
 
@@ -796,7 +860,8 @@ final class PodcastRepository {
             missing: sqlite3_column_int(stmt, 28) != 0,
             albumId: optionalText(stmt, 29),
             serverId: text(stmt, 30),
-            mediaKind: optionalText(stmt, 31) ?? "music"
+            mediaKind: optionalText(stmt, 31) ?? "music",
+            mediaForm: StatocystDatabase.normalizedMediaForm(optionalText(stmt, 32))
         )
     }
 
@@ -807,7 +872,8 @@ final class PodcastRepository {
         artworkPath, language, explicit, categoriesJson, feedType, podcastIndexId,
         etag, lastModified, lastFetchedAt, lastSuccessAt, nextFetchAt, fetchError,
         failureCount, refreshIntervalMinutes, defaultSpeed, skipIntroSeconds,
-        skipOutroSeconds, autoQueue, episodeSort, subscribed, lastViewedAt, createdAt, updatedAt
+        skipOutroSeconds, autoQueue, episodeSort, subscribed, lastViewedAt, createdAt, updatedAt,
+        defaultMediaForm
     """
 
     private static let episodeColumns = """
@@ -815,7 +881,8 @@ final class PodcastRepository {
         enclosureUrl, enclosureType, enclosureLengthBytes, durationMs, publishedAt,
         seasonNo, episodeNo, episodeType, imageUrl, artworkPath, explicit,
         chaptersUrl, transcriptUrl, transcriptType, playbackSpeed, resumePositionMs,
-        played, completed, playCount, lastPlayedAt, firstSeenAt, createdAt, updatedAt
+        played, completed, playCount, lastPlayedAt, firstSeenAt, createdAt, updatedAt,
+        mediaForm, alternatesJson, posterUrl, videoWidth, videoHeight
     """
 
     private func exec(_ sql: String) {
@@ -928,6 +995,63 @@ final class PodcastRepository {
         return text
     }
 
+    static func mediaFormValue(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        switch text.lowercased() {
+        case "audio": return "audio"
+        case "video": return "video"
+        default: return nil
+        }
+    }
+
+    static func httpUrl(_ value: String?) -> String? {
+        guard let value = value,
+              let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
+        return value
+    }
+
+    /// Serializes the episode's non-primary enclosures. Bounded to 8, HTTP(S) only,
+    /// duplicate URLs collapse, and an entry without a declared form fails closed.
+    static func alternatesJson(_ value: Any?, excluding primaryUrl: String?) -> String? {
+        guard let value = value as? [Any], !value.isEmpty else { return nil }
+        var seen = Set<String>()
+        if let primaryUrl = primaryUrl { seen.insert(primaryUrl) }
+        var list: [[String: Any]] = []
+        for entry in value.prefix(8) {
+            guard let dict = entry as? [String: Any],
+                  let url = httpUrl(string(dict, "url")),
+                  let form = mediaFormValue(dict["form"]),
+                  !seen.contains(url) else { continue }
+            seen.insert(url)
+            var item: [String: Any] = ["url": url, "form": form]
+            if let type = optionalString(dict, "type") { item["type"] = type }
+            if let length = optionalInt64(dict, "lengthBytes") { item["lengthBytes"] = length }
+            if let width = optionalInt(dict, "width") { item["width"] = width }
+            if let height = optionalInt(dict, "height") { item["height"] = height }
+            if let bitrate = optionalInt(dict, "bitrate") { item["bitrate"] = bitrate }
+            list.append(item)
+        }
+        guard !list.isEmpty else { return nil }
+        return jsonString(list)
+    }
+
+    static func alternates(fromJson text: String?) -> [PodcastMediaSource] {
+        guard let text = text,
+              let data = text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let raw = object as? [Any] else { return [] }
+        var list: [PodcastMediaSource] = []
+        for entry in raw.prefix(8) {
+            guard let dict = entry as? [String: Any],
+                  let url = httpUrl(string(dict, "url")),
+                  let form = mediaFormValue(dict["form"]) else { continue }
+            list.append(PodcastMediaSource(url: url, type: optionalString(dict, "type"), form: form))
+        }
+        return list
+    }
+
     static func extensionFor(type: String?, url: String) -> String {
         switch (type ?? "").lowercased() {
         case "audio/mpeg", "audio/mp3": return "mp3"
@@ -936,6 +1060,11 @@ final class PodcastRepository {
         case "audio/ogg": return "ogg"
         case "audio/opus": return "opus"
         case "audio/wav", "audio/x-wav": return "wav"
+        case "video/mp4": return "mp4"
+        case "video/quicktime": return "mov"
+        case "video/x-m4v", "video/m4v": return "m4v"
+        case "video/webm": return "webm"
+        case "video/x-matroska": return "mkv"
         default:
             let ext = URL(string: url)?.pathExtension.lowercased() ?? ""
             return ext.isEmpty ? "mp3" : ext

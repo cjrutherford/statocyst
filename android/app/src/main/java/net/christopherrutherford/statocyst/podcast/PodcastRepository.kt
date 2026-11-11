@@ -103,6 +103,9 @@ class PodcastRepository(private val database: StatocystDatabase) {
                 lastViewedAt = existing?.lastViewedAt,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
+                defaultMediaForm = mediaFormOf(
+                    feedJson.optString("defaultMediaForm", existing?.defaultMediaForm ?: "audio"),
+                ),
             )
             feeds.upsertFeed(feed)
 
@@ -128,6 +131,9 @@ class PodcastRepository(private val database: StatocystDatabase) {
                 autoQueue = patch.optBoolean("autoQueue", existing.autoQueue),
                 episodeSort = patch.optString("episodeSort", existing.episodeSort),
                 subscribed = patch.optBoolean("subscribed", existing.subscribed),
+                defaultMediaForm = mediaFormOf(
+                    patch.optString("defaultMediaForm", existing.defaultMediaForm),
+                ),
                 updatedAt = Instant.now().toString(),
             )
             feeds.upsertFeed(updated)
@@ -164,6 +170,7 @@ class PodcastRepository(private val database: StatocystDatabase) {
         val title = json.optString("title", "Untitled episode")
         val ext = extensionFor(json.optNullableString("enclosureType"), enclosure)
         val publishedAt = json.optNullableString("publishedAt")
+        val form = mediaFormOf(json.optString("mediaForm", "audio"))
         val item = MediaItemEntity(
             id = mediaId,
             sourceId = "podcast",
@@ -197,6 +204,7 @@ class PodcastRepository(private val database: StatocystDatabase) {
             albumId = null,
             serverId = "",
             mediaKind = "podcast",
+            mediaForm = form,
         )
         media.upsert(item)
 
@@ -233,6 +241,11 @@ class PodcastRepository(private val database: StatocystDatabase) {
             firstSeenAt = json.optNullableString("firstSeenAt") ?: existing?.firstSeenAt ?: now,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
+            mediaForm = form,
+            alternatesJson = alternatesJson(json.optJSONArray("alternates"), enclosure),
+            posterUrl = json.optNullableString("posterUrl") ?: existing?.posterUrl,
+            videoWidth = json.optNullableInt("videoWidth") ?: existing?.videoWidth,
+            videoHeight = json.optNullableInt("videoHeight") ?: existing?.videoHeight,
         )
         feeds.upsertEpisode(episode)
     }
@@ -249,6 +262,38 @@ private fun JSONObject.optNullableInt(key: String): Int? =
 private fun JSONObject.optNullableLong(key: String): Long? =
     if (!has(key) || isNull(key)) null else optLong(key)
 
+private fun mediaFormOf(value: String?): String =
+    if (value.equals("video", ignoreCase = true)) "video" else "audio"
+
+/**
+ * The bounded non-primary enclosure list. Malformed entries are dropped instead of
+ * failing the episode: a bad alternate must never lose the primary row.
+ */
+private fun alternatesJson(alternates: JSONArray?, primaryUrl: String): String? {
+    alternates ?: return null
+    val sanitized = JSONArray()
+    val seen = mutableSetOf(primaryUrl)
+    for (index in 0 until alternates.length()) {
+        if (sanitized.length() >= 8) break
+        val item = alternates.optJSONObject(index) ?: continue
+        val url = item.optString("url")
+        if (!url.startsWith("http://") && !url.startsWith("https://")) continue
+        if (!seen.add(url)) continue
+        val form = mediaFormOf(item.optString("form", if (item.optString("type").startsWith("video/")) "video" else "audio"))
+        sanitized.put(
+            JSONObject()
+                .put("url", url)
+                .put("type", item.optNullableString("type"))
+                .put("form", form)
+                .put("lengthBytes", item.optNullableLong("lengthBytes"))
+                .put("width", item.optNullableInt("width"))
+                .put("height", item.optNullableInt("height"))
+                .put("bitrate", item.optNullableInt("bitrate")),
+        )
+    }
+    return if (sanitized.length() == 0) null else sanitized.toString()
+}
+
 private fun extensionFor(type: String?, url: String): String {
     val fromType = mapOf(
         "audio/mpeg" to "mp3",
@@ -262,6 +307,11 @@ private fun extensionFor(type: String?, url: String): String {
         "audio/x-wav" to "wav",
         "audio/flac" to "flac",
         "audio/webm" to "webm",
+        "video/mp4" to "mp4",
+        "video/quicktime" to "mov",
+        "video/webm" to "webm",
+        "video/x-matroska" to "mkv",
+        "video/mpeg" to "mpeg",
     )
     val base = type?.substringBefore(';')?.trim()?.lowercase()
     fromType[base]?.let { return it }

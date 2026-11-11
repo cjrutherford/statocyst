@@ -21,6 +21,9 @@ const EMPTY_SNAPSHOT: PlaybackSnapshot = {
   rate: 1,
   context: 'podcast',
   active: false,
+  mediaForm: 'audio',
+  presentation: 'audio-only',
+  videoAvailable: false,
   track: null,
 };
 
@@ -64,6 +67,11 @@ export class PodcastPlaybackStore {
     return state === 'playing' || state === 'buffering' || state === 'waiting-network';
   });
   readonly rate = computed(() => this.snapshot().rate);
+  readonly mediaForm = computed(() => this.snapshot().mediaForm);
+  readonly presentation = computed(() => this.snapshot().presentation);
+  readonly hasVideo = computed(
+    () => this.snapshot().videoAvailable === true || this.snapshot().mediaForm === 'video',
+  );
   readonly progress = computed(() => {
     const duration = this.durationMs();
     return duration > 0 ? Math.min(1, Math.max(0, this.positionMs() / duration)) : 0;
@@ -203,6 +211,10 @@ export class PodcastPlaybackStore {
 
   async previous(): Promise<void> {
     await this.command({ type: 'skipPrevious' });
+  }
+
+  async setPresentation(mode: 'audio-only' | 'video'): Promise<void> {
+    await this.command({ type: 'setPresentation', mode });
   }
 
   async setRate(rate: number): Promise<void> {
