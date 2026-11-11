@@ -55,10 +55,10 @@ class VideoMigrationTest {
         )
         raw.execSQL(
             "INSERT INTO podcast_episode (" +
-                "id, feedId, mediaItemId, guid, title, enclosureUrl, durationMs, resumePositionMs, " +
-                "played, completed, playCount, firstSeenAt, createdAt, updatedAt" +
+                "id, feedId, mediaItemId, guid, title, enclosureUrl, durationMs, explicit, " +
+                "resumePositionMs, played, completed, playCount, firstSeenAt, createdAt, updatedAt" +
                 ") VALUES ('ep-1', 'f1', 'ep-media', 'ep-1', 'Episode', " +
-                "'https://cdn.example.com/ep.mp3', 60000, 0, 0, 0, 0, 'now', 'now', 'now')",
+                "'https://cdn.example.com/ep.mp3', 60000, 0, 0, 0, 0, 0, 'now', 'now', 'now')",
         )
         raw.version = 7
         raw.close()
