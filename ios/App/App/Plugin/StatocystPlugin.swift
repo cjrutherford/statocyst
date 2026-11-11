@@ -1101,6 +1101,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                     "version": info.version,
                     "url": info.baseUrl
                 ])
+            } catch let error as URLError {
+                // A typo or offline device must fail here, not be saved as a
+                // URL-only server that only breaks later during sign-in.
+                call.reject(
+                    "Could not reach that server. Check the address for typos and your connection.",
+                    "UNREACHABLE",
+                    error
+                )
             } catch {
                 call.reject(error.localizedDescription)
             }

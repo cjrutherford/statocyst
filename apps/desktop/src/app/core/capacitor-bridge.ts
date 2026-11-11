@@ -53,6 +53,17 @@ const QUEUE_ONLY_COMMANDS: ReadonlySet<PlaybackCommand['type']> = new Set([
 ]);
 
 /**
+ * Android reports a failed DNS lookup as a raw UnknownHostException message.
+ * Translate it so a mistyped server address reads as a user error, not a crash.
+ */
+function jellyfinNetworkMessage(error: unknown): string | null {
+  const message = String(error);
+  return /Unable to resolve host|No address associated with hostname/i.test(message)
+    ? "Can't find that server. Check the address for typos and your connection."
+    : null;
+}
+
+/**
  * Renderer-side bridge used when Statocyst runs as a Capacitor Android app.
  * There is no Electron main process, so the authoritative queue/playback state
  * lives in the renderer. Playback uses the WebView's <audio> element (the same
@@ -1352,7 +1363,18 @@ export class CapacitorBridge {
         let info: { id: string; name: string; version: string; url: string } | null = null;
         try {
           info = await plugin?.discoverServer?.({ url: normalized });
-        } catch {
+        } catch (error) {
+          if ((error as { code?: string })?.code === 'UNREACHABLE') {
+            return {
+              ok: false,
+              error: {
+                code: 'UNREACHABLE' as const,
+                message:
+                  jellyfinNetworkMessage(error) ??
+                  'Could not reach that server. Check the address for typos and your connection.',
+              },
+            };
+          }
           // Discovery may fail behind SSO/proxies (e.g. Authentik). Fall back to
           // a URL-only server entry so the user can still attempt sign-in.
         }
@@ -1417,7 +1439,14 @@ export class CapacitorBridge {
         await this.mirrorSessionToNative();
         return { ok: true, value: server };
       } catch (error) {
-        return { ok: false, error: { code: 'AUTH_FAILED' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('AUTH_FAILED' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     logout: async (serverId: string) => {
@@ -1493,7 +1522,14 @@ export class CapacitorBridge {
         if (!result) return { ok: false, error: { code: 'UNREACHABLE' as const, message: 'Plugin not available' } };
         return { ok: true, value: { secret: result.secret, code: result.code } };
       } catch (error) {
-        return { ok: false, error: { code: 'INTERNAL_ERROR' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('INTERNAL_ERROR' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     pollQuickConnect: async (url: string, secret: string) => {
@@ -1525,7 +1561,14 @@ export class CapacitorBridge {
         await this.mirrorSessionToNative();
         return { ok: true, value: server };
       } catch (error) {
-        return { ok: false, error: { code: 'AUTH_FAILED' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('AUTH_FAILED' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     encryptionAvailable: async () => true,

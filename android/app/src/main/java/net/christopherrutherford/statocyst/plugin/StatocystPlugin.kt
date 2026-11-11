@@ -1279,14 +1279,23 @@ class StatocystPlugin : Plugin() {
         val url = call.getString("url") ?: ""
         if (url.isEmpty()) { call.reject("url required"); return }
         io(call) {
-            val info = JellyfinClient.discover(url)
-            call.resolve(
-                JSObject()
-                    .put("id", info.id)
-                    .put("name", info.name)
-                    .put("version", info.version)
-                    .put("url", info.baseUrl),
-            )
+            try {
+                val info = JellyfinClient.discover(url)
+                call.resolve(
+                    JSObject()
+                        .put("id", info.id)
+                        .put("name", info.name)
+                        .put("version", info.version)
+                        .put("url", info.baseUrl),
+                )
+            } catch (error: java.io.IOException) {
+                // A typo or offline device must fail here, not be saved as a
+                // URL-only server that only breaks later during sign-in.
+                call.reject(
+                    "Could not reach that server. Check the address for typos and your connection.",
+                    "UNREACHABLE",
+                )
+            }
         }
     }
 
