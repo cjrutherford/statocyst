@@ -48,8 +48,10 @@ import { formatDuration } from '../core/format';
             <sc-artwork [track]="track" size="hero" />
           </div>
           <div class="episode__body">
-            <p class="eyebrow">{{ track.artist }}</p>
-            <h2>{{ track.title }}</h2>
+            @if (!(hasVideo() && presentation() === 'video')) {
+              <p class="eyebrow">{{ track.artist }}</p>
+              <h2>{{ track.title }}</h2>
+            }
             <div class="chips">
               @if (track.mediaForm === 'video') {
                 <span class="chip">Video</span>
