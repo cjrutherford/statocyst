@@ -3,8 +3,7 @@
  * Site screenshot update pass.
  *
  * Converts the current captures in site/captures/ into the WebP assets used
- * by the landing page, refreshes clip posters, regenerates the OG image, and builds
- * the one allowed constructed screen: the Android Auto head-unit preview.
+ * by the landing page, refreshes clip posters, and builds the allowed constructed screens: the Android Auto head-unit preview.
  *
  * Run automatically by tools/build-site.mjs, or directly:
  *   node tools/update-site-screenshots.mjs
@@ -87,13 +86,9 @@ runFfmpeg(
   ['-y', '-hide_banner', '-loglevel', 'error', '-i', path.join(branding, 'statocyst-symbol.png'), '-vf', 'scale=128:128:flags=lanczos', '-frames:v', '1', path.join(branding, 'statocyst-symbol-128.png')],
   'refreshing the small car mark'
 );
-
-// Keep the social card in sync with the desktop hero capture.
-requireFile(path.join(screens, 'desktop-library-dark.webp'));
-const og = path.join(branding, 'og.jpg');
 runFfmpeg(
-  ['-y', '-hide_banner', '-loglevel', 'error', '-i', path.join(screens, 'desktop-library-dark.webp'), '-vf', 'scale=1200:-1:flags=lanczos,crop=1200:630:0:0', '-frames:v', '1', '-q:v', '3', og],
-  'refreshing the OG image'
+  ['-y', '-hide_banner', '-loglevel', 'error', '-i', path.join(branding, 'statocyst-symbol.png'), '-vf', 'scale=96:96:flags=lanczos', '-c:v', 'libwebp', '-quality', '88', path.join(branding, 'statocyst-symbol-96.webp')],
+  'refreshing the header mark'
 );
 
 // The only constructed screens: Android Auto now playing and browse previews.
@@ -101,7 +96,7 @@ const carMock = spawnSync(process.execPath, [path.join(root, 'tools/make-car-moc
 if (carMock.status !== 0) fail('the car preview generator failed');
 
 const bytes = (file) => `${(statSync(file).size / 1024).toFixed(0)} KB`;
-console.log(`screenshots updated: ${stills.length} stills, ${clips.length} posters, 1 OG image, 2 constructed car previews`);
+console.log(`screenshots updated: ${stills.length} stills, ${clips.length} posters, 2 constructed car previews`);
 console.log(`  desktop: ${bytes(path.join(screens, 'desktop-library-dark.webp'))}`);
 console.log(`  phone:   ${bytes(path.join(screens, 'phone-now-playing-dark.webp'))}`);
 console.log(`  car:     ${bytes(path.join(screens, 'car-head-unit-now-playing.svg'))} + ${bytes(path.join(screens, 'car-head-unit-browse.svg'))}`);

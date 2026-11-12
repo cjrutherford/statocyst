@@ -241,10 +241,10 @@ The first draft is in `site/` and builds to `_site/`.
 - `site/main.js` — platform-aware download CTA, lazy clip playback, reduced-motion guard.
 - `site/captures/` — raw PNGs captured from the current 2.2.0 Electron build.
 - `site/assets/` — WebP screen captures, three real Android transition clips with posters,
-  brand marks, favicons and the 1200×630 OG image.
-- `tools/update-site-screenshots.mjs` — the screenshot update pass: converts the real
-  captures in `evidence/` to WebP, refreshes clip posters, rebuilds the OG image, and
-  generates the constructed car preview.
+  brand marks, favicons and the 1200×630 OG image (`tools/make-site-og.py`).
+- `tools/update-site-screenshots.mjs` — the screenshot update pass: converts the current
+  captures in `site/captures/` to WebP, refreshes clip posters, and generates the
+  constructed car previews.
 - `tools/make-car-mock.mjs` — generates the two Android Auto SVGs
   (`car-head-unit-now-playing.svg`, `car-head-unit-browse.svg`) from the app icon, demo
   cover and self-hosted fonts.
@@ -323,3 +323,14 @@ redundancy.
   added a full-size car preview link.
 - Removed the duplicate car disclaimer and fixed the callout specificity.
 - Replaced internal-note/jargon copy and extended the beta meta description.
+
+## 15. P2 polish pass
+
+- Branded 1200×630 OG card (`tools/make-site-og.py`) with the symbol, wordmark, headline
+  and current desktop capture; the screenshot pass no longer overwrites it with a raw crop.
+- 96px header/footer mark instead of loading the 512px brand image above the fold.
+- JSON-LD `SoftwareApplication` metadata, `robots.txt` and `sitemap.xml`.
+- Removed the eager browse-SVG warm-up; car previews load only when needed.
+- Added `role="group"` to labelled non-landmark blocks, made the car tabpanel focusable,
+  and kept the figure caption last.
+- Added a full-size car preview link for narrow screens.

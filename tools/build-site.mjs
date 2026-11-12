@@ -174,7 +174,7 @@ async function main() {
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
 
-  for (const file of ['index.html', 'styles.css', 'main.js', 'site.webmanifest']) {
+  for (const file of ['index.html', 'styles.css', 'main.js', 'site.webmanifest', 'robots.txt', 'sitemap.xml']) {
     await cp(path.join(siteDir, file), path.join(outDir, file));
   }
   await cp(path.join(siteDir, 'assets'), path.join(outDir, 'assets'), { recursive: true });

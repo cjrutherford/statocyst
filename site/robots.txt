@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://cjrutherford.github.io/statocyst/sitemap.xml

@@ -24,6 +24,22 @@
   <link rel="manifest" href="site.webmanifest" />
   <link rel="preload" href="assets/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/screens/desktop-library-dark.webp" as="image" type="image/webp" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Statocyst",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Linux, macOS, Windows, Android, iOS",
+      "description": "Local-first music and podcast player for local files, Jellyfin and Android Auto.",
+      "url": "https://cjrutherford.github.io/statocyst/",
+      "downloadUrl": "{{RELEASE_URL}}",
+      "softwareVersion": "{{VERSION}}",
+      "license": "https://github.com/cjrutherford/statocyst/blob/main/LICENSE",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Organization", "name": "Statocyst contributors" }
+    }
+  </script>
   <link rel="stylesheet" href="styles.css" />
   <script>document.documentElement.classList.add('js');</script>
   <noscript><style>.video-toggle{display:none}</style></noscript>
@@ -35,7 +51,7 @@
   <header class="topbar">
     <div class="wrap topbar-inner">
       <a class="brand" href="#top" aria-label="Statocyst home">
-        <img src="assets/branding/statocyst-symbol.webp" alt="" width="512" height="512" />
+        <img src="assets/branding/statocyst-symbol-96.webp" alt="" width="96" height="96" />
         <span>Statocyst</span>
       </a>
       <nav class="nav" aria-label="Primary">
@@ -442,7 +458,7 @@
   <footer class="footer">
     <div class="wrap footer-inner">
       <div class="footer-brand">
-        <img src="assets/branding/statocyst-symbol.webp" alt="" width="512" height="512" />
+        <img src="assets/branding/statocyst-symbol-96.webp" alt="" width="96" height="96" />
         <div><strong>Statocyst</strong><span>Named after the jellyfish’s balance organ.</span></div>
       </div>
       <nav class="footer-links" aria-label="Footer">

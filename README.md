@@ -60,13 +60,14 @@ The packaged smoke test verifies `app.asar`, the unpacked libSQL native module, 
 ## Landing page
 
 The static marketing page lives in `site/`. The build first runs a screenshot update
-pass (the current captures in `site/captures/` → WebP, clip posters, OG image, and two
+pass (the current captures in `site/captures/` → WebP, clip posters, and two
 constructed Android Auto previews), then bakes the latest stable GitHub release into the
 download shelf:
 
 ```bash
 pnpm site:capture                     # recapture the current Electron build into site/captures/
 pnpm site:screenshots                 # convert those captures and regenerate the car previews
+pnpm site:og                          # rebuild the branded 1200×630 social card (Pillow)
 node tools/build-site.mjs --offline   # use the checked-in release snapshot
 node tools/build-site.mjs             # use the GitHub API, fall back locally
 node tools/build-site.mjs --strict    # CI mode: fail if the API or an asset is missing
