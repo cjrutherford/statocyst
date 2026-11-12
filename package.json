@@ -1,9 +1,9 @@
 {
   "name": "statocyst",
-  "version": "2.1.3",
+  "version": "2.2.0",
   "private": true,
   "license": "MIT",
-  "description": "Statocyst — local-first, Jellyfin-oriented music player",
+  "description": "Statocyst \u2014 local-first, Jellyfin-oriented music player",
   "homepage": "https://github.com/cjrutherford/statocyst",
   "desktopName": "statocyst.desktop",
   "author": {
