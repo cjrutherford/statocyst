@@ -23,6 +23,7 @@ import { formatDuration } from '../core/format';
       <div class="player__hairline" aria-hidden="true">
         <span [style.width.%]="progressPercent()"></span>
       </div>
+      <span class="player__grab" aria-hidden="true"></span>
       <button
         type="button"
         class="player__track"
@@ -234,6 +235,17 @@ import { formatDuration } from '../core/format';
         touch-action: none;
         user-select: none;
         transition: transform 160ms ease;
+      }
+      .player__grab {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        width: 42px;
+        height: 4px;
+        margin-left: -21px;
+        border-radius: 999px;
+        background: var(--line-strong);
+        opacity: 0.65;
       }
       .player.is-dragging {
         transition: none;
@@ -513,6 +525,7 @@ import { formatDuration } from '../core/format';
         }
         .player__track {
           grid-area: track;
+          touch-action: none;
         }
         .player__transport {
           grid-area: transport;
