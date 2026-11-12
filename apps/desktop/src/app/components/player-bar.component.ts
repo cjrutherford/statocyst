@@ -520,6 +520,7 @@ import { formatDuration } from '../core/format';
         .player__extras,
         .player__seek,
         .player__aux,
+        .player__rate,
         .player__expand {
           display: none;
         }
@@ -564,12 +565,12 @@ export class PlayerBarComponent {
   private suppressClick = false;
 
   protected readonly podcastMode = computed(() => {
-    if (this.podcastPlayback.active()) return true;
-    // The podcast store can initialize before its episode rows are registered.
-    // The track itself still tells the bar which player owns it, so tapping it
-    // opens the podcast screen (and its video stage), never the music stage.
+    // The active track is authoritative; the podcast store's active flag can
+    // lag after switching back to music. The track also tells the bar which
+    // player owns it, so a podcast opens the podcast screen, never music.
     const track = this.playback.track();
-    return track?.mediaKind === 'podcast' || track?.sourceKind === 'podcast';
+    if (track) return track.mediaKind === 'podcast' || track.sourceKind === 'podcast';
+    return this.podcastPlayback.active();
   });
   private readonly podcastReady = computed(() => this.podcastPlayback.track() !== null);
   protected readonly track = computed(() =>

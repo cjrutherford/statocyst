@@ -674,9 +674,11 @@ export class AppComponent {
   protected readonly podcastStore = inject(PodcastsStore);
   protected readonly podcastPlayback = inject(PodcastPlaybackStore);
   protected readonly podcastNow = computed(() => {
-    if (this.podcastPlayback.active()) return true;
+    // The active track is authoritative; the podcast store's active flag can
+    // lag after switching back to music.
     const track = this.playback.track();
-    return track?.mediaKind === 'podcast' || track?.sourceKind === 'podcast';
+    if (track) return track.mediaKind === 'podcast' || track.sourceKind === 'podcast';
+    return this.podcastPlayback.active();
   });
   private readonly transitions = inject(ScreenTransitionService);
   protected readonly bridgeAvailable = bridgeAvailable;
