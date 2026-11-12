@@ -1,14 +1,18 @@
 #!/usr/bin/env python3 -I
 """Seeds the emulator/device debug build with demo tracks (fixtures/audio) for UI checks.
 
-Usage: tools/android-seed-fixtures.py [adb-path]   (the app must have run once so its DB exists)
+Usage: tools/android-seed-fixtures.py [--demo] [adb-path]
+       (the app must have run once so its DB exists)
 Pushes the demo audio into the app's files/library and inserts rows, including long/unicode
-titles for layout testing. Debug builds only (uses run-as). Replaces the app database rows.
+titles for layout testing. Pass --demo for the four branded fixture tracks only, which is what
+the marketing captures use. Debug builds only (uses run-as). Replaces the app database rows.
 """
 import os, sqlite3, subprocess, sys, tempfile, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADB = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Android/Sdk/platform-tools/adb")
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+ADB = args[0] if args else os.path.expanduser("~/Android/Sdk/platform-tools/adb")
+DEMO = "--demo" in sys.argv
 PKG = "com.hopefulaspirationsindustries.statocyst"
 FIX = os.path.join(ROOT, "fixtures/audio")
 
@@ -36,7 +40,15 @@ if wal:
     open(db + "-wal", "wb").write(wal)
 
 files = sorted(os.listdir(FIX))
-rows = [
+sizes = {name: os.path.getsize(os.path.join(FIX, name)) for name in files}
+# The four branded fixture tracks, matching tools/generate-fixtures.mjs.
+demo_rows = [
+    ("Sonar Bloom", "Statocyst Ensemble", "Bathypelagic Sessions", "Ambient", 1, 2026, 12000),
+    ("Tide Glass", "Statocyst Ensemble", "Bathypelagic Sessions", "Ambient", 2, 2026, 10000),
+    ("Pearl Drift", "Neritic Choir", "Suspended Light", "Downtempo", 1, 2026, 9000),
+    ("Abyssal Pulse", "Neritic Choir", "Suspended Light", "Downtempo", 2, 2026, 8000),
+]
+layout_rows = [
     ("Sonar Bloom", "Statocyst Ensemble", "Bathypelagic Sessions", "Ambient"),
     ("Tide Glass", "Statocyst Ensemble", "Bathypelagic Sessions", "Ambient"),
     ("Pearl Drift", "Kelp Forest Collective", "Salt & Light", "Electronic"),
@@ -50,18 +62,22 @@ rows = [
     ("Neap", "Moonpull", "Gravity Wells", "Ambient"),
     ("Spring", "Moonpull", "Gravity Wells", "Ambient"),
 ]
+rows = demo_rows if DEMO else [
+    (title, artist, album, genre, i % 4 + 1, 2020 + i % 5, 180000 + i * 7000)
+    for i, (title, artist, album, genre) in enumerate(layout_rows)
+]
 c = sqlite3.connect(db)
 c.execute("delete from media_item")
 now = "2026-10-28T00:00:00Z"
-for i, (title, artist, album, genre) in enumerate(rows):
+for i, (title, artist, album, genre, track_no, year, duration_ms) in enumerate(rows):
     name = files[i % len(files)]
     ext = name.rsplit(".", 1)[1]
     tid = f"seed-{i+1:02d}"
     c.execute(
         "insert into media_item (id,sourceId,path,pathKey,fileName,ext,sizeBytes,mtimeMs,title,artist,album,albumArtist,trackNo,discNo,year,genre,durationMs,bitrate,sampleRate,channels,codec,format,artworkPath,jellyfinImageTag,sourceKind,sourceLabel,addedAt,updatedAt,missing,albumId) "
         "values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (tid, "local", f"{base}/files/library/{name}", f"seed:{tid}", name, ext, 1000, 0, title, artist, album, artist,
-         i % 4 + 1, None, 2020 + i % 5, genre, 180000 + i * 7000, None, None, None, None, ext, None, None,
+        (tid, "local", f"{base}/files/library/{name}", f"seed:{tid}", name, ext, sizes[name], 0, title, artist, album, artist,
+         track_no, None, year, genre, duration_ms, None, None, None, None, ext, None, None,
          "local", "Local", now, now, 0, None),
     )
 c.commit(); c.execute("pragma wal_checkpoint(truncate)"); c.close()

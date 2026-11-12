@@ -1,0 +1,72 @@
+name: Beta tester request
+description: Volunteer to test Statocyst on Android or iOS before store release.
+title: "[Beta] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for offering to test Statocyst. We are preparing Google Play and App Store submissions and need real-device feedback from Android and iOS users.
+
+        Please do not include passwords, Jellyfin tokens, or private server URLs.
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Phone, tablet, or both.
+      placeholder: Pixel 8, iPhone 15, iPad Air…
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: Android 16, iOS 18…
+    validations:
+      required: false
+  - type: dropdown
+    id: library
+    attributes:
+      label: What will you test with?
+      options:
+        - Local files only
+        - Jellyfin
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: car
+    attributes:
+      label: Android Auto head unit available?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: false
+  - type: textarea
+    id: goals
+    attributes:
+      label: What do you want to test?
+      description: Playback, Jellyfin, podcasts, video, Android Auto, offline downloads, or anything else.
+      placeholder: I have a 5k-track library and a car with Android Auto. I can test daily for two weeks…
+    validations:
+      required: true
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Before you send
+      options:
+        - label: I understand these are pre-store sideload builds and may contain bugs.
+          required: true
+        - label: I can share feedback through GitHub issues.
+          required: true

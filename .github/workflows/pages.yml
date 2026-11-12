@@ -1,0 +1,63 @@
+name: Pages
+
+# Builds the static landing page and bakes the latest stable GitHub release
+# asset URLs into it. A release event rebuilds the page too, so the download
+# shelf does not point at an older version until the next push to main.
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  # The release workflow creates releases with GITHUB_TOKEN, which does not
+  # emit a release event that can trigger another workflow. React to the
+  # release workflow completing instead.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the landing page
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Bake the latest release into the page
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/build-site.mjs --strict
+      - name: Verify the baked release links
+        run: |
+          test -s _site/index.html
+          ! grep -q '{{' _site/index.html
+          count=$(grep -o 'github.com/cjrutherford/statocyst/releases/download/[^"<]*' _site/index.html | wc -l)
+          test "$count" -ge 5
+          echo "baked $count release asset links"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

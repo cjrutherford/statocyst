@@ -26,6 +26,10 @@
     "package": "nx run desktop-electron:package",
     "graph": "nx graph",
     "fixtures": "node tools/generate-fixtures.mjs",
+    "site:capture": "node tools/capture-site-screenshots.mjs",
+    "site:og": "python3 tools/make-site-og.py",
+    "site:screenshots": "node tools/update-site-screenshots.mjs",
+    "site:build": "node tools/build-site.mjs",
     "cap:sync": "nx build desktop && cap sync",
     "ios:sync": "nx build desktop && cap sync ios",
     "android:sync": "nx build desktop && cap sync android"

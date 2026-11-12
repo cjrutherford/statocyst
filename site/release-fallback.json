@@ -1,0 +1,48 @@
+{
+  "tag_name": "v2.2.0",
+  "name": "Statocyst 2.2.0",
+  "html_url": "https://github.com/cjrutherford/statocyst/releases/tag/v2.2.0",
+  "published_at": "2026-11-12T05:19:14Z",
+  "assets": [
+    {
+      "name": "SHA256SUMS",
+      "size": 172,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/SHA256SUMS"
+    },
+    {
+      "name": "statocyst-2.2.0-linux-amd64.deb",
+      "size": 115667068,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0-linux-amd64.deb"
+    },
+    {
+      "name": "statocyst-2.2.0-linux-x86_64.AppImage",
+      "size": 143718146,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0-linux-x86_64.AppImage"
+    },
+    {
+      "name": "statocyst-2.2.0-mac-arm64.dmg",
+      "size": 135782391,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0-mac-arm64.dmg"
+    },
+    {
+      "name": "statocyst-2.2.0-mac-arm64.zip",
+      "size": 130685238,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0-mac-arm64.zip"
+    },
+    {
+      "name": "statocyst-2.2.0-win-x64.exe",
+      "size": 131501505,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0-win-x64.exe"
+    },
+    {
+      "name": "statocyst-2.2.0.apk",
+      "size": 4888917,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0.apk"
+    },
+    {
+      "name": "statocyst-2.2.0.ipa",
+      "size": 6560638,
+      "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.2.0/statocyst-2.2.0.ipa"
+    }
+  ]
+}
