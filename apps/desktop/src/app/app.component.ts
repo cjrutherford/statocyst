@@ -687,7 +687,12 @@ export class AppComponent {
   readonly ready = signal(false);
   readonly info = signal<AppInfo | null>(null);
   /** Best-effort WebView connectivity, used only for the shell banner. */
-  readonly online = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
+  // Android's WebView can report navigator.onLine=false behind a VPN or after a
+  // transient network event. Start optimistic and let the native check correct it,
+  // so a false banner never flashes before the first probe.
+  readonly online = signal(
+    typeof navigator === 'undefined' || isNativePlatform() ? true : navigator.onLine,
+  );
   protected readonly offlineCount = computed(() =>
     this.library.tracks().filter((track) => track.sourceId === 'local' || this.downloads.isDownloaded()(track.id)).length,
   );
