@@ -21,6 +21,7 @@ Reference OS for verified evidence: **Ubuntu 26.04.1 LTS under Xwayland**. macOS
 
 - Node 24 LTS (`fnm use lts-latest` or equivalent)
 - pnpm 10 (`corepack enable`)
+- `ffmpeg` on `PATH` for the landing-page screenshot update pass
 - Linux with X11/Xwayland for the Electron window; the current dev script passes `--no-sandbox` because the SUID sandbox is unavailable in the reference environment
 
 ## Run
@@ -55,6 +56,26 @@ XAUTHORITY=... DISPLAY=:0 node tools/smoke-packaged.mjs
 ```
 
 The packaged smoke test verifies `app.asar`, the unpacked libSQL native module, demo import, artwork, and playback.
+
+## Landing page
+
+The static marketing page lives in `site/`. The build first runs a screenshot update
+pass (real captures → WebP, clip posters, OG image, and two constructed Android Auto
+previews), then bakes the latest stable GitHub release into the download shelf:
+
+```bash
+pnpm site:screenshots                 # screenshot update pass only
+node tools/build-site.mjs --offline   # use the checked-in release snapshot
+node tools/build-site.mjs             # use the GitHub API, fall back locally
+node tools/build-site.mjs --strict    # CI mode: fail if the API or an asset is missing
+node tools/build-site.mjs --no-screenshots  # skip the screenshot pass
+python3 -m http.server -d _site 4173  # preview at http://127.0.0.1:4173/
+```
+
+Screenshots come from `evidence/`; the Android Auto now-playing and browse previews are
+generated from the app's own artwork and type because no DHU capture exists yet. Every
+other screen is a real capture. The Pages workflow (`.github/workflows/pages.yml`) uploads `_site/`. The design
+direction board is `site/design-preview.html`; it is not part of the deployed site.
 
 ## Layout
 
