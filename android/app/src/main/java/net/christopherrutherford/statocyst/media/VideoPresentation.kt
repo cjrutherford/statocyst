@@ -127,6 +127,7 @@ object VideoPresentation {
             overlay?.let { applyBounds(it, rect) }
             applySurfaceAspect(existing)
             player.setVideoTextureView(existing)
+            refreshPausedFrame(player)
             attached = true
             activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             return true
@@ -161,9 +162,22 @@ object VideoPresentation {
         applyBounds(frame, rect)
         applySurfaceAspect(view)
         player.setVideoTextureView(view)
+        refreshPausedFrame(player)
         attached = true
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         return true
+    }
+
+    /**
+     * A paused player may not redraw after its surface is reattached (navigation,
+     * PiP return). A same-position seek asks the decoder for the current frame.
+     */
+    private fun refreshPausedFrame(player: Player) {
+        if (player.isPlaying || player.playbackState == Player.STATE_IDLE) return
+        val duration = player.duration
+        val position = player.currentPosition.coerceAtLeast(0)
+        val target = if (duration > 0) position.coerceIn(0, duration - 1) else position
+        player.seekTo(target)
     }
 
     private fun applyBounds(frame: FrameLayout, rect: Bounds) {
