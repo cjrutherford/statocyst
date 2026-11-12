@@ -60,7 +60,6 @@ html { scroll-behavior: smooth; overflow-x: clip; }
 section[id] { scroll-margin-top: 88px; }
 body {
   margin: 0;
-  overflow-x: hidden;
   color: var(--text);
   font-family: var(--font-sans);
   background:
@@ -438,7 +437,7 @@ h1 .grad {
 .mark.ok { background: rgba(121, 242, 192, 0.12); color: var(--sea-glass); border: 1px solid rgba(121, 242, 192, 0.28); }
 .mark.warn { background: rgba(247, 201, 72, 0.10); color: #f7c948; border: 1px solid rgba(247, 201, 72, 0.25); }
 .caveat strong { display: block; font-size: 12px; font-weight: 600; }
-.caveat span { display: block; margin-top: 3px; color: var(--dim); font-size: 10.5px; line-height: 1.5; }
+.caveat div > span { display: block; margin-top: 3px; color: var(--dim); font-size: 11.5px; line-height: 1.5; }
 
 /* ---------- sand shelf ---------- */
 .shelf {
