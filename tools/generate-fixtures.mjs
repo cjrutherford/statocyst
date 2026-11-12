@@ -77,12 +77,34 @@ const tracks = [
   },
 ];
 
-async function ensureFfmpeg() {
+async function hasFfmpeg() {
   try {
     await run('ffmpeg', ['-version']);
+    return true;
   } catch {
-    throw new Error('ffmpeg is required to generate demo audio fixtures');
+    return false;
   }
+}
+
+/**
+ * The committed demo library is the same reproducible material this script
+ * generates. When ffmpeg is unavailable (for example on a network-isolated CI
+ * runner), copy it into `fixtures/audio` instead of trying to install ffmpeg.
+ */
+async function useCommittedDemoFixtures() {
+  await rm(fixtureDir, { recursive: true, force: true });
+  await mkdir(fixtureDir, { recursive: true });
+  for (const track of tracks) {
+    const file = `${track.slug}.${track.format}`;
+    await copyFile(join(demoDir, file), join(fixtureDir, file));
+  }
+  const demoCover = join(demoDir, 'cover.jpg');
+  try {
+    await copyFile(demoCover, join(fixtureDir, 'cover.jpg'));
+  } catch {
+    // Optional; media fixtures carry their own embedded artwork.
+  }
+  console.log('ffmpeg unavailable; reused committed resources/demo audio fixtures');
 }
 
 async function createCover() {
@@ -177,7 +199,10 @@ async function encode(track, output) {
 }
 
 async function main() {
-  await ensureFfmpeg();
+  if (!(await hasFfmpeg())) {
+    await useCommittedDemoFixtures();
+    return;
+  }
   await rm(fixtureDir, { recursive: true, force: true });
   await rm(demoDir, { recursive: true, force: true });
   await mkdir(fixtureDir, { recursive: true });

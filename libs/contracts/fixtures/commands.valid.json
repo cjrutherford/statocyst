@@ -72,5 +72,13 @@
   {
     "type": "setRate",
     "rate": 1.5
+  },
+  {
+    "type": "setPresentation",
+    "mode": "video"
+  },
+  {
+    "type": "setPresentation",
+    "mode": "audio-only"
   }
 ]

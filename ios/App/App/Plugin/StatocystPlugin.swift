@@ -10,6 +10,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     public let jsName = "Statocyst"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "listTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reanalyzeArtwork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeTrack", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "libraryStats", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "playbackUrl", returnType: CAPPluginReturnPromise),
@@ -28,6 +29,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         CAPPluginMethod(name: "setVolume", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getPlaybackState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPresentation", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showVideo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "hideVideo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "attachVideo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "detachVideo", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startPictureInPicture", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopPictureInPicture", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getVideoCapabilities", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "dbCount", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "downloadTrack", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "enqueueDownloads", returnType: CAPPluginReturnPromise),
@@ -176,6 +185,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             }
             call.resolve(["tracks": visible])
         }
+    }
+
+    @objc func reanalyzeArtwork(_ call: CAPPluginCall) {
+        // iOS artwork is fetched/cached by the renderer; no engine cache to clear.
+        call.resolve(["cleared": 0, "generation": 0])
     }
 
     @objc func removeTrack(_ call: CAPPluginCall) {
@@ -389,6 +403,98 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         }
     }
 
+    // MARK: - Video presentation (MVP-6)
+
+    @objc func setPresentation(_ call: CAPPluginCall) {
+        let mode = call.getString("mode") ?? "audio-only"
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let presentation = self.playback.setPresentation(mode: mode)
+            call.resolve([
+                "presentation": presentation,
+                "mediaForm": self.playback.currentMediaForm(),
+                "videoSupported": self.playback.pictureInPictureSupported()
+            ])
+        }
+    }
+
+    @objc func showVideo(_ call: CAPPluginCall) {
+        presentVideo(call)
+    }
+
+    /// Presenting the native surface is the only "attach" the plugin exposes; the
+    /// WebView cannot hand a UIView to the native side. No second player is created.
+    @objc func attachVideo(_ call: CAPPluginCall) {
+        presentVideo(call)
+    }
+
+    @objc func hideVideo(_ call: CAPPluginCall) {
+        detachVideo(call)
+    }
+
+    @objc func detachVideo(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            _ = self.playback.setPresentation(mode: "audio-only")
+            call.resolve([
+                "attached": false,
+                "presentation": self.playback.requestedPresentation()
+            ])
+        }
+    }
+
+    @objc func startPictureInPicture(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let supported = self.playback.pictureInPictureSupported()
+            let started = supported && self.playback.startPictureInPicture()
+            call.resolve([
+                "supported": supported,
+                "started": started,
+                "active": self.playback.pictureInPictureActive()
+            ])
+        }
+    }
+
+    @objc func stopPictureInPicture(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.playback.stopPictureInPicture()
+            call.resolve(["active": self.playback.pictureInPictureActive()])
+        }
+    }
+
+    @objc func getVideoCapabilities(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let form = self.playback.currentMediaForm()
+            call.resolve([
+                "supported": self.playback.pictureInPictureSupported(),
+                "active": self.playback.pictureInPictureActive(),
+                "mediaForm": form,
+                "presentation": self.playback.requestedPresentation(),
+                "hasVideo": self.playback.currentHasVideo()
+            ])
+        }
+    }
+
+    private func presentVideo(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            guard let presenter = self.bridge?.viewController else {
+                call.resolve(["attached": false, "error": "VIDEO_UNAVAILABLE"])
+                return
+            }
+            let attached = self.playback.presentVideoSurface(from: presenter)
+            let errorValue: Any = attached ? NSNull() : "VIDEO_UNAVAILABLE"
+            call.resolve([
+                "attached": attached,
+                "presentation": self.playback.requestedPresentation(),
+                "error": errorValue
+            ])
+        }
+    }
+
     // MARK: - Podcasts
 
     @objc func fetchPodcastText(_ call: CAPPluginCall) {
@@ -567,6 +673,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "categories": categories,
             "subscribed": feed.subscribed,
             "refreshIntervalMinutes": feed.refreshIntervalMinutes,
+            "defaultMediaForm": StatocystDatabase.normalizedMediaForm(feed.defaultMediaForm),
             "defaultSpeed": feed.defaultSpeed,
             "skipIntroSeconds": feed.skipIntroSeconds,
             "skipOutroSeconds": feed.skipOutroSeconds,
@@ -599,6 +706,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         dict["explicit"] = episode.explicit
         dict["enclosureUrl"] = episode.enclosureUrl
         dict["enclosureType"] = Self.orNull(episode.enclosureType)
+        dict["mediaForm"] = StatocystDatabase.normalizedMediaForm(episode.mediaForm)
+        dict["alternates"] = Self.alternatesForWire(episode.alternatesJson)
+        dict["posterUrl"] = Self.orNull(episode.posterUrl)
+        dict["videoWidth"] = Self.orNull(episode.videoWidth)
+        dict["videoHeight"] = Self.orNull(episode.videoHeight)
         dict["playbackSpeed"] = Self.orNull(episode.playbackSpeed)
         dict["resumePositionMs"] = episode.resumePositionMs
         dict["played"] = episode.played
@@ -615,6 +727,28 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     private static func imageExtension(_ url: String) -> String {
         let ext = URL(string: url)?.pathExtension.lowercased() ?? ""
         return ["jpg", "jpeg", "png", "webp", "gif"].contains(ext) ? ext : "jpg"
+    }
+
+    /// Bounded wire form of `alternates_json`; malformed rows read as an empty list.
+    private static func alternatesForWire(_ text: String?) -> [[String: Any]] {
+        guard let text = text,
+              let data = text.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let raw = object as? [Any] else { return [] }
+        return raw.prefix(8).compactMap { entry -> [String: Any]? in
+            guard let dict = entry as? [String: Any],
+                  let url = dict["url"] as? String,
+                  let form = dict["form"] as? String else { return nil }
+            return [
+                "url": url,
+                "type": Self.orNull(dict["type"] as? String),
+                "form": form == "video" ? "video" : "audio",
+                "lengthBytes": Self.orNull((dict["lengthBytes"] as? NSNumber)?.int64Value),
+                "width": Self.orNull((dict["width"] as? NSNumber)?.intValue),
+                "height": Self.orNull((dict["height"] as? NSNumber)?.intValue),
+                "bitrate": Self.orNull((dict["bitrate"] as? NSNumber)?.intValue)
+            ]
+        }
     }
 
     private static func jsonObject(_ text: String) -> [String: Any]? {
@@ -643,23 +777,26 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             call.reject("trackId required")
             return
         }
+        let variant = DownloadVariant(rawValue: call.getString("variant") ?? "") ?? .original
         ioQueue.async { [weak self] in
             guard let self = self else { return }
             do {
-                let outcome = try self.downloads.download(trackId: trackId) { received, total, done, err in
+                let outcome = try self.downloads.download(trackId: trackId, variant: variant) { received, total, done, err in
                     self.emit("downloadProgress", [
                         "trackId": trackId,
+                        "variant": variant.rawValue,
                         "receivedBytes": received,
                         "totalBytes": total as Any,
                         "done": done,
                         "error": err as Any
                     ])
                 }
-                call.resolve(self.downloadSummaryDict(outcome.entity))
+                call.resolve(self.downloadSummaryDict(outcome.entity, variant: outcome.variant))
                 self.notifyCacheChanged()
             } catch {
                 self.emit("downloadProgress", [
                     "trackId": trackId,
+                    "variant": variant.rawValue,
                     "receivedBytes": 0,
                     "totalBytes": NSNull(),
                     "done": true,
@@ -671,12 +808,23 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     }
 
     @objc func enqueueDownloads(_ call: CAPPluginCall) {
-        let ids = (call.getArray("trackIds", String.self) ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        guard !ids.isEmpty else {
+        let items = call.getArray("items", JSObject.self) ?? []
+        var requests: [(trackId: String, variant: DownloadVariant)] = []
+        for item in items {
+            guard let trackId = item["trackId"] as? String, !trackId.isEmpty else { continue }
+            let variant = DownloadVariant(rawValue: (item["variant"] as? String) ?? "") ?? .original
+            requests.append((trackId: trackId, variant: variant))
+        }
+        if requests.isEmpty {
+            let ids = (call.getArray("trackIds", String.self) ?? [])
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            requests = ids.map { (trackId: $0, variant: DownloadVariant.original) }
+        }
+        guard !requests.isEmpty else {
             call.reject("trackIds required")
             return
         }
-        let added = DownloadCenter.shared.enqueue(ids)
+        let added = DownloadCenter.shared.enqueue(requests)
         var res = queueSnapshotDict(DownloadCenter.shared.snapshot())
         res["added"] = added
         call.resolve(res)
@@ -959,6 +1107,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                     "version": info.version,
                     "url": info.baseUrl
                 ])
+            } catch let error as URLError {
+                // A typo or offline device must fail here, not be saved as a
+                // URL-only server that only breaks later during sign-in.
+                call.reject(
+                    "Could not reach that server. Check the address for typos and your connection.",
+                    "UNREACHABLE",
+                    error
+                )
             } catch {
                 call.reject(error.localizedDescription)
             }
@@ -1112,8 +1268,12 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             return
         }
         ioQueue.async {
-            let authenticated = JellyfinClient.quickConnectStatus(baseUrl: url, secret: secret)
-            call.resolve(["authenticated": authenticated])
+            do {
+                let authenticated = try JellyfinClient.quickConnectStatus(baseUrl: url, secret: secret)
+                call.resolve(["authenticated": authenticated])
+            } catch {
+                call.reject(error.localizedDescription)
+            }
         }
     }
 
@@ -1319,7 +1479,10 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "shuffle": s.shuffle,
             "repeat": s.repeatMode,
             "rate": playback.currentRate(),
-            "error": s.error as Any
+            "error": s.error as Any,
+            "mediaForm": s.mediaForm,
+            "presentation": s.presentation,
+            "videoAvailable": playback.currentHasVideo()
         ]
     }
 
@@ -1336,6 +1499,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             [
                 "trackId": e.trackId,
                 "state": e.state.rawValue,
+                "variant": e.variant.rawValue,
+                "progress": e.compressProgress as Any,
                 "receivedBytes": e.receivedBytes,
                 "totalBytes": e.totalBytes as Any,
                 "attempt": e.attempt,
@@ -1375,6 +1540,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "jellyfinImageTag": t.jellyfinImageTag as Any,
             "albumId": t.albumId as Any,
             "mediaKind": t.mediaKind,
+            "mediaForm": StatocystDatabase.normalizedMediaForm(t.mediaForm),
             "artworkUrl": artworkFor(t) as Any,
             "artistArtworkUrl": NSNull(),
             "missing": t.missing
@@ -1393,6 +1559,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     }
 
     private func downloadDict(_ d: DownloadEntity) -> [String: Any] {
+        let track = db.getMediaItemById(d.trackId)
         return [
             "trackId": d.trackId,
             "localPath": d.localPath,
@@ -1400,16 +1567,21 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "sha256": d.sha256,
             "container": d.container as Any,
             "verified": d.verified,
-            "createdAt": d.createdAt
+            "createdAt": d.createdAt,
+            "mediaForm": StatocystDatabase.normalizedMediaForm(track?.mediaForm)
         ]
     }
 
-    private func downloadSummaryDict(_ d: DownloadEntity) -> [String: Any] {
+    private func downloadSummaryDict(_ d: DownloadEntity, variant: DownloadVariant = .original) -> [String: Any] {
+        let track = db.getMediaItemById(d.trackId)
         return [
             "trackId": d.trackId,
             "sizeBytes": d.sizeBytes,
             "sha256": d.sha256,
-            "verified": d.verified
+            "verified": d.verified,
+            "variant": variant.rawValue,
+            "container": d.container as Any,
+            "mediaForm": StatocystDatabase.normalizedMediaForm(track?.mediaForm)
         ]
     }
 

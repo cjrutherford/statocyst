@@ -1,0 +1,22 @@
+# Evidence report: S058
+
+- **Status:** IMPLEMENTED_UNVERIFIED / BLOCKED (build/runtime)
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; no Xcode or iOS simulator
+- **Files changed:** iOS schema 7 and repository mappings, `PlaybackManager` AVPlayerLayer/PiP/form switch, `StatocystPlugin` presentation methods, `DownloadAndCache` variants/AVAssetExportSession compression.
+- **Acceptance criteria and actual observations:**
+  - Schema 6→7 is additive, guarded and statically replayed twice; a v6 fixture preserves rows and defaults.
+  - One AVPlayer remains authoritative; `AVPlayerLayer`/PiP are attached/detached, and audio form switching reloads at the current position.
+  - Direct enclosure downloads select the requested form and compression uses native `AVAssetExportSession`.
+  - Static structure/bracket and SQL checks pass.
+- **Commands run with exit codes:**
+  - `command -v xcodebuild` → 1
+  - `command -v swiftc` → 1
+  - static SQL replay / Swift structure checks → 0
+  - `git diff --check -- ios` → 0
+- **Tests not run (why):** No Apple toolchain or runtime on this Linux host; compilation, simulator/device playback, PiP and screen-off audio are BLOCKED.
+- **Artifacts:** iOS source diff; static check output.
+- **Safety/security considerations:** No extractor or third-party media binary; background audio mode remains `audio`.
+- **Known limitations and deferred follow-up:** Compressed variant is not persisted across a background relaunch; real Xcode build and device evidence remain open. Reproduction recipe is in the S058 close-out.
+- **Milestone gate affected:** MVP-6 S058.
+- **Reviewer and date:** Agent, 2026-11-11.

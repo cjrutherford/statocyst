@@ -11,6 +11,9 @@ import androidx.media3.common.MediaMetadata
  */
 object QueueItems {
     const val EXTRA_TRACK_ID = "trackId"
+    const val EXTRA_MEDIA_FORM = "mediaForm"
+    const val EXTRA_VIDEO_AVAILABLE = "videoAvailable"
+    const val EXTRA_ALTERNATES = "alternates"
 
     /** An unresolved item: the session's onAddMediaItems fills in URI + metadata. */
     fun placeholder(entryId: String, trackId: String): MediaItem =
@@ -31,6 +34,17 @@ object QueueItems {
         item.mediaMetadata.extras?.getString(EXTRA_TRACK_ID)
             ?: BrowseIds.trackEntityId(item.mediaId)
             ?: item.mediaId
+
+    /** `audio` unless the resolved podcast row declared a video enclosure. */
+    fun mediaFormOf(item: MediaItem?): String =
+        item?.mediaMetadata?.extras?.getString(EXTRA_MEDIA_FORM)?.takeIf { it == "video" } ?: "audio"
+
+    fun videoAvailableOf(item: MediaItem?): Boolean =
+        item?.mediaMetadata?.extras?.getBoolean(EXTRA_VIDEO_AVAILABLE, false) == true ||
+            mediaFormOf(item) == "video"
+
+    fun alternatesOf(item: MediaItem?): String? =
+        item?.mediaMetadata?.extras?.getString(EXTRA_ALTERNATES)
 
     fun newEntryId(): String = "q_${java.util.UUID.randomUUID()}"
 }

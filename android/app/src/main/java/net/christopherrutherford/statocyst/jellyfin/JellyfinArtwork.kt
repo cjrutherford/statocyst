@@ -109,6 +109,18 @@ object JellyfinArtwork {
         }
     }
 
+    /** Removes cached Jellyfin and MusicBrainz images; the next request re-fetches. */
+    fun clearCache(context: Context): Int {
+        var cleared = 0
+        for (name in listOf("jf-art", "ext-art")) {
+            val dir = File(context.cacheDir, name)
+            dir.listFiles()?.forEach { file ->
+                if (file.deleteRecursively()) cleared += 1
+            }
+        }
+        return cleared
+    }
+
     /** Keeps the artwork cache bounded by removing the least recently used files. */
     private fun prune(dir: File) {
         val files = dir.listFiles { f -> f.isFile && !f.name.endsWith(".part") } ?: return

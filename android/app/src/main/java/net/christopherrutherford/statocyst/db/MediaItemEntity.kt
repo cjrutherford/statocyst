@@ -40,4 +40,6 @@ data class MediaItemEntity(
     @ColumnInfo(defaultValue = "") val serverId: String = "",
     /** `music` or `podcast`; music views filter on this. */
     @ColumnInfo(defaultValue = "music") val mediaKind: String = "music",
+    /** `audio` or `video`; declared by the publisher enclosure, never inferred. */
+    @ColumnInfo(defaultValue = "audio") val mediaForm: String = "audio",
 )

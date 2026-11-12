@@ -706,6 +706,12 @@ class PlaybackService : MediaLibraryService() {
         val trackId = QueueItems.trackIdOf(item)
         val prepared = resolver.prepare(trackId, mode, stalled) ?: return null
         android.util.Log.i(TAG, "resolved $trackId: ${if (!prepared.remote) "device" else if (prepared.transcoded) "transcode" else "original"}")
+        val episode = if (prepared.entity.sourceKind == "podcast") {
+            podcastDao.getEpisodeByMediaItem(trackId)
+        } else {
+            null
+        }
+        val hasVideoAlternate = episode?.alternatesJson?.contains("\"form\":\"video\"") == true
         val entityMeta = MediaMetadata.Builder()
             .setTitle(prepared.entity.title)
             .setArtist(prepared.entity.artist)
@@ -714,7 +720,15 @@ class PlaybackService : MediaLibraryService() {
             .setDurationMs(prepared.entity.durationMs.takeIf { it > 0 })
             .setIsPlayable(true)
             .setIsBrowsable(false)
-            .setExtras(android.os.Bundle().apply { putString(QueueItems.EXTRA_TRACK_ID, trackId) })
+            .setExtras(android.os.Bundle().apply {
+                putString(QueueItems.EXTRA_TRACK_ID, trackId)
+                putString(QueueItems.EXTRA_MEDIA_FORM, prepared.mediaForm ?: prepared.entity.mediaForm)
+                putBoolean(
+                    QueueItems.EXTRA_VIDEO_AVAILABLE,
+                    prepared.entity.mediaForm == "video" || hasVideoAlternate,
+                )
+                episode?.alternatesJson?.let { putString(QueueItems.EXTRA_ALTERNATES, it) }
+            })
         if (prepared.entity.sourceKind == "podcast") {
             prepared.entity.artworkPath
                 ?.let { LocalMediaServer.localUri(this@PlaybackService, File(it)) }

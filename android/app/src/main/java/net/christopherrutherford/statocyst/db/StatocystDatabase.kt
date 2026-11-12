@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PodcastPlaybackStateEntity::class,
         PodcastDirectoryCacheEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class StatocystDatabase : RoomDatabase() {
@@ -195,10 +195,44 @@ abstract class StatocystDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 → v8 adds the video-podcast presentation fields. Additive only: every
+         * existing music, podcast, queue and download row reads as `audio`.
+         */
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `media_item` ADD COLUMN `mediaForm` TEXT NOT NULL DEFAULT 'audio'",
+                )
+                db.execSQL(
+                    "ALTER TABLE `podcast_feed` ADD COLUMN `defaultMediaForm` TEXT NOT NULL DEFAULT 'audio'",
+                )
+                db.execSQL(
+                    "ALTER TABLE `podcast_episode` ADD COLUMN `mediaForm` TEXT NOT NULL DEFAULT 'audio'",
+                )
+                db.execSQL("ALTER TABLE `podcast_episode` ADD COLUMN `alternatesJson` TEXT")
+                db.execSQL("ALTER TABLE `podcast_episode` ADD COLUMN `posterUrl` TEXT")
+                db.execSQL("ALTER TABLE `podcast_episode` ADD COLUMN `videoWidth` INTEGER")
+                db.execSQL("ALTER TABLE `podcast_episode` ADD COLUMN `videoHeight` INTEGER")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_podcast_episode_mediaForm` " +
+                        "ON `podcast_episode` (`mediaForm`)",
+                )
+            }
+        }
+
         fun getInstance(context: Context): StatocystDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, StatocystDatabase::class.java, "statocyst.db")
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                    )
                     .build()
                     .also { INSTANCE = it }
             }

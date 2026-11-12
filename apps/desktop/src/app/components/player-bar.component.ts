@@ -1,48 +1,63 @@
 import { ChangeDetectionStrategy, Component, computed, HostListener, inject, output, signal } from '@angular/core';
 import { ArtworkComponent } from './artwork.component';
 import { IconComponent } from './icon.component';
+import { PodcastVideoStageComponent } from './podcast-video-stage.component';
 import { PlaybackStore } from '../core/playback.store';
 import { PodcastPlaybackStore } from '../core/podcast-playback.store';
+import { NavigationStore } from '../core/navigation.store';
+import { isNativePlatform } from '../core/bridge';
 import { formatDuration } from '../core/format';
 
 @Component({
   selector: 'sc-player-bar',
   standalone: true,
-  imports: [ArtworkComponent, IconComponent],
+  imports: [ArtworkComponent, IconComponent, PodcastVideoStageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="player">
+    <div
+      class="player"
+      [class.is-dragging]="dragOffset() < 0"
+      [style.transform]="dragOffset() ? 'translateY(' + dragOffset() + 'px)' : null"
+      (pointerdown)="onDragStart($event)"
+      (pointermove)="onDragMove($event)"
+      (pointerup)="onDragEnd($event)"
+      (pointercancel)="onDragCancel()"
+    >
       <div class="player__hairline" aria-hidden="true">
         <span [style.width.%]="progressPercent()"></span>
       </div>
+      <span class="player__grab" aria-hidden="true"></span>
       <button
         type="button"
         class="player__track"
-        (click)="podcastMode() ? openPodcast.emit() : openNow.emit()"
+        (click)="onTrackActivate()"
         [attr.aria-label]="
-          track()
-            ? (podcastMode() ? 'Open podcasts: ' : 'Open now playing: ') + track()!.title
-            : 'No track selected'
+          track() ? 'Open now playing: ' + track()!.title : 'No track selected'
         "
       >
-        <sc-artwork [track]="track()" size="md" />
+        <span class="player__art">
+          <sc-artwork [track]="track()" size="md" />
+          @if (native && isVideo() && videoPresentation() === 'video' && navigation.view() !== 'now') {
+            <sc-podcast-video-stage class="player__video" [compact]="true" />
+          }
+        </span>
         <span class="player__meta">
           <span class="player__title">{{ track()?.title ?? 'Nothing playing yet' }}</span>
           <span class="player__artist">
             {{ track()?.artist ?? (podcastMode() ? 'Pick an episode' : 'Pick a track from your library') }}
           </span>
           @if (podcastMode()) {
-            <span class="player__podcast-tag">Podcast · {{ rate() }}×</span>
+            <span class="player__podcast-tag">{{ isVideo() ? 'Video' : 'Podcast' }} · {{ rate() }}×</span>
           }
         </span>
         @if (state() === 'buffering') {
           <span class="player__state">Buffering</span>
         }
         @if (state() === 'waiting-network') {
-          <span class="player__state player__state--waiting">Offline — will resume</span>
+          <span class="player__state player__state--waiting">Reconnecting…</span>
         }
         @if (state() === 'error') {
-          <span class="player__state player__state--error">Audio error</span>
+          <span class="player__state player__state--error">Playback error</span>
         }
         <sc-icon name="up" class="player__expand" />
       </button>
@@ -225,6 +240,38 @@ import { formatDuration } from '../core/format';
         border-top: 1px solid var(--line);
         backdrop-filter: blur(22px);
         box-shadow: var(--chrome-shadow);
+        touch-action: none;
+        user-select: none;
+        transition: transform 160ms ease;
+      }
+      .player__grab {
+        position: absolute;
+        top: 5px;
+        left: 50%;
+        width: 42px;
+        height: 4px;
+        margin-left: -21px;
+        border-radius: 999px;
+        background: var(--line-strong);
+        opacity: 0.65;
+      }
+      .player.is-dragging {
+        transition: none;
+      }
+      .player__art {
+        position: relative;
+        display: inline-grid;
+        flex: 0 0 auto;
+        width: 60px;
+        height: 60px;
+      }
+      .player__video {
+        position: absolute;
+        inset: 0;
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        overflow: hidden;
       }
       .player__track {
         display: flex;
@@ -501,6 +548,7 @@ import { formatDuration } from '../core/format';
         }
         .player__track {
           grid-area: track;
+          touch-action: none;
         }
         .player__transport {
           grid-area: transport;
@@ -508,6 +556,7 @@ import { formatDuration } from '../core/format';
         .player__extras,
         .player__seek,
         .player__aux,
+        .player__rate,
         .player__expand {
           display: none;
         }
@@ -532,6 +581,8 @@ import { formatDuration } from '../core/format';
 export class PlayerBarComponent {
   protected readonly playback = inject(PlaybackStore);
   protected readonly podcastPlayback = inject(PodcastPlaybackStore);
+  protected readonly navigation = inject(NavigationStore);
+  protected readonly native = isNativePlatform();
   protected readonly formatDuration = formatDuration;
 
   readonly openNow = output<void>();
@@ -546,21 +597,48 @@ export class PlayerBarComponent {
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
   protected readonly pulsing = signal(false);
+  protected readonly dragOffset = signal(0);
+  private dragStartY: number | null = null;
+  private dragged = false;
+  private suppressClick = false;
 
-  protected readonly podcastMode = computed(() => this.podcastPlayback.active());
+  protected readonly podcastMode = computed(() => {
+    // The active track is authoritative; the podcast store's active flag can
+    // lag after switching back to music. The track also tells the bar which
+    // player owns it, so a podcast opens the podcast screen, never music.
+    const track = this.playback.track();
+    if (track) return track.mediaKind === 'podcast' || track.sourceKind === 'podcast';
+    return this.podcastPlayback.active();
+  });
+  private readonly podcastReady = computed(() => this.podcastPlayback.track() !== null);
   protected readonly track = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.track() : this.playback.track(),
+    this.podcastMode()
+      ? (this.podcastPlayback.track() ?? this.playback.track())
+      : this.playback.track(),
   );
   protected readonly state = computed(() =>
-    this.podcastMode()
+    this.podcastMode() && this.podcastReady()
       ? this.podcastPlayback.snapshot().state
       : this.playback.snapshot().state,
   );
   protected readonly isPlaying = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.isPlaying() : this.playback.isPlaying(),
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.isPlaying()
+      : this.playback.isPlaying(),
   );
   protected readonly rate = computed(() =>
-    this.podcastMode() ? this.podcastPlayback.rate() : this.playback.snapshot().rate,
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.rate()
+      : this.playback.snapshot().rate,
+  );
+  protected readonly isVideo = computed(() => {
+    const track = this.track();
+    return track?.mediaForm === 'video' || track?.videoAvailable === true;
+  });
+  protected readonly videoPresentation = computed(() =>
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.presentation()
+      : this.playback.snapshot().presentation,
   );
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(
@@ -573,14 +651,16 @@ export class PlayerBarComponent {
   protected readonly displayPosition = computed(() =>
     this.dragging()
       ? this.dragValue()
-      : this.podcastMode()
+      : this.podcastMode() && this.podcastReady()
         ? this.podcastPlayback.positionMs()
         : this.playback.positionMs(),
   );
   protected readonly displayDuration = computed(() =>
     Math.max(
       1,
-      this.podcastMode() ? this.podcastPlayback.durationMs() : this.playback.durationMs(),
+      this.podcastMode() && this.podcastReady()
+        ? this.podcastPlayback.durationMs()
+        : this.playback.durationMs(),
     ),
   );
   protected readonly progressPercent = computed(() =>
@@ -628,6 +708,73 @@ export class PlayerBarComponent {
     const rates = [1, 1.25, 1.5, 1.75, 2];
     const index = rates.findIndex((rate) => Math.abs(rate - this.rate()) < 0.001);
     void this.podcastPlayback.setRate(rates[(index + 1) % rates.length]);
+  }
+
+  protected onTrackActivate(): void {
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      return;
+    }
+    this.openNow.emit();
+  }
+
+  /** A vertical upward drag on the mini player expands the full Now Playing view. */
+  protected onDragStart(event: PointerEvent): void {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    // Leave the transport, rate and volume controls to their own taps.
+    if (target?.closest('button:not(.player__track), input, .range')) return;
+    this.dragStartY = event.clientY;
+    this.dragged = false;
+    try {
+      (event.currentTarget as HTMLElement | null)?.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort; the document still receives the release.
+    }
+  }
+
+  protected onDragMove(event: PointerEvent): void {
+    if (this.dragStartY === null) return;
+    const dy = event.clientY - this.dragStartY;
+    if (dy < -6) {
+      this.dragged = true;
+      if (event.cancelable) event.preventDefault();
+    }
+    this.dragOffset.set(Math.max(-96, Math.min(0, dy)));
+  }
+
+  protected onDragEnd(event: PointerEvent): void {
+    const offset = this.dragOffset();
+    const wasDragged = this.dragged;
+    const hadStart = this.dragStartY !== null;
+    this.dragStartY = null;
+    this.dragged = false;
+    this.dragOffset.set(0);
+    try {
+      (event.currentTarget as HTMLElement | null)?.releasePointerCapture(event.pointerId);
+    } catch {
+      // Already released.
+    }
+    if (hadStart && !wasDragged) {
+      // A tap on the track/background expands the player. Pointer capture can
+      // retarget the following click, so handle it here and suppress the echo.
+      this.suppressClick = true;
+      window.setTimeout(() => (this.suppressClick = false), 350);
+      this.openNow.emit();
+      return;
+    }
+    if (wasDragged && offset < -48) {
+      // The click event lands after pointerup; suppress the duplicate open.
+      this.suppressClick = true;
+      window.setTimeout(() => (this.suppressClick = false), 350);
+      this.openNow.emit();
+    }
+  }
+
+  protected onDragCancel(): void {
+    this.dragStartY = null;
+    this.dragged = false;
+    this.dragOffset.set(0);
   }
 
   @HostListener('document:keydown.escape')

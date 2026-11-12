@@ -15,6 +15,9 @@ interface DownloadEvents {
     fun waiting() {}
     fun retrying(attempt: Int, reason: String) {}
     fun progress(received: Long, total: Long?) {}
+
+    /** Download finished; a local compression pass is running (0..100). */
+    fun compressing(percent: Int) {}
 }
 
 /**

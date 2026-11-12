@@ -45,6 +45,11 @@ describe('RSS podcast parsing', () => {
     expect(episode?.enclosureUrl).toBe('https://cdn.example.com/1.mp3');
     expect(episode?.enclosureType).toBe('audio/mpeg');
     expect(episode?.enclosureLengthBytes).toBe(42_000_000);
+    expect(episode?.mediaForm).toBe('audio');
+    expect(episode?.alternates).toEqual([]);
+    expect(episode?.posterUrl).toBe('https://example.com/ep1.jpg');
+    expect(episode?.videoWidth).toBeNull();
+    expect(episode?.videoHeight).toBeNull();
     expect(episode?.durationMs).toBe(3_723_000);
     expect(episode?.publishedAt).toBe('2026-10-01T08:00:00.000Z');
     expect(episode?.seasonNo).toBe(2);
@@ -90,6 +95,9 @@ describe('Atom podcast parsing', () => {
     expect(episode.enclosureUrl).toBe('https://cdn.example.com/atom1.m4a');
     expect(episode.enclosureType).toBe('audio/mp4');
     expect(episode.enclosureLengthBytes).toBe(12_345);
+    expect(episode.mediaForm).toBe('audio');
+    expect(episode.alternates).toEqual([]);
+    expect(episode.posterUrl).toBeNull();
     expect(episode.durationMs).toBe(2_730_000);
     expect(episode.seasonNo).toBe(1);
     expect(episode.episodeNo).toBe(4);
@@ -99,6 +107,195 @@ describe('Atom podcast parsing', () => {
     expect(episode.links).toEqual([
       { title: 'Notes', url: 'https://feeds.example.com/atom/notes' },
     ]);
+  });
+});
+
+describe('video enclosure parsing', () => {
+  it('prefers audio and keeps the video as a classified alternate', async () => {
+    const parsed = await parsePodcastFeed(fixture('rss-video.xml'), { feedUrl });
+    const episode = parsed.episodes.find((entry) => entry.guid === 'both');
+    expect(episode).toBeDefined();
+    expect(episode?.mediaForm).toBe('audio');
+    expect(episode?.enclosureUrl).toBe('https://cdn.example.com/both.mp3');
+    expect(episode?.enclosureType).toBe('audio/mpeg');
+    expect(episode?.enclosureLengthBytes).toBe(48_230_000);
+    expect(episode?.alternates).toEqual([
+      {
+        url: 'https://cdn.example.com/both.mp4',
+        type: 'video/mp4',
+        form: 'video',
+        lengthBytes: null,
+        width: 1920,
+        height: 1080,
+        bitrate: 1_500_000,
+      },
+    ]);
+    expect(episode?.posterUrl).toBe('https://example.com/thumbs/both.jpg');
+    expect(episode?.videoWidth).toBe(1920);
+    expect(episode?.videoHeight).toBe(1080);
+  });
+
+  it('uses video as the primary when only video is advertised', async () => {
+    const parsed = await parsePodcastFeed(fixture('rss-video.xml'), { feedUrl });
+    const episode = parsed.episodes.find((entry) => entry.guid === 'video-only');
+    expect(episode).toBeDefined();
+    expect(episode?.mediaForm).toBe('video');
+    expect(episode?.enclosureUrl).toBe('https://cdn.example.com/only.mp4');
+    expect(episode?.enclosureType).toBeNull();
+    expect(episode?.enclosureLengthBytes).toBe(90_000_000);
+    expect(episode?.alternates).toEqual([]);
+    expect(episode?.videoWidth).toBe(640);
+    expect(episode?.videoHeight).toBe(360);
+    // Episode art wins over the landscape thumbnail.
+    expect(episode?.imageUrl).toBe('https://example.com/thumbs/only.jpg');
+    expect(episode?.posterUrl).toBe('https://example.com/thumbs/only.jpg');
+  });
+
+  it('collects multiple media:content entries and resolves relative URLs', async () => {
+    const parsed = await parsePodcastFeed(fixture('rss-video.xml'), { feedUrl });
+    const episode = parsed.episodes.find((entry) => entry.guid === 'multi');
+    expect(episode).toBeDefined();
+    expect(episode?.mediaForm).toBe('audio');
+    expect(episode?.enclosureUrl).toBe('https://feeds.example.com/media/m2.m4a');
+    expect(episode?.enclosureType).toBe('audio/mp4');
+    expect(episode?.enclosureLengthBytes).toBe(1_000);
+    expect(episode?.alternates.map((alternate) => alternate.url)).toEqual([
+      'https://cdn.example.com/m1.mp4',
+      'https://cdn.example.com/m3.mp4',
+    ]);
+    // application/octet-stream alone is audio, but medium="video" wins.
+    expect(episode?.alternates[0]).toMatchObject({
+      form: 'video',
+      type: 'application/octet-stream',
+      width: 1280,
+      height: 720,
+    });
+    expect(episode?.alternates.every((alternate) => alternate.form === 'video')).toBe(true);
+    expect(episode?.videoWidth).toBe(1280);
+    expect(episode?.videoHeight).toBe(720);
+    expect(episode?.posterUrl).toBeNull();
+  });
+
+  it('parses Podcast 2.0 alternate enclosures', async () => {
+    const parsed = await parsePodcastFeed(fixture('rss-video.xml'), { feedUrl });
+    const episode = parsed.episodes.find((entry) => entry.guid === 'alternate');
+    expect(episode).toBeDefined();
+    expect(episode?.mediaForm).toBe('video');
+    expect(episode?.enclosureUrl).toBe('https://cdn.example.com/alt.mp4');
+    expect(episode?.enclosureType).toBe('video/mp4');
+    expect(episode?.enclosureLengthBytes).toBe(120_000_000);
+    expect(episode?.alternates).toEqual([]);
+  });
+
+  it('bounds alternates to 8 and still retains the video form', async () => {
+    const audioAlternates = Array.from(
+      { length: 9 },
+      (_, index) =>
+        `<media:content url="https://cdn.example.com/a${index}.mp3" type="audio/mpeg" />`,
+    ).join('');
+    const xml =
+      `<?xml version="1.0"?><rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">` +
+      `<channel><title>Oversized</title><item><title>Capped</title><guid>capped</guid>` +
+      `<enclosure url="https://cdn.example.com/primary.mp3" type="audio/mpeg" />` +
+      audioAlternates +
+      `<media:content url="https://cdn.example.com/late.mp4" type="video/mp4" />` +
+      `</item></channel></rss>`;
+    const parsed = await parsePodcastFeed(xml, { feedUrl });
+    const episode = parsed.episodes[0];
+    expect(episode.mediaForm).toBe('audio');
+    expect(episode.alternates).toHaveLength(8);
+    expect(episode.alternates.some((alternate) => alternate.url === episode.enclosureUrl)).toBe(
+      false,
+    );
+    expect(episode.alternates.filter((alternate) => alternate.form === 'audio')).toHaveLength(7);
+    expect(episode.alternates).toContainEqual(
+      expect.objectContaining({ url: 'https://cdn.example.com/late.mp4', form: 'video' }),
+    );
+  });
+
+  it('does not assume application/octet-stream or a bad MIME is video', async () => {
+    const xml =
+      `<?xml version="1.0"?><rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">` +
+      `<channel><title>MIME</title>` +
+      `<item><title>Octet</title><guid>octet</guid>` +
+      `<media:content url="https://cdn.example.com/download" type="application/octet-stream" />` +
+      `</item>` +
+      `<item><title>Bad type</title><guid>bad-type</guid>` +
+      `<media:content url="https://cdn.example.com/audio.mp3" type="video" />` +
+      `</item>` +
+      `<item><title>Real video</title><guid>real-video</guid>` +
+      `<media:content url="https://cdn.example.com/movie.webm" type="video/webm" />` +
+      `</item></channel></rss>`;
+    const parsed = await parsePodcastFeed(xml, { feedUrl });
+    expect(parsed.episodes.find((entry) => entry.guid === 'octet')?.mediaForm).toBe('audio');
+    expect(parsed.episodes.find((entry) => entry.guid === 'bad-type')?.mediaForm).toBe('audio');
+    expect(parsed.episodes.find((entry) => entry.guid === 'real-video')?.mediaForm).toBe('video');
+  });
+
+  it('rejects non-HTTP(S) and SSRF enclosures on every advertised form', async () => {
+    const xml = rssFeed([
+      `<item><title>Private only</title><guid>private-only</guid>` +
+        `<media:content url="http://10.0.0.5/video.mp4" type="video/mp4" />` +
+        `<media:thumbnail url="http://127.0.0.1/poster.jpg" /></item>`,
+      `<item><title>FTP</title><guid>ftp</guid>` +
+        `<enclosure url="ftp://cdn.example.com/episode.mp3" type="audio/mpeg" /></item>`,
+      `<item><title>Safe audio</title><guid>safe</guid>` +
+        `<enclosure url="https://cdn.example.com/safe.mp3" type="audio/mpeg" />` +
+        `<media:content url="http://192.168.1.5/private.mp4" type="video/mp4" />` +
+        `<media:thumbnail url="http://169.254.169.254/latest/meta-data" /></item>`,
+    ]);
+    const parsed = await parsePodcastFeed(xml, { feedUrl });
+    expect(parsed.dropped).toBe(2);
+    expect(parsed.episodes).toHaveLength(1);
+    const episode = parsed.episodes[0];
+    expect(episode.guid).toBe('safe');
+    expect(episode.mediaForm).toBe('audio');
+    expect(episode.alternates).toEqual([]);
+    expect(episode.posterUrl).toBeNull();
+  });
+
+  it('parses Atom enclosure links and media:content with audio-first selection', async () => {
+    const xml =
+      `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom" ` +
+      `xmlns:media="http://search.yahoo.com/mrss/"><title>Atom Video</title>` +
+      `<entry><id>atom-video</id><title>Atom Video Episode</title>` +
+      `<link rel="enclosure" href="https://cdn.example.com/atom.mp4" type="video/mp4" />` +
+      `<link rel="enclosure" href="https://cdn.example.com/atom.m4a" type="audio/mp4" length="42" />` +
+      `<media:content url="https://cdn.example.com/atom-extra.mp4" type="video/mp4" width="1280" height="720" />` +
+      `<media:thumbnail url="https://example.com/atom-thumb.jpg" />` +
+      `</entry></feed>`;
+    const parsed = await parsePodcastFeed(xml, { feedUrl });
+    expect(parsed.episodes).toHaveLength(1);
+    const episode = parsed.episodes[0];
+    expect(episode.mediaForm).toBe('audio');
+    expect(episode.enclosureUrl).toBe('https://cdn.example.com/atom.m4a');
+    expect(episode.enclosureLengthBytes).toBe(42);
+    expect(episode.alternates.map((alternate) => alternate.url)).toEqual([
+      'https://cdn.example.com/atom.mp4',
+      'https://cdn.example.com/atom-extra.mp4',
+    ]);
+    expect(episode.posterUrl).toBe('https://example.com/atom-thumb.jpg');
+    expect(episode.videoWidth).toBe(1280);
+    expect(episode.videoHeight).toBe(720);
+  });
+
+  it('drops duplicate enclosure URLs and never repeats the primary', async () => {
+    const xml = rssFeed([
+      `<item><title>Duplicate</title><guid>duplicate</guid>` +
+        `<enclosure url="https://cdn.example.com/same.mp4" type="video/mp4" />` +
+        `<media:content url="https://cdn.example.com/same.mp4" type="video/mp4" width="1920" height="1080" />` +
+        `<media:content url="https://cdn.example.com/other.mp4" type="video/mp4" />` +
+        `</item>`,
+    ]);
+    const parsed = await parsePodcastFeed(xml, { feedUrl });
+    const episode = parsed.episodes[0];
+    expect(episode.mediaForm).toBe('video');
+    expect(episode.enclosureUrl).toBe('https://cdn.example.com/same.mp4');
+    expect(episode.alternates).toHaveLength(1);
+    expect(episode.alternates[0].url).toBe('https://cdn.example.com/other.mp4');
+    // Metadata from the duplicate media:content still enriches the primary.
+    expect(episode.videoWidth).toBe(1920);
+    expect(episode.videoHeight).toBe(1080);
   });
 });
 
@@ -165,6 +362,8 @@ function item(
 }
 
 function rssFeed(items: readonly string[]): string {
-  return `<?xml version="1.0"?><rss version="2.0"><channel>` +
-    `<title>Generated</title>${items.join('')}</channel></rss>`;
+  return `<?xml version="1.0"?><rss version="2.0"` +
+    ` xmlns:media="http://search.yahoo.com/mrss/"` +
+    ` xmlns:podcast="https://podcastindex.org/namespace/1.0">` +
+    `<channel><title>Generated</title>${items.join('')}</channel></rss>`;
 }

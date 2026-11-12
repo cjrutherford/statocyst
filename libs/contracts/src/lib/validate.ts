@@ -173,6 +173,18 @@ export function validatePlaybackCommand(value: unknown): Result<PlaybackCommand>
       }
       return ok({ type: 'setRate', rate: value['rate'] });
 
+    case 'setPresentation':
+      if (
+        !hasOnlyKeys(value, ['type', 'mode']) ||
+        (value['mode'] !== 'audio-only' && value['mode'] !== 'video')
+      ) {
+        return fail(
+          'INVALID_ARGUMENT',
+          'setPresentation mode must be "audio-only" or "video"',
+        );
+      }
+      return ok({ type: 'setPresentation', mode: value['mode'] });
+
     case 'clear':
       if (!hasOnlyKeys(value, ['type'])) {
         return fail('INVALID_ARGUMENT', 'Unexpected field on clear command');

@@ -1,1 +1,3 @@
-First release on Google Play: local and Jellyfin playback, offline downloads, widgets and Android Auto.
+Video podcasts: video episodes now start in video, with a live preview in the mini player and a full-screen podcast player.
+Podcast artwork: covers are matched by album and artist, with a new Reanalyze artwork action in Settings.
+Podcasts: Quick Connect and server-address error fixes, smoother sub-screen transitions, and stability improvements.

@@ -16,7 +16,7 @@ export interface CacheManagerOptions {
   getBudgetBytes: () => number;
   resolveRemoteTrack: (sourceId: string) => Promise<{ serverUrl: string; token: string } | null>;
   /** Direct enclosure URLs for non-Jellyfin sources (podcasts). */
-  resolveDirectAudio?: (track: StoredTrack) => Promise<{ url: string; headers?: Record<string, string> } | null>;
+  resolveDirectMedia?: (track: StoredTrack) => Promise<{ url: string; headers?: Record<string, string> } | null>;
 }
 
 function remoteAuthorization(identity: ClientIdentity, token: string): string {
@@ -151,8 +151,8 @@ export class CacheManager {
   async prefetch(trackId: string): Promise<string | null> {
     const track = await this.database.getTrack(trackId).catch(() => null);
     if (!track || (track.sourceKind !== 'jellyfin' && track.sourceKind !== 'podcast')) return null;
-    const direct = this.options.resolveDirectAudio
-      ? await this.options.resolveDirectAudio(track).catch(() => null)
+    const direct = this.options.resolveDirectMedia
+      ? await this.options.resolveDirectMedia(track).catch(() => null)
       : null;
     const remote =
       direct ??

@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { StatocystDatabase } from '@statocyst/persistence';
 import type { ClientIdentity } from '@statocyst/jellyfin-client';
 import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { DownloadService } from './download-service';
+
+const execFileAsync = promisify(execFile);
 
 const identity: ClientIdentity = {
   client: 'Statocyst',
@@ -95,7 +99,7 @@ describe('DownloadService podcast enclosures', () => {
       logger,
       identity,
       resolveRemoteTrack: async () => null,
-      resolveDirectAudio: async (track) =>
+      resolveDirectMedia: async (track) =>
         track.sourceKind === 'podcast' ? { url: track.path } : null,
     });
     try {
@@ -109,6 +113,103 @@ describe('DownloadService podcast enclosures', () => {
       expect((await service.getVerifiedDownload(saved.mediaItemId))?.localPath).toBe(
         record!.localPath,
       );
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await db.close();
+    }
+  });
+});
+
+describe('DownloadService podcast compression', () => {
+  it('extracts audio from a video enclosure when ffmpeg is available', async () => {
+    const ffmpeg = await execFileAsync('ffmpeg', ['-version']).then(() => true).catch(() => false);
+    if (!ffmpeg) return;
+    const dir = await tempDir();
+    const sourcePath = join(dir, 'episode.mp4');
+    await execFileAsync('ffmpeg', [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x180:rate=15',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440',
+      '-t',
+      '1',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      sourcePath,
+    ]);
+    const payload = await readFile(sourcePath);
+    const server = createServer((_request, response) => {
+      response.writeHead(200, {
+        'Content-Type': 'video/mp4',
+        'Content-Length': String(payload.byteLength),
+      });
+      response.end(payload);
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('server did not bind');
+    const url = `http://127.0.0.1:${address.port}/episode.mp4`;
+    const db = await StatocystDatabase.open({ path: join(dir, 'statocyst.db') });
+    const feed = await db.upsertPodcastFeed({
+      feedUrl: 'https://feeds.example.com/video.xml',
+      title: 'Video Show',
+      feedType: 'rss',
+    });
+    const [saved, savedTwo] = await db.savePodcastEpisodes(feed.id, [
+      {
+        feedId: feed.id,
+        guid: 'video-1',
+        title: 'Video episode',
+        enclosureUrl: url,
+        enclosureType: 'video/mp4',
+        mediaForm: 'video',
+        durationMs: 1000,
+      },
+      {
+        feedId: feed.id,
+        guid: 'video-2',
+        title: 'Video episode 2',
+        enclosureUrl: url,
+        enclosureType: 'video/mp4',
+        mediaForm: 'video',
+        durationMs: 1000,
+      },
+    ]);
+    const service = new DownloadService({
+      database: db,
+      downloadsDirectory: join(dir, 'downloads'),
+      logger,
+      identity,
+      resolveRemoteTrack: async () => null,
+      resolveDirectMedia: async (track) =>
+        track.sourceKind === 'podcast' ? { url: track.path } : null,
+    });
+    try {
+      const result = await service.download(saved.mediaItemId, undefined, 'audio-only');
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.verified).toBe(true);
+      const record = await db.getDownload(saved.mediaItemId);
+      expect(record?.container).toBe('audio/mp4');
+      expect(record?.localPath.endsWith('.m4a')).toBe(true);
+      expect((await readFile(record!.localPath)).byteLength).toBeGreaterThan(0);
+
+      const compressed = await service.download(savedTwo.mediaItemId, undefined, 'video-480p');
+      expect(compressed.ok).toBe(true);
+      if (!compressed.ok) return;
+      const videoRecord = await db.getDownload(savedTwo.mediaItemId);
+      expect(videoRecord?.container).toBe('video/mp4');
+      expect(videoRecord?.localPath.endsWith('.mp4')).toBe(true);
+      expect((await readFile(videoRecord!.localPath)).byteLength).toBeGreaterThan(0);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await db.close();

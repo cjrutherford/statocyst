@@ -3,6 +3,9 @@
 **Status:** IMPLEMENTED_UNVERIFIED (2.1.1, 2026-11-08). Desktop, Android, iOS and in-car browse are implemented and building. Runtime/device and performance evidence remains open; MVP-5 is not yet VERIFIED.
 **Decision record:** ADR-036.
 **Slice range:** S042–S053.
+**Follow-on:** Video podcasts published by RSS/Atom feeds are planned separately as MVP-6
+(`roadmap/VIDEO_PODCASTS.md`, ADR-037, S054–S061). YouTube/third-party extraction is
+explicitly out of scope. MVP-6 is not part of this MVP-5 gate and must not delay it.
 **Platforms:** Electron desktop, Capacitor Android, Capacitor iOS, Android Auto, CarPlay.
 
 ## 1. Objective
@@ -774,7 +777,8 @@ All of the following are required before MVP-5 is called VERIFIED:
 
 - Native background feed refresh (WorkManager / BGTaskScheduler).
 - Automatic per-show retention and smart cleanup.
-- Chapters, transcripts, live items, alternate enclosures and value/streaming metadata.
+- Chapters, transcripts, live items, alternate formats beyond audio/video and
+  value/streaming metadata. Audio/video alternates are MVP-6.
 - Sleep timer and automatic intro/outro skipping.
 - Cross-device subscription/resume sync.
 - Global unified music + podcast search and recommendations.

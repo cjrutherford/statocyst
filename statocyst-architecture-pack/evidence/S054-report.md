@@ -1,0 +1,22 @@
+# Evidence report: S054
+
+- **Status:** IMPLEMENTED_UNVERIFIED
+- **Commit/branch:** `feat/video-podcasts` (implementation commit `c7797b0` plus follow-ups)
+- **Environment:** Ubuntu Linux; Node 24.22.1 via fnm; pnpm 10.18.3; Android Gradle with JDK 21; iOS toolchain absent
+- **Files changed:** `libs/contracts` (media form/presentation/enclosures), `libs/persistence` migration 7 and mappings, Android Room v8, iOS schema 7, `apps/desktop-electron` podcast mapping
+- **Acceptance criteria and actual observations:**
+  - Contracts expose `MediaForm`, `Presentation`, `PodcastEnclosure`, `videoAvailable`, `setPresentation`, and download variants.
+  - Desktop migration 7 is additive; a real v5→v7 replay preserves music rows and reads `mediaForm='audio'`.
+  - A new persistence test round-trips video form, alternates, poster and dimensions.
+  - Android Room v7→v8 migration compiles and unit tests pass; iOS has guarded additive statements but is unbuilt.
+- **Commands run with exit codes:**
+  - `NX_DAEMON=false corepack pnpm exec nx run persistence:test --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run-many -t typecheck -p contracts persistence desktop desktop-electron --skip-nx-cache` → 0
+  - `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug` → 0
+  - `command -v xcodebuild` → 1 (not installed)
+- **Tests not run (why):** Real v6 Android/iOS migration execution and iOS build are blocked by the Linux host/device availability.
+- **Artifacts:** `libs/persistence/src/lib/database.spec.ts`, Android `VideoMigrationTest.kt`, build logs above.
+- **Safety/security considerations:** No credentials added; alternates are HTTP(S)-only and bounded.
+- **Known limitations and deferred follow-up:** iOS migration is statically checked only; real device migration evidence remains open.
+- **Milestone gate affected:** MVP-6 S054.
+- **Reviewer and date:** Agent, 2026-11-11.

@@ -25,6 +25,12 @@ export type RepeatMode = (typeof REPEAT_MODES)[number];
 /** A media row is either music or a podcast episode. */
 export type MediaKind = 'music' | 'podcast';
 
+/** The primary presentation of a podcast episode. Video is still a podcast. */
+export type MediaForm = 'audio' | 'video';
+
+/** How the current episode is presented; audio remains authoritative. */
+export type Presentation = 'audio-only' | 'video';
+
 /**
  * The active audio context. Each running instance has one authoritative queue
  * at a time; the inactive context is persisted state, not a second player.
@@ -71,6 +77,10 @@ export interface Track {
   sourceKind?: string;
   /** Media kind; absent on older hosts means music. */
   mediaKind?: MediaKind;
+  /** Primary presentation; absent on older hosts means audio. */
+  mediaForm?: MediaForm;
+  /** True when the episode has a video form, even if audio is primary. */
+  videoAvailable?: boolean;
   trackNo?: number | null;
   year?: number | null;
   genre?: string | null;
@@ -114,6 +124,11 @@ export interface PlaybackSnapshot {
   rate: number;
   context: PlaybackContext;
   active: boolean;
+  /** Presentation of the current episode; audio for music and audio-only episodes. */
+  mediaForm: MediaForm;
+  presentation: Presentation;
+  /** True when the current episode has a video form available, even if audio is primary. */
+  videoAvailable?: boolean;
   track: Track | null;
 }
 
@@ -138,6 +153,7 @@ export type PlaybackCommand =
   | { type: 'setVolume'; volume: number }
   | { type: 'setMuted'; muted: boolean }
   | { type: 'setRate'; rate: number }
+  | { type: 'setPresentation'; mode: Presentation }
   | { type: 'clear' };
 
 export type PlaybackCommandName = PlaybackCommand['type'];
@@ -158,6 +174,7 @@ export const PLAYBACK_COMMANDS: readonly PlaybackCommandName[] = [
   'setVolume',
   'setMuted',
   'setRate',
+  'setPresentation',
   'clear',
 ] as const;
 

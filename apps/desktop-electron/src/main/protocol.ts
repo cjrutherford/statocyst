@@ -11,7 +11,7 @@ import { ART_SCHEME, MEDIA_SCHEME } from './schemes';
 
 export { ART_SCHEME, MEDIA_SCHEME };
 
-const AUDIO_MIME: Record<string, string> = {
+const MEDIA_MIME: Record<string, string> = {
   mp3: 'audio/mpeg',
   flac: 'audio/flac',
   ogg: 'audio/ogg',
@@ -19,7 +19,12 @@ const AUDIO_MIME: Record<string, string> = {
   wav: 'audio/wav',
   m4a: 'audio/mp4',
   aac: 'audio/aac',
-  webm: 'audio/webm',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  ogv: 'video/ogg',
+  mkv: 'video/x-matroska',
 };
 
 const IMAGE_MIME: Record<string, string> = {
@@ -52,11 +57,15 @@ export interface ProtocolTrack {
   id: string;
   path: string;
   artworkPath: string | null;
+  mediaForm?: 'audio' | 'video';
   remote?: RemoteTrack | null;
 }
 
 export interface ProtocolOptions {
-  lookupTrack: (trackId: string) => Promise<ProtocolTrack | null>;
+  lookupTrack: (
+    trackId: string,
+    form?: 'audio' | 'video' | null,
+  ) => Promise<ProtocolTrack | null>;
   onMediaUnavailable?: (trackId: string) => void;
   remoteIdentity?: ClientIdentity;
   /** Local cached artwork path for a podcast feed. */
@@ -86,6 +95,15 @@ function artTargetFromUrl(
     return null;
   }
   return { kind, id };
+}
+
+function requestedForm(url: string): 'audio' | 'video' | null {
+  try {
+    const value = new URL(url).searchParams.get('form');
+    return value === 'video' ? 'video' : value === 'audio' ? 'audio' : null;
+  } catch {
+    return null;
+  }
 }
 
 function trackIdFromUrl(url: string, scheme: string): string | null {
@@ -263,7 +281,9 @@ export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
     const trackId = trackIdFromUrl(request.url, MEDIA_SCHEME);
     if (!trackId) return new Response('Malformed media URL', { status: 400 });
 
-    const track = await options.lookupTrack(trackId).catch(() => null);
+    const track = await options
+      .lookupTrack(trackId, requestedForm(request.url))
+      .catch(() => null);
     if (!track) return new Response('Track not found', { status: 404 });
 
     if (track.remote) {
@@ -282,7 +302,7 @@ export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
       return new Response('Media unavailable', { status: 404 });
     }
 
-    const type = AUDIO_MIME[extname(track.path).replace(/^\./, '').toLowerCase()] ?? 'application/octet-stream';
+    const type = MEDIA_MIME[extname(track.path).replace(/^\./, '').toLowerCase()] ?? 'application/octet-stream';
     const parsed = parseRangeHeader(request.headers.get('range'), info.size);
 
     if (info.size === 0) {
@@ -346,7 +366,7 @@ export function registerProtocols(options: ProtocolOptions): ProtocolMeter {
       return path ? serveArtwork(path) : new Response('Artwork not found', { status: 404 });
     }
 
-    const track = await options.lookupTrack(target.id).catch(() => null);
+    const track = await options.lookupTrack(target.id, null).catch(() => null);
     if (!track) return new Response('Artwork not found', { status: 404 });
 
     if (!track.artworkPath) {

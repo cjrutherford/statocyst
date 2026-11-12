@@ -21,6 +21,9 @@ const EMPTY_SNAPSHOT: PlaybackSnapshot = {
   rate: 1,
   context: 'podcast',
   active: false,
+  mediaForm: 'audio',
+  presentation: 'audio-only',
+  videoAvailable: false,
   track: null,
 };
 
@@ -52,6 +55,8 @@ export class PodcastPlaybackStore {
   readonly durationMs = signal(0);
   readonly ready = signal(false);
   readonly lastError = signal<string | null>(null);
+  /** The entry the user explicitly switched to audio-only; a new entry clears it. */
+  private readonly audioOnlyEntryId = signal<string | null>(null);
 
   readonly track = computed(() => this.snapshot().track);
   readonly active = computed(() => {
@@ -64,6 +69,29 @@ export class PodcastPlaybackStore {
     return state === 'playing' || state === 'buffering' || state === 'waiting-network';
   });
   readonly rate = computed(() => this.snapshot().rate);
+  readonly mediaForm = computed(() => this.snapshot().mediaForm);
+  /**
+   * Native state events can arrive before a form switch and briefly report
+   * audio-only. A video-capable episode still presents as video unless the user
+   * explicitly chose audio-only for this entry.
+   */
+  readonly presentation = computed<'audio-only' | 'video'>(() => {
+    const snapshot = this.snapshot();
+    if (snapshot.presentation === 'video') return 'video';
+    if (
+      snapshot.track?.videoAvailable === true &&
+      snapshot.currentEntryId !== this.audioOnlyEntryId()
+    ) {
+      return 'video';
+    }
+    return snapshot.presentation;
+  });
+  readonly hasVideo = computed(
+    () =>
+      this.snapshot().track?.videoAvailable === true ||
+      this.snapshot().videoAvailable === true ||
+      this.snapshot().mediaForm === 'video',
+  );
   readonly progress = computed(() => {
     const duration = this.durationMs();
     return duration > 0 ? Math.min(1, Math.max(0, this.positionMs() / duration)) : 0;
@@ -121,7 +149,9 @@ export class PodcastPlaybackStore {
       this.lastError.set(result.error.message);
       return result;
     }
+    const previousEntryId = this.snapshot().currentEntryId;
     this.snapshot.set(result.value);
+    if (result.value.currentEntryId !== previousEntryId) this.audioOnlyEntryId.set(null);
     this.positionMs.set(result.value.positionMs);
     this.durationMs.set(result.value.durationMs);
     this.lastError.set(null);
@@ -148,6 +178,17 @@ export class PodcastPlaybackStore {
       trackId: fresh.id,
       ...(ids ? { contextTrackIds: ids } : {}),
     });
+    // A feed can publish audio first and carry the video as an alternate.
+    // The native bridge already defaults to video when the track reports one;
+    // the desktop host needs the explicit switch.
+    if (
+      result.ok &&
+      !isNativePlatform() &&
+      fresh.mediaForm !== 'video' &&
+      fresh.alternates.some((form) => form.form === 'video')
+    ) {
+      await this.setPresentation('video');
+    }
     if (!result.ok || fresh.completed || fresh.resumePositionMs <= 0) return;
     // The desktop host already resumes in `loadEntry`; the native mobile bridge
     // starts a freshly pushed queue at zero and may still report the previous
@@ -205,6 +246,13 @@ export class PodcastPlaybackStore {
     await this.command({ type: 'skipPrevious' });
   }
 
+  async setPresentation(mode: 'audio-only' | 'video'): Promise<void> {
+    this.audioOnlyEntryId.set(
+      mode === 'audio-only' ? this.snapshot().currentEntryId : null,
+    );
+    await this.command({ type: 'setPresentation', mode });
+  }
+
   async setRate(rate: number): Promise<void> {
     const clamped = Math.min(3, Math.max(0.5, rate));
     if (Math.abs(this.rate() - clamped) < 0.001) return;
@@ -229,6 +277,9 @@ export class PodcastPlaybackStore {
       case 'stateChanged':
         if (event.snapshot.context !== 'podcast') break;
         this.stateRevision += 1;
+        if (event.snapshot.currentEntryId !== this.snapshot().currentEntryId) {
+          this.audioOnlyEntryId.set(null);
+        }
         this.snapshot.set(event.snapshot);
         this.positionMs.set(event.snapshot.positionMs);
         this.durationMs.set(event.snapshot.durationMs);

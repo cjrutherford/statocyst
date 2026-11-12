@@ -324,13 +324,22 @@ enum JellyfinClient {
         return QuickConnectInit(secret: secret, code: qcCode)
     }
 
-    static func quickConnectStatus(baseUrl: String, secret: String) -> Bool {
+    static func quickConnectStatus(baseUrl: String, secret: String) throws -> Bool {
         let url = baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let (code, data) = try? request(method: "GET", url: "\(url)/QuickConnect/Connect?secret=\(encodedSecret)"),
-              code == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return false
+        guard let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw NSError(domain: "JellyfinClient", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid Quick Connect secret"])
+        }
+        let (code, data) = try request(method: "GET", url: "\(url)/QuickConnect/Connect?secret=\(encodedSecret)")
+        // Jellyfin returns 404 once the code expires or was already exchanged.
+        // Without this the UI would keep saying "Waiting for approval" forever.
+        if code == 404 {
+            throw NSError(domain: "JellyfinClient", code: 404, userInfo: [NSLocalizedDescriptionKey: "Quick Connect code expired. Start again for a new code."])
+        }
+        guard code == 200 else {
+            throw NSError(domain: "JellyfinClient", code: code, userInfo: [NSLocalizedDescriptionKey: "Quick Connect unavailable (HTTP \(code))"])
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw NSError(domain: "JellyfinClient", code: 500, userInfo: [NSLocalizedDescriptionKey: "Malformed Quick Connect response"])
         }
         return (json["Authenticated"] as? Bool) ?? false
     }

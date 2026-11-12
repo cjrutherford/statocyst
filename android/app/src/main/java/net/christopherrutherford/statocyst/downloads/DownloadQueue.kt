@@ -3,7 +3,7 @@ package net.christopherrutherford.statocyst.downloads
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadFactory
 
-enum class DownloadState { QUEUED, ACTIVE, RETRYING, WAITING, FAILED, DONE }
+enum class DownloadState { QUEUED, ACTIVE, RETRYING, WAITING, COMPRESSING, FAILED, DONE }
 
 data class QueueEntry(
     val trackId: String,
@@ -13,6 +13,8 @@ data class QueueEntry(
     val attempt: Int,
     val error: String?,
     val waitingReason: String? = null,
+    /** 0..100 while [DownloadState.COMPRESSING]; null otherwise. */
+    val progressPercent: Int? = null,
 ) {
     val pending: Boolean get() = state != DownloadState.FAILED && state != DownloadState.DONE
 }
@@ -22,7 +24,9 @@ data class QueueSnapshot(val entries: List<QueueEntry>) {
     val done: Int get() = entries.count { it.state == DownloadState.DONE }
     val failed: Int get() = entries.count { it.state == DownloadState.FAILED }
     val pending: Int get() = entries.count { it.pending }
-    val active: Int get() = entries.count { it.state == DownloadState.ACTIVE || it.state == DownloadState.RETRYING }
+    val active: Int get() = entries.count {
+        it.state == DownloadState.ACTIVE || it.state == DownloadState.RETRYING || it.state == DownloadState.COMPRESSING
+    }
     val finished: Boolean get() = entries.isNotEmpty() && pending == 0
     val receivedBytes: Long get() = entries.sumOf { it.receivedBytes }
 
@@ -56,8 +60,9 @@ class DownloadQueue(
         var attempt = 0
         var error: String? = null
         var waitingReason: String? = null
+        var progressPercent: Int? = null
         val pending: Boolean get() = state != DownloadState.FAILED && state != DownloadState.DONE
-        fun snapshot() = QueueEntry(trackId, state, received, total, attempt, error, waitingReason)
+        fun snapshot() = QueueEntry(trackId, state, received, total, attempt, error, waitingReason, progressPercent)
     }
 
     private val entries = LinkedHashMap<String, Mutable>()
@@ -181,6 +186,7 @@ class DownloadQueue(
                         state = DownloadState.ACTIVE
                         error = null
                         waitingReason = null
+                        progressPercent = null
                         this.received = received
                         this.total = total
                     }
@@ -189,6 +195,13 @@ class DownloadQueue(
                     publish(force = false)
                 }
             }
+
+            override fun compressing(percent: Int) = change(entry) {
+                state = DownloadState.COMPRESSING
+                progressPercent = percent
+                error = null
+                waitingReason = null
+            }
         }
         try {
             runner(id, events)
@@ -196,6 +209,7 @@ class DownloadQueue(
                 state = DownloadState.DONE
                 total = total ?: received
                 received = total ?: received
+                progressPercent = null
                 error = null
                 waitingReason = null
             }
@@ -207,6 +221,7 @@ class DownloadQueue(
                 state = DownloadState.FAILED
                 this.error = error.message ?: error.javaClass.simpleName
                 waitingReason = null
+                progressPercent = null
             }
         }
         persistPending()

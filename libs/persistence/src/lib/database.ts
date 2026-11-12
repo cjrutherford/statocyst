@@ -3,8 +3,10 @@ import { copyFile, mkdir, rename, rm, stat as fileStat } from 'node:fs/promises'
 import { dirname } from 'node:path';
 import { createClient, type Client, type InStatement, type Row } from '@libsql/client';
 import type {
+  MediaForm,
   MediaKind,
   PlaybackContext,
+  PodcastEnclosure,
   PodcastFeedPatch,
   RepeatMode,
   Track,
@@ -41,6 +43,7 @@ export interface StoredTrack extends Track {
   sourceKind: 'local' | 'demo' | 'jellyfin' | 'podcast';
   jellyfinImageTag: string | null;
   mediaKind: MediaKind;
+  mediaForm: MediaForm;
 }
 
 export interface TrackUpsert {
@@ -71,6 +74,8 @@ export interface TrackUpsert {
   jellyfinImageTag?: string | null;
   /** Music by default; podcast episodes set this explicitly. */
   mediaKind?: MediaKind;
+  /** Primary presentation; audio by default. */
+  mediaForm?: MediaForm;
 }
 
 export interface TrackUpsertResult {
@@ -155,6 +160,7 @@ export interface StoredPodcastFeed {
   skipOutroSeconds: number;
   autoQueue: boolean;
   episodeSort: 'newest' | 'oldest';
+  defaultMediaForm: MediaForm;
   subscribed: boolean;
   lastViewedAt: string | null;
   createdAt: string;
@@ -191,6 +197,7 @@ export interface PodcastFeedUpsert {
   skipOutroSeconds?: number;
   autoQueue?: boolean;
   episodeSort?: 'newest' | 'oldest';
+  defaultMediaForm?: MediaForm;
   subscribed?: boolean;
 }
 
@@ -211,6 +218,11 @@ export interface StoredPodcastEpisode extends StoredTrack {
   enclosureUrl: string;
   enclosureType: string | null;
   enclosureLengthBytes: number | null;
+  mediaForm: MediaForm;
+  alternates: PodcastEnclosure[];
+  posterUrl: string | null;
+  videoWidth: number | null;
+  videoHeight: number | null;
   chaptersUrl: string | null;
   transcriptUrl: string | null;
   transcriptType: string | null;
@@ -241,6 +253,11 @@ export interface PodcastEpisodeUpsert {
   enclosureUrl: string;
   enclosureType?: string | null;
   enclosureLengthBytes?: number | null;
+  mediaForm?: MediaForm;
+  alternates?: PodcastEnclosure[];
+  posterUrl?: string | null;
+  videoWidth?: number | null;
+  videoHeight?: number | null;
   durationMs?: number;
   publishedAt?: string | null;
   seasonNo?: number | null;
@@ -413,6 +430,7 @@ function toTrack(row: Row): StoredTrack {
     sourceKind: text(row, 'source_kind') as StoredTrack['sourceKind'],
     jellyfinImageTag,
     mediaKind: (nullableText(row, 'media_kind') as MediaKind | null) ?? 'music',
+    mediaForm: (nullableText(row, 'media_form') as MediaForm | null) ?? 'audio',
   };
 }
 
@@ -430,6 +448,44 @@ function parseStringArray(value: string | null): string[] {
     return Array.isArray(parsed)
       ? parsed.filter((entry): entry is string => typeof entry === 'string')
       : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseEnclosures(value: string | null): PodcastEnclosure[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((entry): PodcastEnclosure[] => {
+      if (!entry || typeof entry !== 'object') return [];
+      const candidate = entry as Partial<PodcastEnclosure>;
+      if (
+        typeof candidate.url !== 'string' ||
+        !/^https?:\/\//i.test(candidate.url) ||
+        (candidate.form !== 'audio' && candidate.form !== 'video')
+      ) {
+        return [];
+      }
+      return [{
+        url: candidate.url,
+        type: typeof candidate.type === 'string' ? candidate.type : null,
+        form: candidate.form,
+        lengthBytes:
+          typeof candidate.lengthBytes === 'number' && candidate.lengthBytes >= 0
+            ? candidate.lengthBytes
+            : null,
+        width:
+          typeof candidate.width === 'number' && candidate.width > 0 ? candidate.width : null,
+        height:
+          typeof candidate.height === 'number' && candidate.height > 0 ? candidate.height : null,
+        bitrate:
+          typeof candidate.bitrate === 'number' && candidate.bitrate > 0
+            ? candidate.bitrate
+            : null,
+      }];
+    }).slice(0, 8);
   } catch {
     return [];
   }
@@ -542,6 +598,7 @@ function toPodcastFeed(row: Row): StoredPodcastFeed {
     skipOutroSeconds: integer(row, 'skip_outro_seconds'),
     autoQueue: bool(row, 'auto_queue'),
     episodeSort: text(row, 'episode_sort') as 'newest' | 'oldest',
+    defaultMediaForm: (nullableText(row, 'default_media_form') as MediaForm | null) ?? 'audio',
     subscribed: bool(row, 'subscribed'),
     lastViewedAt: nullableText(row, 'last_viewed_at'),
     createdAt: text(row, 'created_at'),
@@ -562,6 +619,11 @@ const PODCAST_EPISODE_SELECT = `
     pe.enclosure_url,
     pe.enclosure_type,
     pe.enclosure_length_bytes,
+    pe.media_form,
+    pe.alternates_json,
+    pe.poster_url,
+    pe.video_width,
+    pe.video_height,
     pe.published_at,
     pe.season_no,
     pe.episode_no,
@@ -607,6 +669,11 @@ function toPodcastEpisode(row: Row): StoredPodcastEpisode {
     enclosureUrl: text(row, 'enclosure_url'),
     enclosureType: nullableText(row, 'enclosure_type'),
     enclosureLengthBytes: nullableInteger(row, 'enclosure_length_bytes'),
+    mediaForm: (nullableText(row, 'media_form') as MediaForm | null) ?? 'audio',
+    alternates: parseEnclosures(nullableText(row, 'alternates_json')),
+    posterUrl: nullableText(row, 'poster_url'),
+    videoWidth: nullableInteger(row, 'video_width'),
+    videoHeight: nullableInteger(row, 'video_height'),
     chaptersUrl: nullableText(row, 'chapters_url'),
     transcriptUrl: nullableText(row, 'transcript_url'),
     transcriptType: nullableText(row, 'transcript_type'),
@@ -897,6 +964,7 @@ export class StatocystDatabase {
     ).rows[0];
     const now = new Date().toISOString();
     const mediaKind = input.mediaKind ?? 'music';
+    const mediaForm = input.mediaForm ?? 'audio';
     if (existing) {
       const id = text(existing, 'id');
       await executor.execute({
@@ -905,7 +973,7 @@ export class StatocystDatabase {
           title = ?, artist = ?, album = ?, album_artist = ?, track_no = ?, disc_no = ?,
           year = ?, genre = ?, duration_ms = ?, bitrate = ?, sample_rate = ?, channels = ?,
           codec = ?, format = ?, artwork_path = ?, jellyfin_image_tag = ?, media_kind = ?,
-          updated_at = ?, missing = 0
+          media_form = ?, updated_at = ?, missing = 0
           WHERE id = ?`,
         args: [
           input.sourceId,
@@ -931,6 +999,7 @@ export class StatocystDatabase {
           input.artworkPath ?? null,
           input.jellyfinImageTag ?? null,
           mediaKind,
+          mediaForm,
           now,
           id,
         ],
@@ -944,8 +1013,8 @@ export class StatocystDatabase {
         id, source_id, path, path_key, file_name, ext, size_bytes, mtime_ms,
         title, artist, album, album_artist, track_no, disc_no, year, genre,
         duration_ms, bitrate, sample_rate, channels, codec, format, artwork_path,
-        jellyfin_image_tag, media_kind, added_at, updated_at, missing
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        jellyfin_image_tag, media_kind, media_form, added_at, updated_at, missing
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       args: [
         id,
         input.sourceId,
@@ -972,6 +1041,7 @@ export class StatocystDatabase {
         input.artworkPath ?? null,
         input.jellyfinImageTag ?? null,
         mediaKind,
+        mediaForm,
         now,
         now,
       ],
@@ -1329,7 +1399,7 @@ export class StatocystDatabase {
           last_fetched_at = ?, last_success_at = ?, next_fetch_at = ?, fetch_error = ?,
           failure_count = ?, refresh_interval_minutes = ?, default_speed = ?,
           skip_intro_seconds = ?, skip_outro_seconds = ?, auto_queue = ?, episode_sort = ?,
-          subscribed = ?, updated_at = ?
+          default_media_form = ?, subscribed = ?, updated_at = ?
           WHERE id = ?`,
         args: [
           input.resolvedUrl ?? nullableText(existing, 'resolved_url'),
@@ -1357,6 +1427,7 @@ export class StatocystDatabase {
           input.skipOutroSeconds ?? integer(existing, 'skip_outro_seconds'),
           (input.autoQueue ?? bool(existing, 'auto_queue')) ? 1 : 0,
           input.episodeSort ?? text(existing, 'episode_sort'),
+          input.defaultMediaForm ?? nullableText(existing, 'default_media_form') ?? 'audio',
           (input.subscribed ?? bool(existing, 'subscribed')) ? 1 : 0,
           now,
           id,
@@ -1375,8 +1446,8 @@ export class StatocystDatabase {
         podcast_index_id, etag, last_modified, last_fetched_at, last_success_at,
         next_fetch_at, fetch_error, failure_count, refresh_interval_minutes,
         default_speed, skip_intro_seconds, skip_outro_seconds, auto_queue,
-        episode_sort, subscribed, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        episode_sort, default_media_form, subscribed, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         input.feedUrl,
@@ -1405,6 +1476,7 @@ export class StatocystDatabase {
         input.skipOutroSeconds ?? 0,
         input.autoQueue === false ? 0 : 1,
         input.episodeSort ?? 'newest',
+        input.defaultMediaForm ?? 'audio',
         input.subscribed === false ? 0 : 1,
         now,
         now,
@@ -1436,6 +1508,7 @@ export class StatocystDatabase {
     if (patch.skipOutroSeconds !== undefined) {
       add('skip_outro_seconds', Math.round(patch.skipOutroSeconds));
     }
+    if (patch.defaultMediaForm !== undefined) add('default_media_form', patch.defaultMediaForm);
     if (patch.autoQueue !== undefined) add('auto_queue', patch.autoQueue ? 1 : 0);
     if (patch.episodeSort !== undefined) add('episode_sort', patch.episodeSort);
     if (patch.subscribed !== undefined) add('subscribed', patch.subscribed ? 1 : 0);
@@ -1517,15 +1590,17 @@ export class StatocystDatabase {
           artworkPath: episode.artworkPath ?? feed.artworkPath,
           jellyfinImageTag: null,
           mediaKind: 'podcast',
+          mediaForm: episode.mediaForm ?? 'audio',
         });
         const episodeId = episode.id ?? this.idFactory();
         await transaction.execute({
           sql: `INSERT INTO podcast_episode (
             id, feed_id, media_item_id, guid, title, description_text, links_json, link,
-            enclosure_url, enclosure_type, enclosure_length_bytes, duration_ms, published_at,
+            enclosure_url, enclosure_type, enclosure_length_bytes, media_form, alternates_json,
+            poster_url, video_width, video_height, duration_ms, published_at,
             season_no, episode_no, episode_type, image_url, artwork_path, explicit,
             chapters_url, transcript_url, transcript_type, first_seen_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(feed_id, guid) DO UPDATE SET
             media_item_id = excluded.media_item_id,
             title = excluded.title,
@@ -1535,6 +1610,11 @@ export class StatocystDatabase {
             enclosure_url = excluded.enclosure_url,
             enclosure_type = excluded.enclosure_type,
             enclosure_length_bytes = excluded.enclosure_length_bytes,
+            media_form = excluded.media_form,
+            alternates_json = excluded.alternates_json,
+            poster_url = excluded.poster_url,
+            video_width = excluded.video_width,
+            video_height = excluded.video_height,
             duration_ms = excluded.duration_ms,
             published_at = excluded.published_at,
             season_no = excluded.season_no,
@@ -1559,6 +1639,11 @@ export class StatocystDatabase {
             episode.enclosureUrl,
             episode.enclosureType ?? null,
             episode.enclosureLengthBytes ?? null,
+            episode.mediaForm ?? 'audio',
+            JSON.stringify((episode.alternates ?? []).slice(0, 8)),
+            episode.posterUrl ?? null,
+            episode.videoWidth ?? null,
+            episode.videoHeight ?? null,
             durationMs,
             episode.publishedAt ?? null,
             episode.seasonNo ?? null,

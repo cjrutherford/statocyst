@@ -107,6 +107,21 @@ export class LibraryStore {
     }
   }
 
+  async reanalyzeArtwork(): Promise<void> {
+    try {
+      const result = await bridge().library.reanalyzeArtwork();
+      await this.refresh();
+      this.toasts.success(
+        'Artwork refreshed',
+        result.cleared > 0
+          ? `Cleared ${result.cleared} cached image${result.cleared === 1 ? '' : 's'}`
+          : 'Covers will reload from the enabled sources',
+      );
+    } catch (error) {
+      this.toasts.error('Could not reanalyze artwork', String(error));
+    }
+  }
+
   async pickFiles(): Promise<void> {
     await this.runImport(() => bridge().library.pickFiles());
   }

@@ -2,6 +2,7 @@ package net.christopherrutherford.statocyst;
 
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
@@ -14,6 +15,7 @@ import androidx.core.content.ContextCompat;
 import com.getcapacitor.BridgeActivity;
 
 import net.christopherrutherford.statocyst.media.LocalMediaServer;
+import net.christopherrutherford.statocyst.media.VideoPresentation;
 import net.christopherrutherford.statocyst.plugin.StatocystPlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -46,5 +48,29 @@ public class MainActivity extends BridgeActivity {
         // WebView background avoids a white flash between frames.
         wv.setOverScrollMode(View.OVER_SCROLL_NEVER);
         wv.setBackgroundColor(0xFF050A18);
+    }
+
+    /**
+     * Leaving the app during video playback shrinks into native PiP on the same
+     * Media3 player. Audio-only/music never enters PiP.
+     */
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (VideoPresentation.shouldEnterPip(this)) {
+            VideoPresentation.enterPip(this);
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        VideoPresentation.onPipModeChanged(this, isInPictureInPictureMode);
+    }
+
+    @Override
+    public void onDestroy() {
+        VideoPresentation.onHostDestroyed(this);
+        super.onDestroy();
     }
 }

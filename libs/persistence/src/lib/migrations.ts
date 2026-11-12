@@ -264,6 +264,23 @@ export const MIGRATIONS: readonly Migration[] = [
       )`,
     ],
   },
+  {
+    version: 7,
+    name: 'video_podcasts',
+    statements: [
+      `ALTER TABLE media_item ADD COLUMN media_form TEXT NOT NULL DEFAULT 'audio'
+        CHECK (media_form IN ('audio', 'video'))`,
+      `ALTER TABLE podcast_feed ADD COLUMN default_media_form TEXT NOT NULL DEFAULT 'audio'
+        CHECK (default_media_form IN ('audio', 'video'))`,
+      `ALTER TABLE podcast_episode ADD COLUMN media_form TEXT NOT NULL DEFAULT 'audio'
+        CHECK (media_form IN ('audio', 'video'))`,
+      `ALTER TABLE podcast_episode ADD COLUMN alternates_json TEXT`,
+      `ALTER TABLE podcast_episode ADD COLUMN poster_url TEXT`,
+      `ALTER TABLE podcast_episode ADD COLUMN video_width INTEGER`,
+      `ALTER TABLE podcast_episode ADD COLUMN video_height INTEGER`,
+      `CREATE INDEX idx_podcast_episode_form ON podcast_episode(media_form)`,
+    ],
+  },
 ];
 
 /** Fields that must never be persisted in the catalog. Used by the security test. */

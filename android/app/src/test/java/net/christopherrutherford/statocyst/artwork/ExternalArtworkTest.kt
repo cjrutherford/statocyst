@@ -31,7 +31,7 @@ class ExternalArtworkTest {
         val p = r.path
         return when {
             mbStatus != 200 && p.startsWith("/mb/") -> Response(mbStatus)
-            p == "/mb/release-group/" -> json("""{"release-groups":[{"id":"rg1","score":$releaseGroupScore}]}""")
+            p == "/mb/release-group/" -> json("""{"release-groups":[{"id":"rg1","score":$releaseGroupScore,"title":"High Tide","artist-credit":[{"name":"Driftwood"}]}]}""")
             p == "/mb/artist/" -> json("""{"artists":[{"id":"ar1","name":"$artistName","score":100}]}""")
             p == "/mb/artist/ar1" -> json(
                 """{"relations":[{"type":"official homepage","url":{"resource":"https://x.example"}},""" +
@@ -85,6 +85,11 @@ class ExternalArtworkTest {
 
         assertEquals(file, art().cover("  driftwood ", "HIGH   tide"))
         assertEquals("cache hit makes no requests", sent, server.requests.size)
+    }
+
+    @Test
+    fun aDifferentAlbumByTheSameArtistIsNotUsedAsTheCover() {
+        assertNull(art().cover("Driftwood", "Low Tide"))
     }
 
     @Test

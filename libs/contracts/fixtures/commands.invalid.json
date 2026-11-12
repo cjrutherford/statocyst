@@ -40,5 +40,9 @@
   {
     "type": "setRate",
     "rate": 5
+  },
+  {
+    "type": "setPresentation",
+    "mode": "theater"
   }
 ]

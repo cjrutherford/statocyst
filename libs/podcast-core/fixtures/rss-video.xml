@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:media="http://search.yahoo.com/mrss/"
+     xmlns:podcast="https://podcastindex.org/namespace/1.0">
+  <channel>
+    <title>Deep Video Radio</title>
+    <link>https://example.com/deep-video</link>
+    <description>Video and audio from the bathypelagic zone.</description>
+    <itunes:author>Statocyst Studio</itunes:author>
+    <itunes:image href="https://example.com/deep-video.jpg" />
+    <itunes:explicit>no</itunes:explicit>
+    <item>
+      <title>Both Forms</title>
+      <guid isPermaLink="false">both</guid>
+      <pubDate>Sat, 03 Oct 2026 08:00:00 GMT</pubDate>
+      <description>Audio primary with a video alternate.</description>
+      <enclosure url="https://cdn.example.com/both.mp3" length="48230000" type="audio/mpeg" />
+      <media:content url="https://cdn.example.com/both.mp4" type="video/mp4"
+                     width="1920" height="1080" bitrate="1500000" />
+      <media:thumbnail url="https://example.com/thumbs/both.jpg" width="1280" height="720" />
+      <itunes:duration>45:30</itunes:duration>
+    </item>
+    <item>
+      <title>Video Only</title>
+      <guid>video-only</guid>
+      <pubDate>Sun, 04 Oct 2026 08:00:00 GMT</pubDate>
+      <media:content url="https://cdn.example.com/only.mp4" medium="video"
+                     width="640" height="360" fileSize="90000000" bitrate="800000" />
+      <media:thumbnail url="https://example.com/thumbs/only-thumb.jpg" />
+      <itunes:image href="https://example.com/thumbs/only.jpg" />
+      <itunes:duration>12:00</itunes:duration>
+    </item>
+    <item>
+      <title>Multiple Enclosures</title>
+      <guid>multi</guid>
+      <pubDate>Mon, 05 Oct 2026 08:00:00 GMT</pubDate>
+      <media:content url="https://cdn.example.com/m1.mp4" type="application/octet-stream"
+                     medium="video" width="1280" height="720" />
+      <media:content url="/media/m2.m4a" type="audio/mp4" length="1000" />
+      <media:content url="https://cdn.example.com/m3.mp4" type="video/mp4" />
+    </item>
+    <item>
+      <title>Podcast 2.0 Alternate</title>
+      <guid>alternate</guid>
+      <pubDate>Tue, 06 Oct 2026 08:00:00 GMT</pubDate>
+      <podcast:alternateEnclosure type="video/mp4" length="120000000" bitrate="1800000">
+        <podcast:source uri="https://cdn.example.com/alt.mp4" contentType="video/mp4" />
+      </podcast:alternateEnclosure>
+    </item>
+  </channel>
+</rss>

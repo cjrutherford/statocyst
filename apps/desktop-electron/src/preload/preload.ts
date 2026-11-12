@@ -5,6 +5,7 @@ import {
   type AppInfo,
   type CacheStats,
   type DiagnosticsInfo,
+  type DownloadProfile,
   type DownloadProgress,
   type DownloadStats,
   type DownloadSummary,
@@ -22,6 +23,7 @@ import {
   type LibraryStats,
   type PlaybackCommand,
   type PlaybackEvent,
+  type PodcastDownloadVariant,
   type PlaybackSnapshot,
   type QueueSnapshot,
   type SupportBundleResult,
@@ -74,6 +76,8 @@ const bridge: StatocystBridge = {
     importDemoLibrary: () =>
       ipcRenderer.invoke(CHANNELS.libraryImportDemo) as Promise<ImportSummary>,
     listTracks: () => ipcRenderer.invoke(CHANNELS.libraryList) as Promise<Track[]>,
+    // Desktop artwork is embedded in the files; Android/iOS clear their engine caches.
+    reanalyzeArtwork: async () => ({ cleared: 0, generation: 0 }),
     stats: () => ipcRenderer.invoke(CHANNELS.libraryStats) as Promise<LibraryStats>,
     removeTrack: (trackId: string) =>
       ipcRenderer.invoke(CHANNELS.libraryRemove, trackId) as Promise<
@@ -203,8 +207,10 @@ const bridge: StatocystBridge = {
       subscribe<PodcastChangeEvent>(CHANNELS.podcastChanged, listener),
   },
   downloads: {
-    download: (trackId: string) =>
-      ipcRenderer.invoke(CHANNELS.downloadAdd, trackId) as Promise<Result<DownloadSummary>>,
+    download: (trackId: string, _profile?: DownloadProfile, variant?: PodcastDownloadVariant) =>
+      ipcRenderer.invoke(CHANNELS.downloadAdd, trackId, variant) as Promise<
+        Result<DownloadSummary>
+      >,
     remove: (trackId: string) =>
       ipcRenderer.invoke(CHANNELS.downloadRemove, trackId) as Promise<Result<{ removed: boolean }>>,
     list: () => ipcRenderer.invoke(CHANNELS.downloadList) as Promise<DownloadView[]>,

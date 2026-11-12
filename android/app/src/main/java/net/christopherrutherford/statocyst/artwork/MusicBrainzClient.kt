@@ -66,9 +66,25 @@ class MusicBrainzClient(
         val groups = json.optJSONArray("release-groups") ?: return null
         for (i in 0 until groups.length()) {
             val g = groups.getJSONObject(i)
-            if (g.optInt("score", 0) >= MIN_ALBUM_SCORE) return g.optString("id").takeIf { it.isNotEmpty() }
+            if (g.optInt("score", 0) < MIN_ALBUM_SCORE) continue
+            // The search already scopes by artist; require the album title too so a
+            // different release by the same artist cannot supply the cover.
+            if (!sameTitle(g.optString("title"), album)) continue
+            val credit = g.optJSONArray("artist-credit")?.optJSONObject(0)?.optString("name").orEmpty()
+            if (credit.isNotEmpty() && !sameTitle(credit, artist)) continue
+            return g.optString("id").takeIf { it.isNotEmpty() }
         }
         return null
+    }
+
+    private fun normalize(value: String): String =
+        value.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+    private fun sameTitle(candidate: String, query: String): Boolean {
+        val a = normalize(candidate)
+        val b = normalize(query)
+        if (a.isEmpty() || b.isEmpty()) return false
+        return a == b || a.startsWith("$b ") || b.startsWith("$a ")
     }
 
     /** MusicBrainz artist id when a result matches [name] exactly (ignoring case) with a high score. */

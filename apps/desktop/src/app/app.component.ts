@@ -20,12 +20,14 @@ import { PlaylistsStore } from './core/playlists.store';
 import { JellyfinStore } from './core/jellyfin.store';
 import { NavigationStore, type View } from './core/navigation.store';
 import { PlaybackStore } from './core/playback.store';
+import { PodcastPlaybackStore } from './core/podcast-playback.store';
 import { PodcastsStore } from './core/podcasts.store';
 import { ScreenTransitionService } from './core/screen-transition.service';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
 import { LibraryViewComponent } from './views/library-view.component';
 import { NowPlayingViewComponent } from './views/now-playing.component';
+import { PodcastNowPlayingComponent } from './views/podcast-now-playing.component';
 import { OfflineViewComponent } from './views/offline-view.component';
 import { PlaylistsViewComponent } from './views/playlists-view.component';
 import { PodcastsViewComponent } from './views/podcasts-view.component';
@@ -51,6 +53,7 @@ interface NavItem {
     NowPlayingViewComponent,
     OfflineViewComponent,
     PlaylistsViewComponent,
+    PodcastNowPlayingComponent,
     PodcastsViewComponent,
     QueueViewComponent,
     SettingsViewComponent,
@@ -148,7 +151,11 @@ interface NavItem {
                 <sc-podcasts-view />
               }
               @case ('now') {
-                <sc-now-playing (openQueue)="navigate('queue')" />
+                @if (podcastNow()) {
+                  <sc-podcast-now-playing (openPodcasts)="navigate('podcasts')" />
+                } @else {
+                  <sc-now-playing (openQueue)="navigate('queue')" />
+                }
               }
               @case ('queue') {
                 <sc-queue-view (openLibrary)="navigate('library')" />
@@ -665,6 +672,14 @@ export class AppComponent {
   protected readonly toasts = inject(ToastStore);
   protected readonly navigation = inject(NavigationStore);
   protected readonly podcastStore = inject(PodcastsStore);
+  protected readonly podcastPlayback = inject(PodcastPlaybackStore);
+  protected readonly podcastNow = computed(() => {
+    // The active track is authoritative; the podcast store's active flag can
+    // lag after switching back to music.
+    const track = this.playback.track();
+    if (track) return track.mediaKind === 'podcast' || track.sourceKind === 'podcast';
+    return this.podcastPlayback.active();
+  });
   private readonly transitions = inject(ScreenTransitionService);
   protected readonly bridgeAvailable = bridgeAvailable;
   private readonly audio = inject(AudioEngineService);
@@ -672,7 +687,12 @@ export class AppComponent {
   readonly ready = signal(false);
   readonly info = signal<AppInfo | null>(null);
   /** Best-effort WebView connectivity, used only for the shell banner. */
-  readonly online = signal(typeof navigator === 'undefined' ? true : navigator.onLine);
+  // Android's WebView can report navigator.onLine=false behind a VPN or after a
+  // transient network event. Start optimistic and let the native check correct it,
+  // so a false banner never flashes before the first probe.
+  readonly online = signal(
+    typeof navigator === 'undefined' || isNativePlatform() ? true : navigator.onLine,
+  );
   protected readonly offlineCount = computed(() =>
     this.library.tracks().filter((track) => track.sourceId === 'local' || this.downloads.isDownloaded()(track.id)).length,
   );
@@ -694,8 +714,33 @@ export class AppComponent {
   }
 
   private setupConnectivity(): void {
-    window.addEventListener('online', () => this.online.set(true));
-    window.addEventListener('offline', () => this.online.set(false));
+    // The WebView's navigator.onLine can stay false behind a VPN or after a
+    // transient network event. The native ConnectivityManager is authoritative.
+    const refresh = async (): Promise<void> => {
+      if (!isNativePlatform()) return;
+      try {
+        const plugin = (window as unknown as {
+          Capacitor?: { Plugins?: Record<string, { networkOnline?: () => Promise<{ online?: boolean }> }> };
+        }).Capacitor?.Plugins?.['Statocyst'];
+        const result = await plugin?.networkOnline?.();
+        if (typeof result?.online === 'boolean') this.online.set(result.online);
+      } catch {
+        // Keep the browser's view when the native check is unavailable.
+      }
+    };
+    window.addEventListener('online', () => {
+      this.online.set(true);
+      void refresh();
+    });
+    window.addEventListener('offline', () => {
+      if (isNativePlatform()) void refresh();
+      else this.online.set(false);
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void refresh();
+    });
+    void refresh();
+    window.setInterval(() => void refresh(), 30_000);
   }
 
   /**

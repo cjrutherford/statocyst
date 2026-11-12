@@ -36,6 +36,8 @@ struct MediaItemEntity: Equatable {
     var albumId: String? = nil
     var serverId: String = ""
     var mediaKind: String = "music"
+    /// Primary presentation declared by the feed. `audio` for music and older rows.
+    var mediaForm: String = "audio"
 }
 
 struct DownloadEntity: Equatable {
@@ -89,6 +91,8 @@ struct PodcastFeedEntity: Equatable {
     var lastViewedAt: String?
     var createdAt: String
     var updatedAt: String
+    /// Feed-level preference when an episode publishes both forms; absent means audio.
+    var defaultMediaForm: String = "audio"
 }
 
 struct PodcastEpisodeEntity: Equatable {
@@ -123,6 +127,13 @@ struct PodcastEpisodeEntity: Equatable {
     var firstSeenAt: String
     var createdAt: String
     var updatedAt: String
+    /// Primary presentation declared by the feed. `audio` for older rows.
+    var mediaForm: String = "audio"
+    /// Bounded, sanitized JSON array of the other usable enclosures (max 8).
+    var alternatesJson: String?
+    var posterUrl: String?
+    var videoWidth: Int?
+    var videoHeight: Int?
 }
 
 struct PodcastQueueEntryEntity: Equatable {
@@ -168,11 +179,13 @@ struct PlaylistTrackEntity: Equatable {
 }
 
 /**
- * Thread-safe SQLite database matching Android's Room schema v7.
- * Uses the system SQLite3 C library so zero external dependencies are required.
+ * Thread-safe SQLite database for the iOS host.
+ * Schema 7 is additive parity with the Android Room v8 / desktop migration 7
+ * video-podcast columns. Uses the system SQLite3 C library so zero external
+ * dependencies are required.
  */
 final class StatocystDatabase {
-    static let SCHEMA_VERSION = 6
+    static let SCHEMA_VERSION = 7
     static let shared = StatocystDatabase()
 
     let databaseURL: URL
@@ -246,7 +259,8 @@ final class StatocystDatabase {
                 missing INTEGER NOT NULL DEFAULT 0,
                 albumId TEXT,
                 serverId TEXT NOT NULL DEFAULT '',
-                mediaKind TEXT NOT NULL DEFAULT 'music'
+                mediaKind TEXT NOT NULL DEFAULT 'music',
+                mediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (mediaForm IN ('audio', 'video'))
             );
         """)
         execRaw("""
@@ -330,7 +344,8 @@ final class StatocystDatabase {
                 subscribed INTEGER NOT NULL,
                 lastViewedAt TEXT,
                 createdAt TEXT NOT NULL,
-                updatedAt TEXT NOT NULL
+                updatedAt TEXT NOT NULL,
+                defaultMediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (defaultMediaForm IN ('audio', 'video'))
             );
         """)
         execRaw("CREATE UNIQUE INDEX IF NOT EXISTS index_podcast_feed_feedUrl ON podcast_feed(feedUrl);")
@@ -367,7 +382,12 @@ final class StatocystDatabase {
                 lastPlayedAt TEXT,
                 firstSeenAt TEXT NOT NULL,
                 createdAt TEXT NOT NULL,
-                updatedAt TEXT NOT NULL
+                updatedAt TEXT NOT NULL,
+                mediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (mediaForm IN ('audio', 'video')),
+                alternatesJson TEXT,
+                posterUrl TEXT,
+                videoWidth INTEGER,
+                videoHeight INTEGER
             );
         """)
         execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_feedId ON podcast_episode(feedId);")
@@ -406,6 +426,31 @@ final class StatocystDatabase {
         if !tableHasColumn("media_item", "mediaKind") {
             execRaw("ALTER TABLE media_item ADD COLUMN mediaKind TEXT NOT NULL DEFAULT 'music';")
         }
+        // Schema 6 -> 7 (MVP-6 video podcasts). Additive only: existing music and
+        // podcast rows read as 'audio'. Every statement is guarded so a fresh
+        // database (whose CREATE TABLE already carries the columns) is untouched.
+        if !tableHasColumn("media_item", "mediaForm") {
+            execRaw("ALTER TABLE media_item ADD COLUMN mediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (mediaForm IN ('audio', 'video'));")
+        }
+        if !tableHasColumn("podcast_feed", "defaultMediaForm") {
+            execRaw("ALTER TABLE podcast_feed ADD COLUMN defaultMediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (defaultMediaForm IN ('audio', 'video'));")
+        }
+        if !tableHasColumn("podcast_episode", "mediaForm") {
+            execRaw("ALTER TABLE podcast_episode ADD COLUMN mediaForm TEXT NOT NULL DEFAULT 'audio' CHECK (mediaForm IN ('audio', 'video'));")
+        }
+        if !tableHasColumn("podcast_episode", "alternatesJson") {
+            execRaw("ALTER TABLE podcast_episode ADD COLUMN alternatesJson TEXT;")
+        }
+        if !tableHasColumn("podcast_episode", "posterUrl") {
+            execRaw("ALTER TABLE podcast_episode ADD COLUMN posterUrl TEXT;")
+        }
+        if !tableHasColumn("podcast_episode", "videoWidth") {
+            execRaw("ALTER TABLE podcast_episode ADD COLUMN videoWidth INTEGER;")
+        }
+        if !tableHasColumn("podcast_episode", "videoHeight") {
+            execRaw("ALTER TABLE podcast_episode ADD COLUMN videoHeight INTEGER;")
+        }
+        execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_mediaForm ON podcast_episode(mediaForm);")
         execRaw("PRAGMA user_version = \(Self.SCHEMA_VERSION);")
     }
 
@@ -548,13 +593,13 @@ final class StatocystDatabase {
                     title, artist, album, albumArtist, trackNo, discNo, year, genre,
                     durationMs, bitrate, sampleRate, channels, codec, format,
                     artworkPath, jellyfinImageTag, sourceKind, sourceLabel,
-                    addedAt, updatedAt, missing, albumId, serverId, mediaKind
+                    addedAt, updatedAt, missing, albumId, serverId, mediaKind, mediaForm
                 ) VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?
                 );
             """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
@@ -590,6 +635,7 @@ final class StatocystDatabase {
             bindOptionalText(stmt, 30, item.albumId)
             bindText(stmt, 31, item.serverId)
             bindText(stmt, 32, item.mediaKind)
+            bindText(stmt, 33, Self.normalizedMediaForm(item.mediaForm))
             _ = sqlite3_step(stmt)
         }
     }
@@ -1017,6 +1063,12 @@ final class StatocystDatabase {
 
     // MARK: - SQLite Row Readers & Binders
 
+    /// Clamps persisted/feed-provided forms to the contract vocabulary. Anything
+    /// unknown (including older NULL rows) reads as audio, matching migration 7.
+    static func normalizedMediaForm(_ value: String?) -> String {
+        return value?.lowercased() == "video" ? "video" : "audio"
+    }
+
     private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) {
         sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT)
     }
@@ -1088,7 +1140,8 @@ final class StatocystDatabase {
             missing: sqlite3_column_int(stmt, 28) != 0,
             albumId: colOptionalString(stmt, 29),
             serverId: colString(stmt, 30),
-            mediaKind: colString(stmt, 31)
+            mediaKind: colString(stmt, 31),
+            mediaForm: Self.normalizedMediaForm(colOptionalString(stmt, 32))
         )
     }
 

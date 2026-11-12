@@ -1,0 +1,24 @@
+# Evidence report: S061
+
+- **Status:** IN_PROGRESS / BLOCKED (runtime and iOS gates)
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; no attached Android device; no Apple toolchain; desktop E2E video scenario not yet authored
+- **Files changed:** verification is in progress; no new evidence artifacts beyond S054–S060 reports.
+- **Acceptance criteria and actual observations:**
+  - Shared contracts/parser/persistence tests pass.
+  - Desktop build, desktop-host build, Android APK/unit tests and Android migration test compilation pass.
+  - Desktop compression test passes with ffmpeg.
+  - Android emulator API 36 verified PiP (`mode=pinned`) and 15–20 s screen-off audio with the media session still PLAYING; evidence in `S057-report.md` and `S057-android-runtime.txt`.
+  - iOS remains statically checked only.
+- **Commands run with exit codes:**
+  - `NX_DAEMON=false corepack pnpm exec nx run-many -t typecheck -p contracts playback-core persistence media-library desktop desktop-electron --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run-many -t test -p contracts playback-core persistence media-library desktop-electron --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop:build --skip-nx-cache` → 0
+  - `NX_DAEMON=false corepack pnpm exec nx run desktop-electron:build --skip-nx-cache` → 0
+  - Android `:app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug` → 0
+- **Tests not run (why):** Video RSS desktop E2E, physical Android device matrix, iOS build/simulator, CarPlay audio, real performance measurements and legal/UX review are pending. These are BLOCKED/IN_PROGRESS, not passing. The Android emulator PiP/screen-off check is the exception now recorded in S057.
+- **Artifacts:** S054–S060 reports; Nx and Gradle logs.
+- **Safety/security considerations:** No extraction dependency; the packaging audit still needs to be run against a packaged artifact.
+- **Known limitations and deferred follow-up:** Do not mark MVP-6 VERIFIED until the release gate in `roadmap/VIDEO_PODCASTS.md` §9 is evidenced.
+- **Milestone gate affected:** MVP-6 release gate.
+- **Reviewer and date:** Agent, 2026-11-11.

@@ -1,5 +1,6 @@
 package net.christopherrutherford.statocyst.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -48,6 +49,8 @@ data class PodcastFeedEntity(
     val lastViewedAt: String?,
     val createdAt: String,
     val updatedAt: String,
+    /** Preferred primary form when an episode publishes both; audio by default. */
+    @ColumnInfo(defaultValue = "audio") val defaultMediaForm: String = "audio",
 )
 
 /** Episode metadata linked 1:1 to a `media_item` row with mediaKind = podcast. */
@@ -58,6 +61,7 @@ data class PodcastFeedEntity(
         Index(value = ["mediaItemId"], unique = true),
         Index(value = ["feedId", "publishedAt"]),
         Index("lastPlayedAt"),
+        Index("mediaForm"),
     ],
 )
 data class PodcastEpisodeEntity(
@@ -92,6 +96,14 @@ data class PodcastEpisodeEntity(
     val firstSeenAt: String,
     val createdAt: String,
     val updatedAt: String,
+    /** Primary presentation; `audio` for every pre-v8 row. */
+    @ColumnInfo(defaultValue = "audio") val mediaForm: String = "audio",
+    /** Bounded array (max 8) of the non-primary, validated HTTP(S) enclosures. */
+    val alternatesJson: String? = null,
+    /** Cached/validated poster for the video stage; artwork fallback still applies. */
+    val posterUrl: String? = null,
+    val videoWidth: Int? = null,
+    val videoHeight: Int? = null,
 )
 
 @Entity(tableName = "podcast_queue_entry", indices = [Index("position")])

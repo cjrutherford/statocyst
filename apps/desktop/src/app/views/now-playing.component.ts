@@ -917,7 +917,7 @@ export class NowPlayingViewComponent {
   protected readonly stateLabel = computed(() => {
     const state = this.playback.snapshot().state;
     if (state === 'buffering') return 'Buffering';
-    if (state === 'waiting-network') return 'Offline — will resume';
+    if (state === 'waiting-network') return 'Reconnecting…';
     if (state === 'error') return 'Audio error';
     if (state === 'ended') return 'Ended';
     if (state === 'paused') return 'Paused';

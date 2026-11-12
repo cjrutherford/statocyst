@@ -515,16 +515,25 @@ export function registerIpc(context: IpcContext): void {
     return ok({ path: result.filePath, bytes: Buffer.byteLength(xml) });
   });
 
-  handle(CHANNELS.downloadAdd, async (trackId: unknown) => {
+  handle(CHANNELS.downloadAdd, async (trackId: unknown, variant: unknown) => {
     if (typeof trackId !== 'string' || trackId.length === 0) {
       return fail('INVALID_ARGUMENT', 'trackId must be a non-empty string');
     }
+    const allowed = ['original', 'audio-only', 'video-480p', 'video-720p'] as const;
+    const selected =
+      typeof variant === 'string' && (allowed as readonly string[]).includes(variant)
+        ? (variant as (typeof allowed)[number])
+        : 'original';
     const window = context.getWindow();
-    return context.downloads.download(trackId, (progress) => {
-      if (window && !window.isDestroyed()) {
-        window.webContents.send(CHANNELS.downloadProgress, progress);
-      }
-    });
+    return context.downloads.download(
+      trackId,
+      (progress) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send(CHANNELS.downloadProgress, progress);
+        }
+      },
+      selected,
+    );
   });
 
   handle(

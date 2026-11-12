@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { BrowserWindow } from 'electron';
+import { powerSaveBlocker, type BrowserWindow } from 'electron';
 import type {
   CommandError,
   EngineCommand,
@@ -10,6 +10,7 @@ import type {
   PlaybackEvent,
   PlaybackSnapshot,
   PlaybackState,
+  Presentation,
   QueueSnapshot,
   Result,
   Track,
@@ -94,6 +95,9 @@ export class PlaybackService {
   };
   private activeContext: PlaybackContext = 'music';
   private podcastSpeed = 1;
+  private presentation: Presentation = 'audio-only';
+  private effectiveForm: 'audio' | 'video' = 'audio';
+  private videoAvailable = false;
   private tracks = new Map<string, StoredTrack>();
   private bufferSeconds = 0;
   private volume = 0.85;
@@ -102,6 +106,7 @@ export class PlaybackService {
   private serial: Promise<unknown> = Promise.resolve();
   private persistTimer: NodeJS.Timeout | null = null;
   private shuttingDown = false;
+  private powerSaveId: number | null = null;
 
   constructor(private readonly options: PlaybackServiceOptions) {}
 
@@ -319,6 +324,14 @@ export class PlaybackService {
       rate: context === 'podcast' ? this.podcastSpeed : 1,
       context,
       active: context === this.activeContext,
+      mediaForm:
+        context === this.activeContext ? this.effectiveForm : (track?.mediaForm ?? 'audio'),
+      presentation:
+        context === this.activeContext &&
+        (track?.mediaForm === 'video' || this.effectiveForm === 'video')
+          ? this.presentation
+          : 'audio-only',
+      videoAvailable: context === this.activeContext ? this.videoAvailable : false,
       track: track ? toTrack(track) : null,
     };
   }
@@ -359,6 +372,9 @@ export class PlaybackService {
       return this.applyCommand(command);
     }
     if (target !== this.activeContext) {
+      if (command.type === 'setPresentation') {
+        return ok(this.getSnapshot(target));
+      }
       if (QUEUE_ONLY_COMMANDS.has(command.type)) {
         return this.applyInactiveQueueCommand(target, command);
       }
@@ -485,6 +501,7 @@ export class PlaybackService {
     }
     await this.persistNow();
     this.sendCommand({ token: this.token, action: 'pause' });
+    this.updatePowerSave();
     await this.serial.catch(() => undefined);
   }
 
@@ -560,6 +577,24 @@ export class PlaybackService {
       this.sendCommand({ token: this.token, action: 'rate', rate: this.podcastSpeed });
       await this.persistNow();
       this.emitState();
+      return ok(this.getSnapshot());
+    }
+
+    if (command.type === 'setPresentation') {
+      const entry = currentEntry(this.queue);
+      const track = entry ? this.tracks.get(entry.trackId) : null;
+      const episode = track
+        ? await this.database.getPodcastEpisodeByMediaItemId(track.id).catch(() => null)
+        : null;
+      const hasVideo =
+        track?.mediaForm === 'video' ||
+        (episode?.alternates.some((alternate) => alternate.form === 'video') ?? false);
+      if (!entry || !hasVideo) {
+        return fail('INVALID_ARGUMENT', 'This episode has no video presentation');
+      }
+      const wasPlaying = this.state === 'playing' || this.state === 'buffering';
+      this.presentation = command.mode;
+      await this.loadEntry(entry.entryId, wasPlaying, this.positionMs, true);
       return ok(this.getSnapshot());
     }
 
@@ -643,7 +678,12 @@ export class PlaybackService {
     return ok(this.getSnapshot());
   }
 
-  private async loadEntry(entryId: string, autoplay: boolean, startPositionMs = 0): Promise<void> {
+  private async loadEntry(
+    entryId: string,
+    autoplay: boolean,
+    startPositionMs = 0,
+    keepPresentation = false,
+  ): Promise<void> {
     const entry = this.queue.entries.find((candidate) => candidate.entryId === entryId);
     if (!entry) {
       this.state = 'error';
@@ -673,17 +713,35 @@ export class PlaybackService {
     this.durationMs = track.durationMs;
     this.positionMs = Math.max(0, Math.min(startPositionMs, track.durationMs || startPositionMs));
     this.state = autoplay ? 'buffering' : 'paused';
+    const episode = await this.database
+      .getPodcastEpisodeByMediaItemId(track.id)
+      .catch(() => null);
+    const hasVideo =
+      track.mediaForm === 'video' ||
+      (episode?.alternates.some((alternate) => alternate.form === 'video') ?? false);
+    this.videoAvailable = hasVideo;
+    if (!keepPresentation) {
+      this.presentation = track.mediaForm === 'video' ? 'video' : 'audio-only';
+    }
+    if (!hasVideo) this.presentation = 'audio-only';
+    const requestedForm = this.presentation === 'video' ? 'video' : 'audio';
+    const alternate = episode?.alternates.find(
+      (candidate) => candidate.form === requestedForm,
+    );
+    this.effectiveForm = alternate?.form ?? track.mediaForm;
     const request: EngineLoadRequest = {
       token: this.token,
       entryId,
       trackId: track.id,
-      url: `statocyst-media://track/${track.id}`,
+      url: `statocyst-media://track/${track.id}?form=${this.effectiveForm}`,
       autoplay,
       startPositionMs: this.positionMs,
       durationMs: this.durationMs,
       volume: this.volume,
       muted: this.muted,
       playbackRate: this.activeContext === 'podcast' ? this.podcastSpeed : 1,
+      mediaForm: this.effectiveForm,
+      posterUrl: episode?.posterUrl ?? track.artworkUrl,
     };
     this.send(CHANNELS.engineLoad, request);
     this.options.logger.info('playback.track.load', {
@@ -792,7 +850,22 @@ export class PlaybackService {
   }
 
   private emitState(context: PlaybackContext = this.activeContext): void {
+    this.updatePowerSave();
     this.emit({ type: 'stateChanged', snapshot: this.getSnapshot(context) });
+  }
+
+  /** Keep the machine awake only while audio is actually playing. */
+  private updatePowerSave(): void {
+    if (!powerSaveBlocker || typeof powerSaveBlocker.start !== 'function') return;
+    const shouldHold = this.state === 'playing' || this.state === 'buffering';
+    if (shouldHold && this.powerSaveId === null) {
+      this.powerSaveId = powerSaveBlocker.start('prevent-app-suspension');
+    } else if (!shouldHold && this.powerSaveId !== null) {
+      if (powerSaveBlocker.isStarted(this.powerSaveId)) {
+        powerSaveBlocker.stop(this.powerSaveId);
+      }
+      this.powerSaveId = null;
+    }
   }
 
   private emitPosition(): void {

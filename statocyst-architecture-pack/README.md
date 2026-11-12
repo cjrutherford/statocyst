@@ -8,8 +8,10 @@ Planning baseline dated 2026-10-26. **Specification, not implemented software.**
 2. **MVP-2: Jellyfin Connected** — authenticate against *stock* Jellyfin, synchronize/browse a music catalog, and play server audio on desktop.
 3. **MVP-3: Capacitor Mobile** — use the Angular UI on Android through Capacitor, with Media3 owning native playback and background session lifecycle.
 4. **MVP-4: Android Auto** — headless MediaLibraryService exposes browsable local catalog and queue, with real-device/automotive validation.
-5. **Polish / Daily Driver** — offline downloads, adaptive cache, reconnection, UX, accessibility, diagnostics, reliable packaging and resilience.
-6. **Progressive expansion** — Statolith recommendations, multi-server federation, richer synchronization, extensions, iOS/CarPlay, etc.
+5. **MVP-5: Podcasts** — discovery-first local RSS/Atom aggregation with a separate podcast queue, resume, speed and manual pins across desktop, mobile and car surfaces.
+6. **MVP-6: Video podcasts (planned)** — video enclosures and audio/video alternates from publisher feeds, with video surfaces, PiP and background audio. YouTube extraction is explicitly out of scope (ADR-037).
+7. **Polish / Daily Driver** — offline downloads, adaptive cache, reconnection, UX, accessibility, diagnostics, reliable packaging and resilience.
+8. **Progressive expansion** — Statolith recommendations, multi-server federation, richer synchronization, extensions, iOS/CarPlay, etc.
 
 Each MVP is a **vertical slice and independently demonstrated stage**, never implied by a mock or compilation alone. Scope of MVP-1 is desktop; Android-native and libSQL feasibility spikes may be conducted early to de-risk the plan but are not blockers to desktop local playback except for explicit architecture-risk escalation.
 
@@ -19,9 +21,10 @@ Each MVP is a **vertical slice and independently demonstrated stage**, never imp
 - `adrs/`: consolidated architecture decisions, clearly flagging implementation validation gates.
 - `roadmap/MILESTONES.md`: milestone-by-milestone completion conditions.
 - `roadmap/PODCASTS.md`: MVP-5 podcast architecture, data model, platform plan and release gate.
+- `roadmap/VIDEO_PODCASTS.md`: MVP-6 video podcasts, platform plan and release gate (in progress; ADR-037 accepted, runtime gates open).
 - `slices/`: bounded agent work packets, one at a time.
 - `AGENTS.md`: execution contract for coding agents.
-- `contracts/`: initial language-neutral playback, queue and capability contracts.
+- `contracts/`: initial language-neutral playback, queue and capability contracts, plus `video-podcast.md` for the planned media-form sketch.
 - `sql/`: **illustrative pre-implementation database sketch**; not ready to run as a migration.
 - `spikes/`: cross-platform and external API validation checklist.
 - `verification/`: verification matrix and reproducible evidence format.

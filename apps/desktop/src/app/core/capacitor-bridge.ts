@@ -53,6 +53,17 @@ const QUEUE_ONLY_COMMANDS: ReadonlySet<PlaybackCommand['type']> = new Set([
 ]);
 
 /**
+ * Android reports a failed DNS lookup as a raw UnknownHostException message.
+ * Translate it so a mistyped server address reads as a user error, not a crash.
+ */
+function jellyfinNetworkMessage(error: unknown): string | null {
+  const message = String(error);
+  return /Unable to resolve host|No address associated with hostname/i.test(message)
+    ? "Can't find that server. Check the address for typos and your connection."
+    : null;
+}
+
+/**
  * Renderer-side bridge used when Statocyst runs as a Capacitor Android app.
  * There is no Electron main process, so the authoritative queue/playback state
  * lives in the renderer. Playback uses the WebView's <audio> element (the same
@@ -67,6 +78,9 @@ interface NativePlayerState {
   durationMs: number;
   shuffle: boolean;
   repeat: PlaybackSnapshot['repeat'];
+  mediaForm?: 'audio' | 'video';
+  presentation?: 'audio-only' | 'video';
+  videoAvailable?: boolean;
 }
 
 interface NativePlayerQueue {
@@ -113,6 +127,9 @@ export class CapacitorBridge {
     rate: 1,
     context: 'music',
     active: true,
+    mediaForm: 'audio',
+    presentation: 'audio-only',
+    videoAvailable: false,
     track: null,
   };
   private tracks = new Map<string, Track>();
@@ -282,6 +299,9 @@ export class CapacitorBridge {
       shuffle: !!raw.shuffle,
       repeat: raw.repeat ?? 'off',
       rate: typeof raw.rate === 'number' ? raw.rate : this.snapshot.rate,
+      mediaForm: raw.mediaForm === 'video' ? 'video' : 'audio',
+      presentation: raw.presentation === 'video' ? 'video' : 'audio-only',
+      videoAvailable: raw.videoAvailable === true || raw.mediaForm === 'video',
       track,
     };
     this.emitState();
@@ -305,6 +325,36 @@ export class CapacitorBridge {
     });
   }
 
+  /**
+   * Video episodes are the default presentation now. Starting an episode asks
+   * the native player for video (and the in-page stage attaches the surface);
+   * audio-only episodes explicitly detach any previous surface.
+   */
+  private async applyDefaultPresentation(): Promise<void> {
+    const entryId = this.queue.currentEntryId;
+    const entry = entryId ? this.queue.entries.find((candidate) => candidate.entryId === entryId) : null;
+    const track = entry ? this.tracks.get(entry.trackId) : null;
+    if (!track) return;
+    if (track.mediaKind !== 'podcast' && track.sourceKind !== 'podcast') return;
+    const hasVideo = track.videoAvailable === true || track.mediaForm === 'video';
+    const mode = hasVideo ? 'video' : 'audio-only';
+    try {
+      await this.plugin().setPresentation?.({
+        mode,
+        posterUrl: track.artworkUrl ?? null,
+      });
+    } catch {
+      return;
+    }
+    this.snapshot = {
+      ...this.snapshot,
+      presentation: mode,
+      mediaForm: hasVideo ? 'video' : 'audio',
+      videoAvailable: hasVideo,
+    };
+    this.emitState();
+  }
+
   private async applyNativeCommand(command: PlaybackCommand): Promise<Result<PlaybackSnapshot>> {
     const plugin = this.plugin();
     const fail = (code: string, message: string): Result<PlaybackSnapshot> =>
@@ -324,10 +374,12 @@ export class CapacitorBridge {
           } else if (outcome.selection?.entryId) {
             await plugin.playEntry({ entryId: outcome.selection.entryId });
           }
+          await this.applyDefaultPresentation();
           break;
         }
         case 'playEntry':
           await plugin.playEntry({ entryId: command.entryId });
+          await this.applyDefaultPresentation();
           break;
         case 'pause':
           await plugin.pause();
@@ -371,6 +423,15 @@ export class CapacitorBridge {
         case 'setRate':
           await plugin.setRate?.({ rate: command.rate });
           this.snapshot = { ...this.snapshot, rate: command.rate };
+          break;
+        case 'setPresentation':
+          await plugin.setPresentation?.({ mode: command.mode });
+          this.snapshot = {
+            ...this.snapshot,
+            presentation: command.mode,
+            videoAvailable: command.mode === 'video' || this.snapshot.videoAvailable,
+          };
+          this.emitState();
           break;
         default: {
           // enqueue / playNext / remove / reorder / clear: compute the edit,
@@ -471,6 +532,9 @@ export class CapacitorBridge {
         durationMs: track.durationMs,
         positionMs: startPositionMs,
         state: 'error',
+        mediaForm: track.mediaForm ?? 'audio',
+        presentation: track.mediaForm === 'video' ? 'video' : 'audio-only',
+        videoAvailable: track.mediaForm === 'video',
         track,
       };
       this.emitState();
@@ -484,6 +548,9 @@ export class CapacitorBridge {
       durationMs: track.durationMs,
       positionMs: startPositionMs,
       state: autoplay ? 'buffering' : 'paused',
+      mediaForm: track.mediaForm ?? 'audio',
+      presentation: track.mediaForm === 'video' ? 'video' : 'audio-only',
+      videoAvailable: track.mediaForm === 'video',
       track,
     };
     const request: EngineLoadRequest = {
@@ -497,6 +564,8 @@ export class CapacitorBridge {
       volume: this.snapshot.volume,
       muted: this.snapshot.muted,
       playbackRate: this.snapshot.rate,
+      mediaForm: track.mediaForm ?? 'audio',
+      posterUrl: track.artworkUrl ?? null,
     };
     this.onLoadCb?.(request);
   }
@@ -507,7 +576,13 @@ export class CapacitorBridge {
     const entry = this.queue.entries.find((e) => e.entryId === this.snapshot.currentEntryId);
     const track = entry ? this.tracks.get(entry.trackId) : undefined;
     if (!track) return;
-    this.snapshot = { ...this.snapshot, track, durationMs: this.snapshot.durationMs || track.durationMs };
+    this.snapshot = {
+      ...this.snapshot,
+      track,
+      durationMs: this.snapshot.durationMs || track.durationMs,
+      mediaForm: track.mediaForm ?? this.snapshot.mediaForm,
+      videoAvailable: track.videoAvailable === true || track.mediaForm === 'video',
+    };
     this.emitState();
     this.emitQueue();
   }
@@ -631,6 +706,17 @@ export class CapacitorBridge {
           this.onCommandCb?.({ token: this.token, action: 'rate', rate: command.rate });
         }
         this.snapshot = { ...this.snapshot, rate: command.rate };
+        break;
+      case 'setPresentation':
+        if (this.nativePlayback) {
+          await this.plugin().setPresentation?.({ mode: command.mode });
+        }
+        this.snapshot = {
+          ...this.snapshot,
+          presentation: command.mode,
+          videoAvailable: command.mode === 'video' || this.snapshot.videoAvailable,
+        };
+        this.emitState();
         break;
     }
     return { ok: true, value: this.snapshotOf() };
@@ -962,6 +1048,8 @@ export class CapacitorBridge {
       sourceId: String(raw['sourceId'] ?? sourceKind),
       sourceLabel,
       sourceKind,
+      mediaKind: raw['mediaKind'] === 'podcast' ? 'podcast' : 'music',
+      mediaForm: raw['mediaForm'] === 'video' ? 'video' : 'audio',
       trackNo: (raw['trackNo'] as number | null) ?? null,
       year: (raw['year'] as number | null) ?? null,
       genre: (raw['genre'] as string | null) ?? null,
@@ -1140,6 +1228,17 @@ export class CapacitorBridge {
       cancelled: true,
     }),
     listTracks: async () => this.listTracks(),
+    reanalyzeArtwork: async () => {
+      try {
+        const raw = await this.plugin()?.reanalyzeArtwork?.();
+        return {
+          cleared: Number(raw?.cleared ?? 0),
+          generation: Number(raw?.generation ?? 0),
+        };
+      } catch {
+        return { cleared: 0, generation: 0 };
+      }
+    },
     stats: async () => this.stats(),
     removeTrack: async (trackId: string) => {
       try {
@@ -1321,7 +1420,18 @@ export class CapacitorBridge {
         let info: { id: string; name: string; version: string; url: string } | null = null;
         try {
           info = await plugin?.discoverServer?.({ url: normalized });
-        } catch {
+        } catch (error) {
+          if ((error as { code?: string })?.code === 'UNREACHABLE') {
+            return {
+              ok: false,
+              error: {
+                code: 'UNREACHABLE' as const,
+                message:
+                  jellyfinNetworkMessage(error) ??
+                  'Could not reach that server. Check the address for typos and your connection.',
+              },
+            };
+          }
           // Discovery may fail behind SSO/proxies (e.g. Authentik). Fall back to
           // a URL-only server entry so the user can still attempt sign-in.
         }
@@ -1386,7 +1496,14 @@ export class CapacitorBridge {
         await this.mirrorSessionToNative();
         return { ok: true, value: server };
       } catch (error) {
-        return { ok: false, error: { code: 'AUTH_FAILED' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('AUTH_FAILED' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     logout: async (serverId: string) => {
@@ -1462,7 +1579,14 @@ export class CapacitorBridge {
         if (!result) return { ok: false, error: { code: 'UNREACHABLE' as const, message: 'Plugin not available' } };
         return { ok: true, value: { secret: result.secret, code: result.code } };
       } catch (error) {
-        return { ok: false, error: { code: 'INTERNAL_ERROR' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('INTERNAL_ERROR' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     pollQuickConnect: async (url: string, secret: string) => {
@@ -1494,7 +1618,14 @@ export class CapacitorBridge {
         await this.mirrorSessionToNative();
         return { ok: true, value: server };
       } catch (error) {
-        return { ok: false, error: { code: 'AUTH_FAILED' as const, message: String(error) } };
+        const network = jellyfinNetworkMessage(error);
+        return {
+          ok: false,
+          error: {
+            code: network ? ('UNREACHABLE' as const) : ('AUTH_FAILED' as const),
+            message: network ?? String(error),
+          },
+        };
       }
     },
     encryptionAvailable: async () => true,
@@ -1527,7 +1658,18 @@ export class CapacitorBridge {
     plugin: () => this.plugin(),
     settings: () => this.getSettings(),
     rememberTracks: (episodes) => {
-      for (const episode of episodes) this.tracks.set(episode.id, episode);
+      for (const episode of episodes) {
+        this.tracks.set(episode.id, {
+          ...episode,
+          videoAvailable:
+            episode.mediaForm === 'video' ||
+            episode.alternates.some((alternate) => alternate.form === 'video'),
+        });
+      }
+      // The player may have restored a podcast episode before its rows were
+      // loaded; fill the track in now instead of leaving a nameless stage.
+      this.refreshCurrentTrack();
+      if (this.queue.entries.length > 0) this.emitQueue();
     },
   });
 
@@ -1563,9 +1705,19 @@ export class CapacitorBridge {
       this.attachNativeListeners();
       return () => this.queueListeners.delete(listener);
     },
-    download: async (trackId: string, profile?: DownloadProfile): Promise<Result<DownloadSummary>> => {
+    download: async (
+      trackId: string,
+      profile?: DownloadProfile,
+      variant?: import('@statocyst/contracts').PodcastDownloadVariant,
+    ): Promise<Result<DownloadSummary>> => {
       try {
-        const raw = await this.plugin()?.downloadTrack?.({ trackId, profile });
+        const settings = await this.getSettings();
+        const raw = await this.plugin()?.downloadTrack?.({
+          trackId,
+          profile: variant ?? profile,
+          variant: variant ?? profile,
+          allowLocalNetwork: settings.podcastAllowLocalNetwork,
+        });
         return {
           ok: true as const,
           value: {

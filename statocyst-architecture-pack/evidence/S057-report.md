@@ -1,0 +1,30 @@
+# Evidence report: S057
+
+- **Status:** IMPLEMENTED_UNVERIFIED (PiP + screen-off runtime verified on emulator API 36; video frame capture and broader device matrix open)
+- **Commit/branch:** `feat/video-podcasts`
+- **Environment:** Ubuntu Linux; JDK 21; Android SDK; emulator `Medium_Phone_API_36.1` (sdk_gphone64_x86_64, API 36)
+- **Files changed:** Room v8 schema/migration, `VideoPresentation.kt` surface/PiP, plugin presentation methods, queue media-form metadata, Media3 Transformer compression, direct podcast downloads, `PodcastUrls`, manifest PiP flag, tests.
+- **Acceptance criteria and actual observations:**
+  - Android Kotlin compilation, unit tests and `assembleDebug` pass.
+  - The existing Media3 player remains the only player; a single native `SurfaceView` is attached/detached for video.
+  - Background/screen-off detaches the surface and disables video decoding while audio continues (code path present).
+  - `setPresentation` switches audio/video alternates by replacing the current item at the same position; PiP is available when supported.
+  - Download profiles include audio-only/480p/720p and Media3 Transformer handles the local transcode path.
+- **Commands run with exit codes:**
+  - `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug --offline` → 0
+  - `./gradlew :app:compileDebugAndroidTestKotlin` → 0
+  - `./gradlew :app:lintDebug` → 1 (pre-existing project-wide lint findings)
+  - Emulator: `adb reverse tcp:8123 tcp:8123`; CDP setup/play; `adb shell input keyevent KEYCODE_HOME`; `adb shell input keyevent KEYCODE_POWER`; `dumpsys activity/media_session/power` captures → see `S057-android-runtime.txt`.
+- **Runtime observation (emulator, 2026-11-11):**
+  - Seeded a video-only podcast episode (`video/mp4`, 120 s) through the shared renderer/native fetch path.
+  - Playback advanced through the existing Media3 queue; `setPresentation('video')` attached a `SurfaceView` and returned `attached: true`.
+  - Pressing Home moved the activity to `mode=pinned` with `mLastReportedPictureInPictureMode=true`.
+  - With the screen off for 15 s (`mWakefulness=Asleep`), the media session remained `PLAYING(3)` and position advanced from 0 to 14,971 ms. A second 20 s run advanced from 63,568 to 83,675 ms.
+  - `setPresentation('audio-only')` returned `attached: false`; the SurfaceView layer disappeared while the media session stayed `PLAYING`.
+  - Note: `screencap`/`screenrecord` do not capture the SurfaceView overlay on this emulator (black frame), so visual video-frame evidence is still open; SurfaceFlinger and playback-state evidence confirm the surface and player.
+- **Tests not run (why):** Physical-device matrix, video-frame capture, rate/next/previous during video playback and offline video playback remain open. `adb screenrecord` produced a black frame for the SurfaceView.
+- **Artifacts:** `evidence/S057-android-runtime.txt`, `evidence/screenshots/s057-android-pip.png`, `evidence/screenshots/s057-android-pip-screen-on.png`; Android migration test `VideoMigrationTest.kt`; `TransformerCompressor.kt`.
+- **Safety/security considerations:** Direct podcast downloads use protocol/credential/local-address validation and redirect revalidation. The emulator fixture used `adb reverse` and a local HTTP server; no feed URL is committed.
+- **Known limitations and deferred follow-up:** The video surface is a raw `SurfaceView` overlay without native player chrome; PiP is triggered by Home; the visible frame is not capturable on this emulator. Device instrumentation and a physical-device run remain.
+- **Milestone gate affected:** MVP-6 S057.
+- **Reviewer and date:** Agent, 2026-11-11.
