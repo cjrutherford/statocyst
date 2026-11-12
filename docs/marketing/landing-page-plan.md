@@ -86,14 +86,18 @@ the hero horizon and the download/footer shelf. It never becomes a generic beige
    - *A library that stays yours* — import, local metadata, no account.
    - *One queue, all the way down* — restart recovery, resume, queue editing.
    - *The same library in your pocket* — Jellyfin login, sync, Android media session.
-6. **Clips** — three real Android transition studies (Library into Playlists, Queue and
+6. **Podcasts** — real discovery and episode-settings captures; directory search,
+   subscriptions, resume, skip controls, offline pinning and video episodes.
+7. **Clips** — three real Android transition studies (Library into Playlists, Queue and
    Now playing), with a play/pause control and reduced-motion fallback.
-7. **Android Auto section** — driver-safe browse, voice, no WebView cold start, with the
+8. **Android Auto section** — driver-safe browse, voice, no WebView cold start, with the
    labelled constructed head-unit preview; the real in-app setup capture stays available.
-8. **Built in the open** — MIT, source, checksums, release notes, honest limitations.
-9. **Download shelf** — sand background, platform cards, latest version, asset names,
-   checksums, install notes for unsigned builds.
-10. **Footer** — GitHub, releases, privacy, licence, “Named after the jellyfish’s balance
+9. **Built in the open** — MIT, source, checksums, release notes, honest limitations.
+10. **Beta testers** — Google Play and App Store preparation; a GitHub issue form collects
+    platform, device, library and car testing details.
+11. **Download shelf** — sand background, platform cards, latest version, asset names,
+    checksums, install notes for unsigned builds.
+12. **Footer** — GitHub, releases, privacy, licence, “Named after the jellyfish’s balance
    organ.”
 
 ## 5. Asset plan
@@ -281,7 +285,6 @@ The first draft is in `site/` and builds to `_site/`.
   previews.
 - A CarPlay preview, only once CarPlay is actually implemented or explicitly labelled as a
   roadmap mock.
-- A podcast/video-podcast visual that is not obscured by the bubble transition overlay.
 - A second pass on the mobile hero density, if it still feels cramped at 320–390 px.
 
 ## 13. Post-review P0 pass
@@ -305,3 +308,18 @@ Remaining follow-ups from the review are P1/P2: live native Android recapture, t
 phone overlap, light/dark balance, download navigation, depth-marker sequence, podcast
 visual, small-type/contrast pass, clip timing and autoplay state, and car disclaimer
 redundancy.
+
+## 14. Post-review P1 pass
+
+- Added a real podcast section using current discovery and episode-settings captures.
+- Added a beta-tester section and GitHub issue form for Google Play / App Store preparation.
+- Added a Download nav item and routed the header and hero CTAs to the shelf instead of a
+  surprise direct asset download.
+- Changed the feature rows to dark-mode albums and queue captures to reduce the light-panel
+  imbalance.
+- Made the depth markers monotonic and returned the sand shelf to “Low tide / 0 m.”
+- Reduced the hero phone size, removed the duplicate hero/feature phone image, raised small
+  type, fixed the sand focus ring, made clips click-to-play, expanded the car tab targets and
+  added a full-size car preview link.
+- Removed the duplicate car disclaimer and fixed the callout specificity.
+- Replaced internal-note/jargon copy and extended the beta meta description.

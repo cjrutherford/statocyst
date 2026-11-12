@@ -81,6 +81,14 @@ shuffle/repeat/heart actions because no DHU capture exists yet. Every other scre
 real capture. The Pages workflow (`.github/workflows/pages.yml`) uploads `_site/`. The design
 direction board is `site/design-preview.html`; it is not part of the deployed site.
 
+## Beta testing
+
+Statocyst is preparing Google Play and App Store submissions. Android and iOS testers
+with real libraries, Jellyfin servers or Android Auto setups can request access through
+the beta issue form:
+
+https://github.com/cjrutherford/statocyst/issues/new?template=beta-tester.yml
+
 ## Layout
 
 ```

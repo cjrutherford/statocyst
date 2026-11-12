@@ -4,12 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Statocyst — local-first music for every screen</title>
-  <meta name="description" content="Statocyst is a local-first music and podcast player for the files you own and the Jellyfin library you built. Desktop, tablet, phone and Android Auto. No account. No cloud." />
+  <meta name="description" content="Statocyst is a local-first music and podcast player for the files you own and the Jellyfin library you built. Desktop, tablet, phone and Android Auto. Now recruiting Android and iOS beta testers for Google Play and App Store release." />
   <meta name="theme-color" content="#050a18" />
   <meta name="color-scheme" content="dark" />
   <meta name="statocyst-release" content="{{TAG}}" />
   <meta property="og:title" content="Statocyst — Your music. Every depth." />
-  <meta property="og:description" content="Local-first music and podcasts for desktop, phone, tablet and Android Auto. One queue. No cloud account." />
+  <meta property="og:description" content="Local-first music and podcasts for desktop, phone, tablet and Android Auto. Beta testers wanted for Google Play and the App Store." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://cjrutherford.github.io/statocyst/" />
   <meta property="og:image" content="https://cjrutherford.github.io/statocyst/assets/branding/og.jpg" />
@@ -41,12 +41,14 @@
       <nav class="nav" aria-label="Primary">
         <a href="#screens">Screens</a>
         <a href="#features">Features</a>
-        <a href="#motion">Clips</a>
+        <a href="#podcasts">Podcasts</a>
         <a href="#car">Car</a>
+        <a href="#beta">Beta</a>
+        <a href="#download">Download</a>
       </nav>
       <div class="topbar-actions">
         <a class="github-link" href="https://github.com/cjrutherford/statocyst">GitHub <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
-        <a class="btn btn-primary btn-small" href="{{RELEASE_URL}}">Download</a>
+        <a class="btn btn-primary btn-small" href="#download">Download</a>
       </div>
     </div>
   </header>
@@ -70,11 +72,11 @@
 
       <div class="wrap hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Local-first music · Jellyfin · Podcasts · Android Auto</p>
+          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Local-first music · Jellyfin · Podcasts</p>
           <h1>Your music.<br /><span class="grad">Every depth.</span></h1>
           <p class="lede">A player for the files you own, the Jellyfin library you built, and the podcasts you follow. Desktop, tablet, phone, and the car. One queue that survives restarts. Nothing leaves your device unless you ask it.</p>
           <div class="hero-actions">
-            <a class="btn btn-primary" id="hero-download" href="{{RELEASE_URL}}" data-linux="{{ASSET_LINUX_APPIMAGE}}" data-mac="{{ASSET_MAC_ARM64}}" data-win="{{ASSET_WINDOWS}}" data-android="{{ASSET_ANDROID_APK}}" data-ios="{{ASSET_IOS_IPA}}">
+            <a class="btn btn-primary" id="hero-download" href="#download" data-linux="{{ASSET_LINUX_APPIMAGE}}" data-mac="{{ASSET_MAC_ARM64}}" data-win="{{ASSET_WINDOWS}}" data-android="{{ASSET_ANDROID_APK}}" data-ios="{{ASSET_IOS_IPA}}">
               Download <span class="ver">{{VERSION}}</span><span class="dl-os" id="hero-os"></span>
             </a>
             <a class="btn btn-ghost" href="#screens">See every screen</a>
@@ -95,7 +97,7 @@
         </div>
       </div>
 
-      <div class="wrap truth-strip" aria-label="What Statocyst does">
+      <div class="wrap truth-strip" role="group" aria-label="What Statocyst does">
         <div class="truth">
           <span class="truth-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
           <div><strong>Your files, offline</strong><span>MP3, FLAC, OGG and WAV with no network.</span></div>
@@ -118,7 +120,7 @@
     <section class="section screens" id="screens">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>01 / Twilight</span><span class="rule"></span><span>Screens</span></div>
+          <div class="depth"><span>01 / Surface</span><span class="rule"></span><span>0 m · Screens</span></div>
           <div>
             <h2>One library. Every horizon.</h2>
             <p>These are captures from the current 2.2.0 build at desktop, tablet and phone widths — not renders. The same catalog, queue and artwork travel across each layout.</p>
@@ -153,7 +155,7 @@
     <section class="section features" id="features">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>02 / Twilight</span><span class="rule"></span><span>Features</span></div>
+          <div class="depth"><span>02 / Twilight</span><span class="rule"></span><span>−200 m · Features</span></div>
           <div>
             <h2>Built for the way a library actually lives.</h2>
             <p>No account layer, no cloud library. Import what you have, connect a server if you want one, and keep the queue yours.</p>
@@ -164,13 +166,13 @@
           <div class="feature-media">
             <div class="window-frame">
               <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Statocyst — Library / light theme</span></div>
-              <img src="assets/screens/library-light.webp" width="1320" height="880" alt="Statocyst library with local tracks and playback controls" loading="lazy" />
+              <img src="assets/screens/albums-dark.webp" width="1320" height="880" alt="Statocyst albums in dark mode" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
             <p class="eyebrow">Local first</p>
             <h3>Your library is not a rental.</h3>
-            <p>Import files, read their metadata, and play them straight from the device. The catalog lives in embedded libSQL; local playback does not make a network request.</p>
+            <p>Import files, read their metadata, and play them straight from the device. The catalog lives in a local database on the device; local playback does not make a network request.</p>
             <ul class="check-list">
               <li>MP3, FLAC, OGG and WAV</li>
               <li>Artwork and metadata read on import</li>
@@ -183,7 +185,7 @@
           <div class="feature-media">
             <div class="window-frame">
               <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Statocyst — Session queue</span></div>
-              <img src="assets/screens/queue-light.webp" width="1320" height="880" alt="Statocyst queue with reorder and remove actions" loading="lazy" />
+              <img src="assets/screens/queue-dark.webp" width="1320" height="880" alt="Statocyst queue in dark mode" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
@@ -201,7 +203,7 @@
         <div class="feature-row">
           <div class="feature-media">
             <div class="phone-frame feature-phone">
-              <img src="assets/screens/phone-now-playing-dark.webp" width="390" height="844" alt="Statocyst now playing in the phone layout" loading="lazy" />
+              <img src="assets/screens/phone-library-dark.webp" width="390" height="844" alt="Statocyst library in the phone layout" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
@@ -218,13 +220,51 @@
       </div>
     </section>
 
+    <section class="section podcasts" id="podcasts">
+      <div class="wrap">
+        <header class="section-head">
+          <div class="depth"><span>03 / Twilight</span><span class="rule"></span><span>−400 m · Podcasts</span></div>
+          <div>
+            <h2>Podcasts, in the same water.</h2>
+            <p>Search Apple Podcasts and Fyyd, subscribe in one tap, and keep episodes beside your music. No feed URL, account, or API key required.</p>
+          </div>
+        </header>
+
+        <div class="podcast-grid">
+          <figure class="podcast-phone">
+            <div class="phone-frame">
+              <img src="assets/screens/podcast-discovery.webp" width="540" height="1200" alt="Statocyst podcast discovery screen" loading="lazy" />
+            </div>
+            <figcaption><span>Discovery · real capture</span><span class="mono">540 × 1200</span></figcaption>
+          </figure>
+          <figure class="podcast-phone">
+            <div class="phone-frame">
+              <img src="assets/screens/podcast-settings.webp" width="540" height="1200" alt="Statocyst podcast episode settings" loading="lazy" />
+            </div>
+            <figcaption><span>Episode settings · real capture</span><span class="mono">540 × 1200</span></figcaption>
+          </figure>
+          <div class="podcast-copy">
+            <p class="eyebrow">Apple Podcasts + Fyyd</p>
+            <h3>Find, follow, finish.</h3>
+            <p>Discovery is built in, subscriptions persist, and episodes resume where you left off. Audio and video enclosures share the same careful queue.</p>
+            <ul class="check-list">
+              <li>Search directories without pasting feed URLs</li>
+              <li>Per-show skip intro, skip outro and episode order</li>
+              <li>Per-episode resume, speed and offline pinning</li>
+              <li>Video episodes in the same player</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section motion" id="motion">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>03 / Twilight</span><span class="rule"></span><span>Clips</span></div>
+          <div class="depth"><span>04 / Twilight</span><span class="rule"></span><span>−600 m · Clips</span></div>
           <div>
             <h2>See it move.</h2>
-            <p>Three silent transition studies captured from the Android build: Library into Playlists, Queue, and Now playing.</p>
+            <p>Three short screen recordings from the Android app, no sound: Library into Playlists, Queue, and Now playing.</p>
           </div>
         </header>
 
@@ -270,7 +310,7 @@
     <section class="section car" id="car">
       <div class="wrap car-grid">
         <div class="car-copy">
-          <div class="depth"><span>04 / Driver's seat</span><span class="rule"></span><span>Android Auto</span></div>
+          <div class="depth"><span>05 / Midnight</span><span class="rule"></span><span>−800 m · Android Auto</span></div>
           <h2>Android Auto, without the WebView.</h2>
           <p>The car browses the indexed catalog and the saved queue directly from the native media service. Playback keeps going when the app is not on screen, and the queue is the same one you left on the phone.</p>
           <ul class="check-list">
@@ -279,18 +319,18 @@
             <li>Artwork served through a token-free content provider</li>
             <li>Head-unit and controller allowlist</li>
           </ul>
-          <p class="callout"><strong>Preview note:</strong> the car screens are constructed from the app’s own artwork, type and queue on the standard Android Auto media surface. They use Statocyst’s real MediaLibraryService browse tree — Recently played, Favorites, Playlists, Podcasts, Song radio, Albums, Artists, All tracks and Queue — plus its shuffle, repeat and heart actions. Every other screen on this page is a real capture; a Desktop Head Unit capture is still pending.</p>
+          <p class="callout"><strong>Preview note:</strong> these are constructed previews of the standard Android Auto surface, using Statocyst’s real browse categories and shuffle / repeat / heart actions. They are not a real head-unit capture.</p>
         </div>
         <figure class="car-preview" data-car-preview>
           <div class="car-tabs" role="tablist" aria-label="Android Auto preview screens">
             <button type="button" role="tab" id="car-tab-now" aria-controls="car-panel" aria-selected="true" data-car-screen="now-playing">Now playing</button>
             <button type="button" role="tab" id="car-tab-browse" aria-controls="car-panel" aria-selected="false" tabindex="-1" data-car-screen="browse">Browse</button>
           </div>
-          <div class="head-unit" id="car-panel" role="tabpanel" aria-labelledby="car-tab-now">
+          <div class="head-unit" id="car-panel" role="tabpanel" tabindex="0" aria-labelledby="car-tab-now">
             <img id="car-screen" src="assets/screens/car-head-unit-now-playing.svg" width="1600" height="900" alt="Constructed Android Auto now playing screen for Statocyst" loading="lazy" />
           </div>
+          <a class="car-full" id="car-full" href="assets/screens/car-head-unit-now-playing.svg" target="_blank" rel="noopener">Open full-size preview ↗</a>
           <figcaption><span>Android Auto · interface preview</span><span class="mono">constructed · AA surface</span></figcaption>
-          <p class="car-disclaimer">Constructed from the app’s own artwork, type and queue, using the real MediaLibraryService browse categories and session actions. Not a real head-unit capture.</p>
         </figure>
       </div>
     </section>
@@ -298,9 +338,9 @@
     <section class="section open" id="open">
       <div class="wrap open-grid">
         <div>
-          <div class="depth"><span>05 / Surface</span><span class="rule"></span><span>Open source</span></div>
+          <div class="depth"><span>06 / Midnight</span><span class="rule"></span><span>−1000 m · Open source</span></div>
           <h2>Built in the open. Shipped with caveats.</h2>
-          <p>Statocyst is MIT licensed. The source, release notes and checksums are on GitHub. The desktop builds are unsigned, Android and iOS are sideloads, and Linux is the reference desktop target — state that plainly instead of hiding it in a FAQ.</p>
+          <p>Statocyst is MIT licensed. The source, release notes and checksums are on GitHub. The desktop builds are unsigned, Android and iOS are sideloads, and Linux is the reference desktop target. We would rather say that plainly than bury it in a FAQ.</p>
           <a class="text-link" href="https://github.com/cjrutherford/statocyst">Read the source <span aria-hidden="true">→</span></a>
         </div>
         <div class="caveat-card">
@@ -308,15 +348,36 @@
           <div class="caveat"><span class="mark ok" aria-hidden="true">✓</span><div><strong>Checksums attached</strong><span>Every release includes SHA-256 sums.</span></div></div>
           <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Unsigned desktop builds</strong><span>macOS needs right-click → Open; Windows may show SmartScreen.</span></div></div>
           <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Mobile is sideloaded</strong><span>Android APK and ad-hoc iOS IPA, not store builds.</span></div></div>
-          <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Head-unit capture pending</strong><span>The car section uses the real setup screen until a DHU run is recorded.</span></div></div>
         </div>
+      </div>
+    </section>
+
+    <section class="section beta" id="beta">
+      <div class="wrap beta-grid">
+        <div class="beta-copy">
+          <div class="depth"><span>07 / Midnight</span><span class="rule"></span><span>−1100 m · Beta testers</span></div>
+          <h2>Help us reach the stores.</h2>
+          <p>Statocyst is preparing for <strong>Google Play</strong> and the <strong>App Store</strong>. We are looking for Android and iOS beta testers with real libraries, Jellyfin servers, and car setups to help us meet store testing requirements and shake out the release builds.</p>
+          <ul class="check-list">
+            <li>Android phone or tablet, or iPhone / iPad</li>
+            <li>A local library or Jellyfin server you can test with</li>
+            <li>Optional: an Android Auto head unit</li>
+          </ul>
+          <a class="btn btn-primary" href="https://github.com/cjrutherford/statocyst/issues/new?template=beta-tester.yml">Request beta access</a>
+          <p class="note">Current downloads are sideload builds. Store builds are not published yet.</p>
+        </div>
+        <aside class="store-card" aria-label="Store beta status">
+          <div class="store-row"><span>Google Play</span><strong>Closed beta forming</strong></div>
+          <div class="store-row"><span>App Store</span><strong>TestFlight beta forming</strong></div>
+          <p>Tell us what you run — phone, tablet, car — and what you want to test. We will reply with the current build and setup notes.</p>
+        </aside>
       </div>
     </section>
 
     <section class="shelf" id="download">
       <div class="wrap shelf-grid">
         <div class="shelf-copy">
-          <div class="depth"><span>06 / Midnight</span><span class="rule"></span><span>Download</span></div>
+          <div class="depth"><span>08 / Low tide</span><span class="rule"></span><span>0 m · Download</span></div>
           <h2>Take the tide home.</h2>
           <p>Current release <strong>{{RELEASE_NAME}}</strong>, published {{RELEASE_DATE}}. Choose a platform; the release page carries checksums and notes.</p>
           <div class="shelf-actions">
@@ -326,7 +387,7 @@
           <p class="shelf-meta"><span>✓ SHA-256 attached</span><span>MIT</span><span>No account</span></p>
         </div>
 
-        <div class="download-list" aria-label="Release downloads">
+        <div class="download-list" role="group" aria-label="Release downloads">
           <a class="download-row" href="{{ASSET_LINUX_APPIMAGE}}" data-os="linux">
             <span class="os">Linux <em>AppImage</em></span>
             <span class="file">{{NAME_LINUX_APPIMAGE}}</span>

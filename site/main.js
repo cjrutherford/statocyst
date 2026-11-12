@@ -26,16 +26,9 @@
     document.documentElement.dataset.platform = platform;
     // The markup uses data-win for Windows; keep the platform keys readable.
     const dataKey = platform === 'windows' ? 'win' : platform;
-    const url = hero?.dataset[dataKey];
-    if (hero && url) hero.href = url;
     if (heroOs && labels[platform]) heroOs.textContent = labels[platform];
-
-    // An unsigned IPA cannot be installed by tapping it from the browser.
-    // Send iOS visitors to the shelf and its install notes instead.
-    if (platform === 'ios' && hero) {
-      hero.href = '#download';
-      if (heroOs) heroOs.textContent = 'for iOS (sideload)';
-    }
+    // iOS users need the shelf's install notes, not a direct IPA tap.
+    if (platform === 'ios' && heroOs) heroOs.textContent = 'for iOS (sideload)';
 
     if (shelf) {
       const shelfUrl = shelf.dataset[dataKey];
@@ -49,7 +42,6 @@
     });
   }
 
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const clips = [...document.querySelectorAll('.video-phone')];
 
   for (const wrap of clips) {
@@ -73,22 +65,6 @@
     video.addEventListener('play', label);
     video.addEventListener('pause', label);
     label();
-
-    if (reduceMotion) continue;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            video.play().catch(() => {});
-          } else {
-            video.pause();
-          }
-        }
-      },
-      { threshold: 0.45 }
-    );
-    observer.observe(wrap);
   }
 })();
 
@@ -99,6 +75,7 @@
   const tabs = [...preview.querySelectorAll('[data-car-screen]')];
   const panel = preview.querySelector('#car-panel');
   const image = preview.querySelector('#car-screen');
+  const full = preview.querySelector('#car-full');
   if (!tabs.length || !panel || !image) return;
 
   const screens = {
@@ -112,9 +89,6 @@
     },
   };
 
-  const warm = new Image();
-  warm.src = screens.browse.src;
-
   const select = (tab) => {
     tabs.forEach((item) => {
       const active = item === tab;
@@ -125,6 +99,7 @@
     if (!screen) return;
     image.src = screen.src;
     image.alt = screen.alt;
+    if (full) full.href = screen.src;
     panel.setAttribute('aria-labelledby', tab.id);
   };
 

@@ -85,7 +85,13 @@ async function main() {
     await setTheme(page, 'Dark');
     await nav(page, 'Library');
     await shot(page, 'desktop-library-dark.png', 1320, 880);
+    await page.getByRole('tab', { name: /Albums/ }).click();
+    await page.waitForTimeout(300);
+    await shot(page, 'desktop-albums-dark.png', 1320, 880);
 
+    await nav(page, 'Library');
+    await page.getByRole('tab', { name: /Tracks/ }).click();
+    await page.waitForTimeout(250);
     await page.locator('tr.track-row').first().locator('.icon-btn--play').click();
     await page.waitForTimeout(350);
     await openNowPlaying(page);
@@ -99,6 +105,10 @@ async function main() {
 
     await nav(page, 'Queue');
     await shot(page, 'desktop-queue-light.png', 1320, 880);
+
+    await setTheme(page, 'Dark');
+    await nav(page, 'Queue');
+    await shot(page, 'desktop-queue-dark.png', 1320, 880);
 
     await setTheme(page, 'Dark');
     await nav(page, 'Library');

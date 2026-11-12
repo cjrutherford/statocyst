@@ -63,8 +63,10 @@ const stills = [
   ['site/captures/tablet-library.png', 'tablet-library.webp', 'scale=1024:-1:flags=lanczos'],
   ['site/captures/phone-now-playing-dark.png', 'phone-now-playing-dark.webp', 'scale=390:-1:flags=lanczos'],
   ['site/captures/phone-library-dark.png', 'phone-library-dark.webp', 'scale=390:-1:flags=lanczos'],
-  ['site/captures/desktop-queue-light.png', 'queue-light.webp', 'scale=1320:-1:flags=lanczos'],
-  ['site/captures/desktop-library-light.png', 'library-light.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/desktop-queue-dark.png', 'queue-dark.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/desktop-albums-dark.png', 'albums-dark.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/podcast-discovery.png', 'podcast-discovery.webp', 'scale=540:-1:flags=lanczos'],
+  ['site/captures/podcast-settings.png', 'podcast-settings.webp', 'scale=540:-1:flags=lanczos'],
 ];
 
 for (const [source, name, filter] of stills) {
