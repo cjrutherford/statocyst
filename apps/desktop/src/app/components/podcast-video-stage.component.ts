@@ -105,16 +105,18 @@ let activeStageId = 0;
         z-index: 6;
       }
       :host(.is-mini) {
-        position: static;
-        width: 60px;
-        height: 60px;
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         border-radius: 12px;
         overflow: hidden;
+        z-index: 2;
       }
       .mini-video {
         display: block;
-        width: 60px;
-        height: 60px;
+        width: 100%;
+        height: 100%;
         background: #020813;
       }
       .mini-video.is-audio-only {
