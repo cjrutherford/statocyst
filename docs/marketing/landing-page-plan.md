@@ -334,3 +334,25 @@ redundancy.
 - Added `role="group"` to labelled non-landmark blocks, made the car tabpanel focusable,
   and kept the figure caption last.
 - Added a full-size car preview link for narrow screens.
+
+## 16. Native Android recapture
+
+The phone and tablet stills had been Electron renderer captures at those widths. They are
+now native captures from `Medium_Phone_API_36.1` (Android 16, 1080 × 2400 at 420 dpi):
+
+- Built the current debug APK (`assembleDebug` with the Android Studio JBR 21), installed it
+  and seeded the four branded fixture tracks with `tools/android-seed-fixtures.py --demo`.
+  The script now uses real file sizes and has a demo mode separate from its 12-row layout
+  fixtures.
+- Set the app to Settings → Appearance → Dark and the emulator to `cmd uimode night yes` so
+  the status bar matches the dark theme, then captured the library (Sonar Bloom paused),
+  now playing and the queue with `adb exec-out screencap`.
+- Captured the tablet at 2048 × 1648 px / 320 dpi so the app laid out at 1024 × 768 dp, then
+  cropped the 48 px status bar and 64 px navigation bar before downscaling. The delivered
+  tablet still is exactly 1024 × 768.
+- Updated the captions to “Android · library” and “Android tablet · landscape”, and the
+  phone image aspect to 390 × 867.
+- The recipe lives in the README under “Android stills”.
+
+Remaining capture gap: the Android Auto previews are still constructed; a Desktop Head Unit
+capture is the next honest upgrade.
