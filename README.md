@@ -60,11 +60,13 @@ The packaged smoke test verifies `app.asar`, the unpacked libSQL native module, 
 ## Landing page
 
 The static marketing page lives in `site/`. The build first runs a screenshot update
-pass (real captures → WebP, clip posters, OG image, and two constructed Android Auto
-previews), then bakes the latest stable GitHub release into the download shelf:
+pass (the current captures in `site/captures/` → WebP, clip posters, OG image, and two
+constructed Android Auto previews), then bakes the latest stable GitHub release into the
+download shelf:
 
 ```bash
-pnpm site:screenshots                 # screenshot update pass only
+pnpm site:capture                     # recapture the current Electron build into site/captures/
+pnpm site:screenshots                 # convert those captures and regenerate the car previews
 node tools/build-site.mjs --offline   # use the checked-in release snapshot
 node tools/build-site.mjs             # use the GitHub API, fall back locally
 node tools/build-site.mjs --strict    # CI mode: fail if the API or an asset is missing
@@ -72,9 +74,11 @@ node tools/build-site.mjs --no-screenshots  # skip the screenshot pass
 python3 -m http.server -d _site 4173  # preview at http://127.0.0.1:4173/
 ```
 
-Screenshots come from `evidence/`; the Android Auto now-playing and browse previews are
-generated from the app's own artwork and type because no DHU capture exists yet. Every
-other screen is a real capture. The Pages workflow (`.github/workflows/pages.yml`) uploads `_site/`. The design
+Screenshots come from `site/captures/`; run `pnpm site:capture` after a UI change (it
+requires a built Electron app). The Android Auto now-playing and browse previews are
+generated from the app's own artwork, its real MediaLibraryService browse tree and its
+shuffle/repeat/heart actions because no DHU capture exists yet. Every other screen is a
+real capture. The Pages workflow (`.github/workflows/pages.yml`) uploads `_site/`. The design
 direction board is `site/design-preview.html`; it is not part of the deployed site.
 
 ## Layout

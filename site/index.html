@@ -88,10 +88,10 @@
             <img src="assets/screens/desktop-library-dark.webp" width="1320" height="880" alt="Statocyst desktop library in dark mode" fetchpriority="high" />
           </figure>
           <figure class="phone-frame hero-phone">
-            <img src="assets/screens/phone-now-playing-dark.webp" width="540" height="1200" alt="Statocyst now playing on Android" />
+            <img src="assets/screens/phone-now-playing-dark.webp" width="390" height="844" alt="Statocyst now playing in the phone layout" />
           </figure>
-          <div class="float-chip chip-local"><span class="chip-dot" aria-hidden="true"></span> Playing locally</div>
-          <div class="float-chip chip-format"><span class="mono">FLAC</span> 24-bit · 44.1 kHz</div>
+          <div class="float-chip chip-local"><span class="chip-dot" aria-hidden="true"></span> On this device</div>
+          <div class="float-chip chip-format"><span class="mono">LOCAL</span> MP3 · FLAC · OGG · WAV</div>
         </div>
       </div>
 
@@ -121,30 +121,30 @@
           <div class="depth"><span>01 / Twilight</span><span class="rule"></span><span>Screens</span></div>
           <div>
             <h2>One library. Every horizon.</h2>
-            <p>These are captures from the current build, not renders. The same catalog, queue and artwork travel from the desktop window to a tablet, a phone, and the car.</p>
+            <p>These are captures from the current 2.2.0 build at desktop, tablet and phone widths — not renders. The same catalog, queue and artwork travel across each layout.</p>
           </div>
         </header>
 
         <figure class="screen-hero">
           <div class="window-frame">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Statocyst — Now playing / light theme</span></div>
-            <img src="assets/screens/desktop-now-playing-light.webp" width="940" height="640" alt="Statocyst desktop now playing screen in light mode" loading="lazy" />
+            <img src="assets/screens/desktop-now-playing-light.webp" width="1320" height="880" alt="Statocyst desktop now playing screen in light mode" loading="lazy" />
           </div>
-          <figcaption><span>Desktop · light mode</span><span class="mono">942 × 640 · now playing</span></figcaption>
+          <figcaption><span>Desktop · light mode</span><span class="mono">1320 × 880 · now playing</span></figcaption>
         </figure>
 
         <div class="screen-pair">
           <figure>
             <div class="phone-frame">
-              <img src="assets/screens/phone-library-dark.webp" width="540" height="1200" alt="Statocyst library on an Android phone" loading="lazy" />
+              <img src="assets/screens/phone-library-dark.webp" width="390" height="844" alt="Statocyst library in the phone layout" loading="lazy" />
             </div>
             <figcaption><span>Phone · library</span><span class="mono">390 × 844</span></figcaption>
           </figure>
           <figure>
             <div class="tablet-frame">
-              <img src="assets/screens/tablet-library.webp" width="1400" height="875" alt="Statocyst library on a tablet in landscape" loading="lazy" />
+              <img src="assets/screens/tablet-library.webp" width="1024" height="768" alt="Statocyst library in the tablet layout" loading="lazy" />
             </div>
-            <figcaption><span>Tablet · landscape</span><span class="mono">1920 × 1200</span></figcaption>
+            <figcaption><span>Tablet · landscape</span><span class="mono">1024 × 768</span></figcaption>
           </figure>
         </div>
       </div>
@@ -164,7 +164,7 @@
           <div class="feature-media">
             <div class="window-frame">
               <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Statocyst — Library / light theme</span></div>
-              <img src="assets/screens/library-light.webp" width="940" height="640" alt="Statocyst library with local tracks and playback controls" loading="lazy" />
+              <img src="assets/screens/library-light.webp" width="1320" height="880" alt="Statocyst library with local tracks and playback controls" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
@@ -183,7 +183,7 @@
           <div class="feature-media">
             <div class="window-frame">
               <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>Statocyst — Session queue</span></div>
-              <img src="assets/screens/queue-light.webp" width="940" height="640" alt="Statocyst queue with reorder and remove actions" loading="lazy" />
+              <img src="assets/screens/queue-light.webp" width="1320" height="880" alt="Statocyst queue with reorder and remove actions" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
@@ -201,7 +201,7 @@
         <div class="feature-row">
           <div class="feature-media">
             <div class="phone-frame feature-phone">
-              <img src="assets/screens/phone-now-playing-dark.webp" width="540" height="1200" alt="Statocyst now playing on Android" loading="lazy" />
+              <img src="assets/screens/phone-now-playing-dark.webp" width="390" height="844" alt="Statocyst now playing in the phone layout" loading="lazy" />
             </div>
           </div>
           <div class="feature-copy">
@@ -279,7 +279,7 @@
             <li>Artwork served through a token-free content provider</li>
             <li>Head-unit and controller allowlist</li>
           </ul>
-          <p class="callout"><strong>Preview note:</strong> the car screens are constructed from the app’s own artwork, type and queue, following Android Auto’s MediaPlaybackTemplate and SectionedItemTemplate. Every other screen on this page is a real capture; a Desktop Head Unit capture is still pending.</p>
+          <p class="callout"><strong>Preview note:</strong> the car screens are constructed from the app’s own artwork, type and queue on the standard Android Auto media surface. They use Statocyst’s real MediaLibraryService browse tree — Recently played, Favorites, Playlists, Podcasts, Song radio, Albums, Artists, All tracks and Queue — plus its shuffle, repeat and heart actions. Every other screen on this page is a real capture; a Desktop Head Unit capture is still pending.</p>
         </div>
         <figure class="car-preview" data-car-preview>
           <div class="car-tabs" role="tablist" aria-label="Android Auto preview screens">
@@ -289,8 +289,8 @@
           <div class="head-unit" id="car-panel" role="tabpanel" aria-labelledby="car-tab-now">
             <img id="car-screen" src="assets/screens/car-head-unit-now-playing.svg" width="1600" height="900" alt="Constructed Android Auto now playing screen for Statocyst" loading="lazy" />
           </div>
-          <figcaption><span>Android Auto · interface preview</span><span class="mono">constructed · AA templates</span></figcaption>
-          <p class="car-disclaimer">Constructed from the app’s own artwork, type and queue, following the Android Auto media templates. Not a real head-unit capture.</p>
+          <figcaption><span>Android Auto · interface preview</span><span class="mono">constructed · AA surface</span></figcaption>
+          <p class="car-disclaimer">Constructed from the app’s own artwork, type and queue, using the real MediaLibraryService browse categories and session actions. Not a real head-unit capture.</p>
         </figure>
       </div>
     </section>

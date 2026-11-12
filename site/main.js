@@ -24,12 +24,21 @@
 
   if (platform) {
     document.documentElement.dataset.platform = platform;
-    const url = hero?.dataset[platform];
+    // The markup uses data-win for Windows; keep the platform keys readable.
+    const dataKey = platform === 'windows' ? 'win' : platform;
+    const url = hero?.dataset[dataKey];
     if (hero && url) hero.href = url;
     if (heroOs && labels[platform]) heroOs.textContent = labels[platform];
 
+    // An unsigned IPA cannot be installed by tapping it from the browser.
+    // Send iOS visitors to the shelf and its install notes instead.
+    if (platform === 'ios' && hero) {
+      hero.href = '#download';
+      if (heroOs) heroOs.textContent = 'for iOS (sideload)';
+    }
+
     if (shelf) {
-      const shelfUrl = shelf.dataset[platform];
+      const shelfUrl = shelf.dataset[dataKey];
       if (shelfUrl) shelf.href = shelfUrl;
       const label = { linux: 'Linux', mac: 'macOS', windows: 'Windows', android: 'Android', ios: 'iOS' }[platform];
       if (label) shelf.firstChild.textContent = `Download for ${label} `;

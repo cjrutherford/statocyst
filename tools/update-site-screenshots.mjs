@@ -2,12 +2,13 @@
 /**
  * Site screenshot update pass.
  *
- * Converts the real captures in evidence/ into the WebP assets used by the
- * landing page, refreshes clip posters, regenerates the OG image, and builds
+ * Converts the current captures in site/captures/ into the WebP assets used
+ * by the landing page, refreshes clip posters, regenerates the OG image, and builds
  * the one allowed constructed screen: the Android Auto head-unit preview.
  *
  * Run automatically by tools/build-site.mjs, or directly:
  *   node tools/update-site-screenshots.mjs
+ *   node tools/capture-site-screenshots.mjs  # refresh site/captures/ first
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync } from 'node:fs';
@@ -57,13 +58,13 @@ function poster(source, target) {
 }
 
 const stills = [
-  ['evidence/screenshots/09-review-dark.png', 'desktop-library-dark.webp', 'scale=1320:-1:flags=lanczos'],
-  ['evidence/screenshots/04-now-playing.png', 'desktop-now-playing-light.webp', 'scale=940:-1:flags=lanczos'],
-  ['evidence/s015/tablet-landscape-1-library.png', 'tablet-library.webp', 'scale=1400:-1:flags=lanczos'],
-  ['evidence/s015/phone-dark-2-nowplaying.png', 'phone-now-playing-dark.webp', 'scale=540:-1:flags=lanczos'],
-  ['evidence/s015/phone-dark-1-library.png', 'phone-library-dark.webp', 'scale=540:-1:flags=lanczos'],
-  ['evidence/screenshots/05-queue.png', 'queue-light.webp', 'scale=940:-1:flags=lanczos'],
-  ['evidence/screenshots/03-library-playing.png', 'library-light.webp', 'scale=940:-1:flags=lanczos'],
+  ['site/captures/desktop-library-dark.png', 'desktop-library-dark.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/desktop-now-playing-light.png', 'desktop-now-playing-light.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/tablet-library.png', 'tablet-library.webp', 'scale=1024:-1:flags=lanczos'],
+  ['site/captures/phone-now-playing-dark.png', 'phone-now-playing-dark.webp', 'scale=390:-1:flags=lanczos'],
+  ['site/captures/phone-library-dark.png', 'phone-library-dark.webp', 'scale=390:-1:flags=lanczos'],
+  ['site/captures/desktop-queue-light.png', 'queue-light.webp', 'scale=1320:-1:flags=lanczos'],
+  ['site/captures/desktop-library-light.png', 'library-light.webp', 'scale=1320:-1:flags=lanczos'],
 ];
 
 for (const [source, name, filter] of stills) {

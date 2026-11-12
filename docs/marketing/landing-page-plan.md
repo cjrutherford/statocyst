@@ -235,6 +235,7 @@ The first draft is in `site/` and builds to `_site/`.
 - `site/index.html` — production page with real captures, plus the one labelled car mock.
 - `site/styles.css` — low-tide design system, self-hosted WOFF2 fonts, responsive layout.
 - `site/main.js` — platform-aware download CTA, lazy clip playback, reduced-motion guard.
+- `site/captures/` — raw PNGs captured from the current 2.2.0 Electron build.
 - `site/assets/` — WebP screen captures, three real Android transition clips with posters,
   brand marks, favicons and the 1200×630 OG image.
 - `tools/update-site-screenshots.mjs` — the screenshot update pass: converts the real
@@ -252,14 +253,20 @@ The first draft is in `site/` and builds to `_site/`.
 
 ### Capture policy in this draft
 
-- Hero, screens and features are real captures from the repository.
+- Hero, screens and features are current 2.2.0 captures written by
+  `tools/capture-site-screenshots.mjs` to `site/captures/`.
 - The three clips are real Android captures of the app’s foam transition: Library into
   Playlists, Queue and Now playing. Their top debug captions were cropped out; the page
   labels them as transition studies rather than pretending they are standalone screen tours.
 - The car section uses two **constructed Android Auto previews**, generated from the app’s
-  own icon, demo cover, type and queue: a MediaPlaybackTemplate now-playing screen and a
-  SectionedItemTemplate browse screen. They follow the official Android Auto media
-  templates and are explicitly labelled “constructed”; a DHU capture is still pending.
+  own icon, demo cover, type and queue: a now-playing screen and a browse screen. They
+  follow the standard Android Auto media surface and the app's real Media3
+  `MediaLibraryService` browse tree and shuffle/repeat/heart actions — not the Car App
+  Library templates, which Statocyst does not use. They are explicitly labelled
+  “constructed”; a DHU capture is still pending.
+- Desktop, phone and tablet stills are recaptured from the current 2.2.0 Electron build.
+  The phone and tablet stills are the renderer at those widths, not native Android
+  emulator captures; a native Android recapture is a follow-up.
 - CarPlay is **not implemented**, so no CarPlay screen is shown. Rendering one would imply
   a platform the app does not support; the approval for constructed car mocks is limited to
   the Android Auto surface.
@@ -276,3 +283,25 @@ The first draft is in `site/` and builds to `_site/`.
   roadmap mock.
 - A podcast/video-podcast visual that is not obscured by the bubble transition overlay.
 - A second pass on the mobile hero density, if it still feels cramped at 320–390 px.
+
+## 13. Post-review P0 pass
+
+Fable 5.2's recovered review notes (it hit the provider limit before writing a final
+report) drove this pass:
+
+- Added `tools/capture-site-screenshots.mjs` and `site/captures/`; the page now uses
+  current **2.2.0** captures instead of the v0.1.0/v0.3.3 evidence images. The phone and
+  tablet stills are current renderer layouts at those widths, not native emulator captures.
+- Rebuilt both car previews around the standard Android Auto media surface and the real
+  `MediaLibraryService` browse categories/actions. Removed the `MediaPlaybackTemplate` /
+  `SectionedItemTemplate` claims.
+- Fixed the Windows direct-download key (`data-win` vs `dataset.windows`).
+- iOS now sends the hero CTA to the download shelf/install notes rather than an
+  un-installable direct IPA.
+- Replaced the invented “FLAC 24-bit · 44.1 kHz” chip with supported-format copy.
+- Replaced the stress-fixture phone/tablet data with current demo captures.
+
+Remaining follow-ups from the review are P1/P2: live native Android recapture, the hero
+phone overlap, light/dark balance, download navigation, depth-marker sequence, podcast
+visual, small-type/contrast pass, clip timing and autoplay state, and car disclaimer
+redundancy.
