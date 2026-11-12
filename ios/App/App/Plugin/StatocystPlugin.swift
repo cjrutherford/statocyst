@@ -10,6 +10,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     public let jsName = "Statocyst"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "listTracks", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reanalyzeArtwork", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeTrack", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "libraryStats", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "playbackUrl", returnType: CAPPluginReturnPromise),
@@ -184,6 +185,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             }
             call.resolve(["tracks": visible])
         }
+    }
+
+    @objc func reanalyzeArtwork(_ call: CAPPluginCall) {
+        // iOS artwork is fetched/cached by the renderer; no engine cache to clear.
+        call.resolve(["cleared": 0, "generation": 0])
     }
 
     @objc func removeTrack(_ call: CAPPluginCall) {

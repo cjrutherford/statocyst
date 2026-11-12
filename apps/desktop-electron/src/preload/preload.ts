@@ -76,6 +76,8 @@ const bridge: StatocystBridge = {
     importDemoLibrary: () =>
       ipcRenderer.invoke(CHANNELS.libraryImportDemo) as Promise<ImportSummary>,
     listTracks: () => ipcRenderer.invoke(CHANNELS.libraryList) as Promise<Track[]>,
+    // Desktop artwork is embedded in the files; Android/iOS clear their engine caches.
+    reanalyzeArtwork: async () => ({ cleared: 0, generation: 0 }),
     stats: () => ipcRenderer.invoke(CHANNELS.libraryStats) as Promise<LibraryStats>,
     removeTrack: (trackId: string) =>
       ipcRenderer.invoke(CHANNELS.libraryRemove, trackId) as Promise<

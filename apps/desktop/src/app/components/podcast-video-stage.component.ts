@@ -5,6 +5,7 @@ import {
   ElementRef,
   computed,
   inject,
+  input,
   viewChild,
   effect,
 } from '@angular/core';
@@ -12,6 +13,14 @@ import { PodcastPlaybackStore } from '../core/podcast-playback.store';
 import { PlaybackStore } from '../core/playback.store';
 import { AudioEngineService } from '../core/audio-engine.service';
 import { isNativePlatform } from '../core/bridge';
+
+/**
+ * The most recently mounted stage owns the one native surface. During a view
+ * transition the old stage is destroyed after the new one mounts; its async
+ * detach must not tear down the new stage's surface.
+ */
+let nextStageId = 0;
+let activeStageId = 0;
 
 /**
  * Video presentation for the active podcast episode. Desktop owns the media
@@ -22,8 +31,17 @@ import { isNativePlatform } from '../core/bridge';
   selector: 'sc-podcast-video-stage',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '[class.is-mini]': 'compact()' },
   template: `
     @if (hasVideo() && track(); as track) {
+      @if (compact()) {
+        <span
+          #host
+          class="mini-video"
+          [class.is-audio-only]="presentation() === 'audio-only'"
+          aria-hidden="true"
+        ></span>
+      } @else {
       <section
         class="video-stage"
         [class.is-video]="presentation() === 'video'"
@@ -75,6 +93,7 @@ import { isNativePlatform } from '../core/bridge';
           </div>
         </div>
       </section>
+      }
     }
   `,
   styles: [
@@ -84,6 +103,22 @@ import { isNativePlatform } from '../core/bridge';
         position: sticky;
         top: 0;
         z-index: 6;
+      }
+      :host(.is-mini) {
+        position: static;
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .mini-video {
+        display: block;
+        width: 60px;
+        height: 60px;
+        background: #020813;
+      }
+      .mini-video.is-audio-only {
+        display: none;
       }
       .video-stage {
         display: grid;
@@ -139,12 +174,14 @@ import { isNativePlatform } from '../core/bridge';
   ],
 })
 export class PodcastVideoStageComponent {
+  readonly compact = input(false);
   protected readonly playback = inject(PodcastPlaybackStore);
   private readonly music = inject(PlaybackStore);
   protected readonly native = isNativePlatform();
   private readonly engine = inject(AudioEngineService);
   private readonly host = viewChild<ElementRef<HTMLElement>>('host');
   private readonly destroyRef = inject(DestroyRef);
+  private readonly stageId = ++nextStageId;
 
   private resizeObserver: ResizeObserver | null = null;
   private scrollTarget: HTMLElement | null = null;
@@ -172,6 +209,7 @@ export class PodcastVideoStageComponent {
   );
 
   constructor() {
+    activeStageId = this.stageId;
     effect(() => {
       const host = this.host()?.nativeElement;
       const track = this.track();
@@ -199,7 +237,7 @@ export class PodcastVideoStageComponent {
     let wasVideo = false;
     effect(() => {
       const isVideo = this.hasVideo() && this.presentation() === 'video';
-      if (isVideo && !wasVideo) requestAnimationFrame(() => this.reveal());
+      if (isVideo && !wasVideo && !this.compact()) requestAnimationFrame(() => this.reveal());
       wasVideo = isVideo;
     });
 
@@ -209,7 +247,9 @@ export class PodcastVideoStageComponent {
       this.scrollTarget?.removeEventListener('scroll', this.onViewportChange);
       window.removeEventListener('resize', this.onViewportChange);
       if (this.syncFrame) cancelAnimationFrame(this.syncFrame);
-      void this.detachNative();
+      const owns = this.stageId === activeStageId;
+      if (owns) activeStageId = 0;
+      void this.detachNative(owns);
     });
   }
 
@@ -289,6 +329,7 @@ export class PodcastVideoStageComponent {
   }
 
   private async syncNativeSurface(): Promise<void> {
+    if (this.stageId !== activeStageId) return;
     const host = this.host()?.nativeElement;
     if (!host) return;
     if (this.presentation() !== 'video' || !this.hasVideo()) {
@@ -342,7 +383,8 @@ export class PodcastVideoStageComponent {
     if (this.attached) this.lastBounds = bounds;
   }
 
-  private async detachNative(): Promise<void> {
+  private async detachNative(force = false): Promise<void> {
+    if (!force && this.stageId !== activeStageId) return;
     this.attached = false;
     this.lastBounds = null;
     const plugin = this.nativePlugin();

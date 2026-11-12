@@ -52,6 +52,11 @@ object VideoPresentation {
     var attached: Boolean = false
         private set
 
+    /** True only while a renderer stage is mounted and has claimed the surface. */
+    @Volatile
+    var hostActive: Boolean = false
+        private set
+
     /** Physical-pixel rect of the WebView's video stage, reported by the renderer. */
     data class Bounds(val left: Int, val top: Int, val width: Int, val height: Int)
 
@@ -119,8 +124,13 @@ object VideoPresentation {
      * waits for the renderer to report one instead of covering the whole app.
      */
     @JvmStatic
+    fun setHostActive(active: Boolean) {
+        hostActive = active
+    }
+
+    @JvmStatic
     fun attach(activity: Activity?, player: Player?): Boolean {
-        if (activity == null || player == null || !canShowVideo()) return false
+        if (activity == null || player == null || !hostActive || !canShowVideo()) return false
         val rect = bounds ?: return false
         val existing = texture
         if (existing != null && overlay?.parent != null) {
@@ -348,6 +358,7 @@ object VideoPresentation {
         "presentation" to mode,
         "mediaForm" to mediaForm,
         "attached" to attached,
+        "hostActive" to hostActive,
         "videoWidth" to videoWidth,
         "videoHeight" to videoHeight,
         "posterUrl" to posterUrl,

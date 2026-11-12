@@ -1228,6 +1228,17 @@ export class CapacitorBridge {
       cancelled: true,
     }),
     listTracks: async () => this.listTracks(),
+    reanalyzeArtwork: async () => {
+      try {
+        const raw = await this.plugin()?.reanalyzeArtwork?.();
+        return {
+          cleared: Number(raw?.cleared ?? 0),
+          generation: Number(raw?.generation ?? 0),
+        };
+      } catch {
+        return { cleared: 0, generation: 0 };
+      }
+    },
     stats: async () => this.stats(),
     removeTrack: async (trackId: string) => {
       try {

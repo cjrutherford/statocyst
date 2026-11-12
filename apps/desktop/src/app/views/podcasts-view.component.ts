@@ -8,7 +8,6 @@ import type {
 } from '@statocyst/contracts';
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
-import { PodcastVideoStageComponent } from '../components/podcast-video-stage.component';
 import { bridge } from '../core/bridge';
 import { formatDuration } from '../core/format';
 import { DownloadsStore } from '../core/downloads.store';
@@ -23,7 +22,7 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
 @Component({
   selector: 'sc-podcasts-view',
   standalone: true,
-  imports: [ArtworkComponent, IconComponent, PodcastVideoStageComponent],
+  imports: [ArtworkComponent, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <section class="view" aria-labelledby="podcasts-heading">
@@ -78,8 +77,6 @@ type PodcastTab = 'subscribed' | 'downloaded' | 'discovery';
             <button type="button" class="link-btn" (click)="store.loadFeeds()">Retry</button>
           </div>
         }
-
-        <sc-podcast-video-stage />
 
         @if (store.selectedFeed(); as feed) {
           <section class="show" aria-labelledby="show-title">
@@ -2491,7 +2488,13 @@ export class PodcastsViewComponent {
   }
 
   protected play(episode: PodcastEpisode): void {
-    void this.playback.playEpisode(episode, this.episodes());
+    void this.playback.playEpisode(episode, this.episodes()).then(() => {
+      const hasVideo =
+        episode.mediaForm === 'video' ||
+        episode.alternates.some((alternate) => alternate.form === 'video');
+      // Video belongs to the full-screen player, not the episode list.
+      if (hasVideo) void this.transitions.go('now');
+    });
   }
 
   protected toggleEpisode(episode: PodcastEpisode): void {

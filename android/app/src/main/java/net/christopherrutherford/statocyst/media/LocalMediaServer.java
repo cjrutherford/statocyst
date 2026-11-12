@@ -113,6 +113,11 @@ public final class LocalMediaServer {
 
     /** As above; itemId/tag name the Jellyfin image served only when nothing is found online. */
     public static String extArtUri(Context context, String artist, String album, String itemId, String tag) {
+        return extArtUri(context, artist, album, itemId, tag, null);
+    }
+
+    /** As above; localPath is the embedded artwork served when neither online nor Jellyfin art exists. */
+    public static String extArtUri(Context context, String artist, String album, String itemId, String tag, String localPath) {
         String path = album == null
             ? ExternalArt.INSTANCE.artistUri(context, artist, null)
             : ExternalArt.INSTANCE.coverUri(context, artist, album, null);
@@ -127,6 +132,7 @@ public final class LocalMediaServer {
             b.appendQueryParameter("id", itemId);
             if (tag != null && !tag.isEmpty() && JellyfinArtwork.INSTANCE.isValidTag(tag)) b.appendQueryParameter("tag", tag);
         }
+        if (localPath != null && !localPath.isEmpty()) b.appendQueryParameter("local", localPath);
         return b.build().toString();
     }
 
@@ -147,6 +153,16 @@ public final class LocalMediaServer {
             if (tag == null) tag = "";
             if (id != null && JellyfinArtwork.INSTANCE.isValidId(id) && JellyfinArtwork.INSTANCE.isValidTag(tag)) {
                 image = JellyfinArtwork.INSTANCE.fetch(appContext, id, tag, 300);
+            }
+        }
+        if (image == null) {
+            String local = url.getQueryParameter("local");
+            if (local != null) {
+                File candidate = new File(local);
+                String path = candidate.getAbsolutePath();
+                String files = appContext.getFilesDir().getAbsolutePath() + File.separator;
+                String cache = appContext.getCacheDir().getAbsolutePath() + File.separator;
+                if (candidate.isFile() && (path.startsWith(files) || path.startsWith(cache))) image = candidate;
             }
         }
         if (image == null) {

@@ -403,6 +403,21 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
                 </span>
               </span>
             </label>
+            <div class="artwork-refresh">
+              <button
+                type="button"
+                class="btn"
+                [disabled]="reanalyzingArtwork()"
+                (click)="reanalyzeArtwork()"
+              >
+                <sc-icon name="refresh" />
+                {{ reanalyzingArtwork() ? 'Reanalyzing…' : 'Reanalyze artwork' }}
+              </button>
+              <span class="card__hint">
+                Clears cached covers and artist photos, then reloads them from the enabled sources.
+                Use this after changing tags or when a cover looks wrong.
+              </span>
+            </div>
           }
 
           <p class="card__hint">
@@ -992,6 +1007,17 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
         min-height: 44px;
         box-sizing: border-box;
       }
+      .artwork-refresh {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .artwork-refresh .card__hint {
+        flex: 1 1 260px;
+        margin: 0;
+      }
       .toggle-row input {
         width: 20px;
         height: 20px;
@@ -1171,6 +1197,7 @@ export class SettingsViewComponent {
   protected readonly isPackaged = computed(() => this.info()?.packaged ?? false);
 
   protected readonly externalArtwork = signal<boolean | null>(null);
+  protected readonly reanalyzingArtwork = signal(false);
   protected readonly browseAccess = signal<{ allowed: string[]; denied: string[] } | null>(null);
 
   constructor() {
@@ -1186,6 +1213,16 @@ export class SettingsViewComponent {
       if (api.getExternalArtwork) this.externalArtwork.set((await api.getExternalArtwork()).enabled);
     } catch {
       this.externalArtwork.set(null);
+    }
+  }
+
+  protected async reanalyzeArtwork(): Promise<void> {
+    if (this.reanalyzingArtwork()) return;
+    this.reanalyzingArtwork.set(true);
+    try {
+      await this.library.reanalyzeArtwork();
+    } finally {
+      this.reanalyzingArtwork.set(false);
     }
   }
 

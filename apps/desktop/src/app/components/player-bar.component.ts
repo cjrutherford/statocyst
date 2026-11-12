@@ -1,14 +1,17 @@
 import { ChangeDetectionStrategy, Component, computed, HostListener, inject, output, signal } from '@angular/core';
 import { ArtworkComponent } from './artwork.component';
 import { IconComponent } from './icon.component';
+import { PodcastVideoStageComponent } from './podcast-video-stage.component';
 import { PlaybackStore } from '../core/playback.store';
 import { PodcastPlaybackStore } from '../core/podcast-playback.store';
+import { NavigationStore } from '../core/navigation.store';
+import { isNativePlatform } from '../core/bridge';
 import { formatDuration } from '../core/format';
 
 @Component({
   selector: 'sc-player-bar',
   standalone: true,
-  imports: [ArtworkComponent, IconComponent],
+  imports: [ArtworkComponent, IconComponent, PodcastVideoStageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div
@@ -32,14 +35,19 @@ import { formatDuration } from '../core/format';
           track() ? 'Open now playing: ' + track()!.title : 'No track selected'
         "
       >
-        <sc-artwork [track]="track()" size="md" />
+        <span class="player__art">
+          <sc-artwork [track]="track()" size="md" />
+          @if (native && isVideo() && videoPresentation() === 'video' && navigation.view() !== 'now') {
+            <sc-podcast-video-stage class="player__video" [compact]="true" />
+          }
+        </span>
         <span class="player__meta">
           <span class="player__title">{{ track()?.title ?? 'Nothing playing yet' }}</span>
           <span class="player__artist">
             {{ track()?.artist ?? (podcastMode() ? 'Pick an episode' : 'Pick a track from your library') }}
           </span>
           @if (podcastMode()) {
-            <span class="player__podcast-tag">Podcast · {{ rate() }}×</span>
+            <span class="player__podcast-tag">{{ isVideo() ? 'Video' : 'Podcast' }} · {{ rate() }}×</span>
           }
         </span>
         @if (state() === 'buffering') {
@@ -249,6 +257,21 @@ import { formatDuration } from '../core/format';
       }
       .player.is-dragging {
         transition: none;
+      }
+      .player__art {
+        position: relative;
+        display: inline-grid;
+        flex: 0 0 auto;
+        width: 60px;
+        height: 60px;
+      }
+      .player__video {
+        position: absolute;
+        inset: 0;
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        overflow: hidden;
       }
       .player__track {
         display: flex;
@@ -558,6 +581,8 @@ import { formatDuration } from '../core/format';
 export class PlayerBarComponent {
   protected readonly playback = inject(PlaybackStore);
   protected readonly podcastPlayback = inject(PodcastPlaybackStore);
+  protected readonly navigation = inject(NavigationStore);
+  protected readonly native = isNativePlatform();
   protected readonly formatDuration = formatDuration;
 
   readonly openNow = output<void>();
@@ -605,6 +630,15 @@ export class PlayerBarComponent {
     this.podcastMode() && this.podcastReady()
       ? this.podcastPlayback.rate()
       : this.playback.snapshot().rate,
+  );
+  protected readonly isVideo = computed(() => {
+    const track = this.track();
+    return track?.mediaForm === 'video' || track?.videoAvailable === true;
+  });
+  protected readonly videoPresentation = computed(() =>
+    this.podcastMode() && this.podcastReady()
+      ? this.podcastPlayback.presentation()
+      : this.playback.snapshot().presentation,
   );
   /** Nothing loaded and nothing queued: transport controls have nothing to act on. */
   protected readonly idle = computed(

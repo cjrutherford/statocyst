@@ -32,6 +32,7 @@ import net.christopherrutherford.statocyst.downloads.DownloadProfile
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSession
 import net.christopherrutherford.statocyst.jellyfin.JellyfinSessions
 import net.christopherrutherford.statocyst.downloads.QueueSnapshot
+import net.christopherrutherford.statocyst.jellyfin.JellyfinArtwork
 import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.library.LibraryImporter
@@ -911,6 +912,7 @@ class StatocystPlugin : Plugin() {
     fun attachVideoSurface(call: PluginCall) {
         withController(call) { c ->
             videoBoundsFrom(call)
+            VideoPresentation.setHostActive(true)
             VideoPresentation.applyTrackSelection(c)
             val attached = VideoPresentation.attach(activity, c)
             call.resolve(presentationJson().put("attached", attached))
@@ -922,6 +924,7 @@ class StatocystPlugin : Plugin() {
     fun updateVideoSurface(call: PluginCall) {
         withController(call) { c ->
             videoBoundsFrom(call)
+            if (VideoPresentation.canShowVideo()) VideoPresentation.setHostActive(true)
             if (VideoPresentation.canShowVideo() && VideoPresentation.attached) {
                 VideoPresentation.attach(activity, c)
             }
@@ -932,6 +935,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun detachVideoSurface(call: PluginCall) {
         withController(call) { c ->
+            VideoPresentation.setHostActive(false)
             VideoPresentation.detach(c)
             call.resolve(presentationJson().put("attached", false))
         }
@@ -1718,8 +1722,8 @@ class StatocystPlugin : Plugin() {
         .put("albumId", t.albumId)
         .put("mediaKind", t.mediaKind)
         .put("mediaForm", t.mediaForm)
-        .put("artworkUrl", artworkFor(t))
-        .put("artistArtworkUrl", artistArtworkFor(t))
+        .put("artworkUrl", versionedArtwork(artworkFor(t)))
+        .put("artistArtworkUrl", versionedArtwork(artistArtworkFor(t)))
         .put("missing", t.missing)
 
     /**
@@ -1731,7 +1735,10 @@ class StatocystPlugin : Plugin() {
             return t.artworkPath?.let { LocalMediaServer.localUri(context, File(it)) }
         }
         val artist = t.albumArtist ?: t.artist
-        if (!t.sourceKind.startsWith("jellyfin")) return LocalMediaServer.extArtUri(context, artist, t.album)
+        if (!t.sourceKind.startsWith("jellyfin")) {
+            return LocalMediaServer.extArtUri(context, artist, t.album, null, null, t.artworkPath)
+                ?: t.artworkPath?.let { LocalMediaServer.localUri(context, File(it)) }
+        }
         val itemId = t.albumId?.takeIf { it.isNotEmpty() } ?: t.id.removePrefix("jf-")
         val tag = if (t.albumId.isNullOrEmpty()) "" else t.jellyfinImageTag.orEmpty()
         return LocalMediaServer.extArtUri(context, artist, t.album, itemId, tag)
@@ -1742,6 +1749,29 @@ class StatocystPlugin : Plugin() {
     private fun artistArtworkFor(t: MediaItemEntity): String? =
         if (t.sourceKind.startsWith("jellyfin")) null
         else LocalMediaServer.extArtUri(context, t.albumArtist ?: t.artist, null)
+
+    private fun artworkGeneration(): Int =
+        context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+            .getInt("artwork_generation", 0)
+
+    /** Adds the reanalysis generation so the WebView reloads covers after a cache clear. */
+    private fun versionedArtwork(url: String?): String? {
+        if (url == null) return null
+        val generation = artworkGeneration()
+        if (generation <= 0) return url
+        return if (url.contains('?')) "$url&v=$generation" else "$url?v=$generation"
+    }
+
+    @PluginMethod
+    fun reanalyzeArtwork(call: PluginCall) {
+        io(call) {
+            val cleared = JellyfinArtwork.clearCache(context)
+            val prefs = context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
+            val generation = (prefs.getInt("artwork_generation", 0) + 1)
+            prefs.edit().putInt("artwork_generation", generation).apply()
+            call.resolve(JSObject().put("cleared", cleared).put("generation", generation))
+        }
+    }
 
     @PluginMethod
     fun getExternalArtwork(call: PluginCall) {

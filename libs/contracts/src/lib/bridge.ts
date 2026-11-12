@@ -167,6 +167,8 @@ export interface LibraryBridge {
   importPaths(paths: string[]): Promise<ImportSummary>;
   importDemoLibrary(): Promise<ImportSummary>;
   listTracks(): Promise<Track[]>;
+  /** Clears cached cover/artist images and bumps the URL generation so the UI reloads them. */
+  reanalyzeArtwork(): Promise<{ cleared: number; generation: number }>;
   stats(): Promise<LibraryStats>;
   removeTrack(trackId: string): Promise<Result<{ removed: boolean }>>;
   onImportProgress(listener: (progress: ImportProgress) => void): () => void;
