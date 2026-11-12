@@ -698,6 +698,7 @@ export class PlayerBarComponent {
   protected onDragEnd(event: PointerEvent): void {
     const offset = this.dragOffset();
     const wasDragged = this.dragged;
+    const hadStart = this.dragStartY !== null;
     this.dragStartY = null;
     this.dragged = false;
     this.dragOffset.set(0);
@@ -705,6 +706,14 @@ export class PlayerBarComponent {
       (event.currentTarget as HTMLElement | null)?.releasePointerCapture(event.pointerId);
     } catch {
       // Already released.
+    }
+    if (hadStart && !wasDragged) {
+      // A tap on the track/background expands the player. Pointer capture can
+      // retarget the following click, so handle it here and suppress the echo.
+      this.suppressClick = true;
+      window.setTimeout(() => (this.suppressClick = false), 350);
+      this.openNow.emit();
+      return;
     }
     if (wasDragged && offset < -48) {
       // The click event lands after pointerup; suppress the duplicate open.

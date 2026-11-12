@@ -9,7 +9,7 @@ import {
 import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
 import { PodcastVideoStageComponent } from '../components/podcast-video-stage.component';
-import { PodcastPlaybackStore } from '../core/podcast-playback.store';
+import { PlaybackStore } from '../core/playback.store';
 import { ScreenTransitionService } from '../core/screen-transition.service';
 import { formatDuration } from '../core/format';
 
@@ -401,7 +401,7 @@ import { formatDuration } from '../core/format';
   ],
 })
 export class PodcastNowPlayingComponent {
-  protected readonly playback = inject(PodcastPlaybackStore);
+  protected readonly playback = inject(PlaybackStore);
   private readonly transitions = inject(ScreenTransitionService);
   readonly openPodcasts = output<void>();
 
@@ -411,9 +411,14 @@ export class PodcastNowPlayingComponent {
 
   protected readonly track = computed(() => this.playback.track());
   protected readonly playing = computed(() => this.playback.isPlaying());
-  protected readonly presentation = computed(() => this.playback.presentation());
-  protected readonly hasVideo = computed(() => this.playback.hasVideo());
-  protected readonly rate = computed(() => this.playback.rate());
+  protected readonly presentation = computed(() => this.playback.snapshot().presentation);
+  protected readonly hasVideo = computed(
+    () =>
+      this.playback.snapshot().videoAvailable === true ||
+      this.track()?.videoAvailable === true ||
+      this.track()?.mediaForm === 'video',
+  );
+  protected readonly rate = computed(() => this.playback.snapshot().rate);
   protected readonly upNext = computed(() => this.playback.upNext());
   protected readonly queuePosition = computed(() => this.playback.currentIndex() + 1);
   protected readonly queueLength = computed(() => this.playback.queue().entries.length);

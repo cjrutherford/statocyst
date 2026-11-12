@@ -3,11 +3,13 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  computed,
   inject,
   viewChild,
   effect,
 } from '@angular/core';
 import { PodcastPlaybackStore } from '../core/podcast-playback.store';
+import { PlaybackStore } from '../core/playback.store';
 import { AudioEngineService } from '../core/audio-engine.service';
 import { isNativePlatform } from '../core/bridge';
 
@@ -21,41 +23,41 @@ import { isNativePlatform } from '../core/bridge';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    @if (playback.hasVideo() && playback.track(); as track) {
+    @if (hasVideo() && track(); as track) {
       <section
         class="video-stage"
-        [class.is-video]="playback.presentation() === 'video'"
+        [class.is-video]="presentation() === 'video'"
         aria-label="Video episode"
       >
         <div
           #host
           class="video-stage__frame"
-          [class.is-audio-only]="playback.presentation() === 'audio-only'"
+          [class.is-audio-only]="presentation() === 'audio-only'"
         ></div>
         <div class="video-stage__meta">
           <div>
             <p class="eyebrow">{{ track.album }}</p>
             <h2>{{ track.title }}</h2>
-            @if (playback.presentation() === 'audio-only') {
+            @if (presentation() === 'audio-only') {
               <p class="video-stage__hint">Audio only · video is detached</p>
             }
           </div>
           <div class="video-stage__actions">
-            <button type="button" class="btn btn--quiet" (click)="playback.toggle()">
-              {{ playback.isPlaying() ? 'Pause' : 'Play' }}
+            <button type="button" class="btn btn--quiet" (click)="togglePlayback()">
+              {{ playing() ? 'Pause' : 'Play' }}
             </button>
             <button
               type="button"
               class="btn btn--quiet"
-              [attr.aria-pressed]="playback.presentation() === 'video'"
+              [attr.aria-pressed]="presentation() === 'video'"
               (click)="togglePresentation()"
             >
-              {{ playback.presentation() === 'video' ? 'Audio only' : 'Play video' }}
+              {{ presentation() === 'video' ? 'Audio only' : 'Play video' }}
             </button>
             <button
               type="button"
               class="btn btn--quiet"
-              [disabled]="playback.presentation() !== 'video' || !pipSupported()"
+              [disabled]="presentation() !== 'video' || !pipSupported()"
               (click)="pip()"
             >
               Picture-in-Picture
@@ -64,7 +66,7 @@ import { isNativePlatform } from '../core/bridge';
               <button
                 type="button"
                 class="btn btn--quiet"
-                [disabled]="playback.presentation() !== 'video'"
+                [disabled]="presentation() !== 'video'"
                 (click)="fullscreen()"
               >
                 Fullscreen
@@ -138,6 +140,7 @@ import { isNativePlatform } from '../core/bridge';
 })
 export class PodcastVideoStageComponent {
   protected readonly playback = inject(PodcastPlaybackStore);
+  private readonly music = inject(PlaybackStore);
   protected readonly native = isNativePlatform();
   private readonly engine = inject(AudioEngineService);
   private readonly host = viewChild<ElementRef<HTMLElement>>('host');
@@ -150,12 +153,30 @@ export class PodcastVideoStageComponent {
   private attached = false;
   private lastBounds: { left: number; top: number; width: number; height: number } | null = null;
 
+  protected readonly track = computed(() => this.playback.track() ?? this.music.track());
+  protected readonly hasVideo = computed(() => {
+    if (this.playback.track()) return this.playback.hasVideo();
+    const snapshot = this.music.snapshot();
+    return (
+      snapshot.videoAvailable === true ||
+      this.music.track()?.videoAvailable === true ||
+      this.music.track()?.mediaForm === 'video'
+    );
+  });
+  protected readonly presentation = computed<'audio-only' | 'video'>(() => {
+    if (this.playback.track()) return this.playback.presentation();
+    return this.music.snapshot().presentation === 'video' ? 'video' : 'audio-only';
+  });
+  protected readonly playing = computed(() =>
+    this.playback.track() ? this.playback.isPlaying() : this.music.isPlaying(),
+  );
+
   constructor() {
     effect(() => {
       const host = this.host()?.nativeElement;
-      const track = this.playback.track();
-      const hasVideo = this.playback.hasVideo();
-      const presentation = this.playback.presentation();
+      const track = this.track();
+      const hasVideo = this.hasVideo();
+      const presentation = this.presentation();
 
       if (!this.native) {
         if (host && hasVideo && track) this.engine.attachVideoHost(host);
@@ -177,7 +198,7 @@ export class PodcastVideoStageComponent {
     // into view, not leave the user staring at a list while audio plays.
     let wasVideo = false;
     effect(() => {
-      const isVideo = this.playback.hasVideo() && this.playback.presentation() === 'video';
+      const isVideo = this.hasVideo() && this.presentation() === 'video';
       if (isVideo && !wasVideo) requestAnimationFrame(() => this.reveal());
       wasVideo = isVideo;
     });
@@ -203,9 +224,15 @@ export class PodcastVideoStageComponent {
     this.scheduleSync();
   }
 
+  protected togglePlayback(): void {
+    if (this.playback.track()) void this.playback.toggle();
+    else void this.music.toggle();
+  }
+
   protected async togglePresentation(): Promise<void> {
-    const next = this.playback.presentation() === 'video' ? 'audio-only' : 'video';
-    await this.playback.setPresentation(next);
+    const next = this.presentation() === 'video' ? 'audio-only' : 'video';
+    if (this.playback.track()) await this.playback.setPresentation(next);
+    else await this.music.command({ type: 'setPresentation', mode: next });
     if (!this.native) return;
     if (next === 'audio-only') await this.detachNative();
     else this.scheduleSync();
@@ -264,7 +291,7 @@ export class PodcastVideoStageComponent {
   private async syncNativeSurface(): Promise<void> {
     const host = this.host()?.nativeElement;
     if (!host) return;
-    if (this.playback.presentation() !== 'video' || !this.playback.hasVideo()) {
+    if (this.presentation() !== 'video' || !this.hasVideo()) {
       await this.detachNative();
       return;
     }
@@ -299,7 +326,7 @@ export class PodcastVideoStageComponent {
     const result = await plugin
       .setPresentation?.({
         mode: 'video',
-        posterUrl: this.playback.track()?.artworkUrl ?? null,
+        posterUrl: this.track()?.artworkUrl ?? null,
         ...bounds,
       })
       .catch(() => undefined);
