@@ -11,18 +11,24 @@ import { formatDuration } from '../core/format';
   imports: [ArtworkComponent, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="player">
+    <div
+      class="player"
+      [class.is-dragging]="dragOffset() < 0"
+      [style.transform]="dragOffset() ? 'translateY(' + dragOffset() + 'px)' : null"
+      (pointerdown)="onDragStart($event)"
+      (pointermove)="onDragMove($event)"
+      (pointerup)="onDragEnd($event)"
+      (pointercancel)="onDragCancel()"
+    >
       <div class="player__hairline" aria-hidden="true">
         <span [style.width.%]="progressPercent()"></span>
       </div>
       <button
         type="button"
         class="player__track"
-        (click)="podcastMode() ? openPodcast.emit() : openNow.emit()"
+        (click)="onTrackActivate()"
         [attr.aria-label]="
-          track()
-            ? (podcastMode() ? 'Open podcasts: ' : 'Open now playing: ') + track()!.title
-            : 'No track selected'
+          track() ? 'Open now playing: ' + track()!.title : 'No track selected'
         "
       >
         <sc-artwork [track]="track()" size="md" />
@@ -225,6 +231,12 @@ import { formatDuration } from '../core/format';
         border-top: 1px solid var(--line);
         backdrop-filter: blur(22px);
         box-shadow: var(--chrome-shadow);
+        touch-action: none;
+        user-select: none;
+        transition: transform 160ms ease;
+      }
+      .player.is-dragging {
+        transition: none;
       }
       .player__track {
         display: flex;
@@ -546,6 +558,10 @@ export class PlayerBarComponent {
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
   protected readonly pulsing = signal(false);
+  protected readonly dragOffset = signal(0);
+  private dragStartY: number | null = null;
+  private dragged = false;
+  private suppressClick = false;
 
   protected readonly podcastMode = computed(() => {
     if (this.podcastPlayback.active()) return true;
@@ -644,6 +660,64 @@ export class PlayerBarComponent {
     const rates = [1, 1.25, 1.5, 1.75, 2];
     const index = rates.findIndex((rate) => Math.abs(rate - this.rate()) < 0.001);
     void this.podcastPlayback.setRate(rates[(index + 1) % rates.length]);
+  }
+
+  protected onTrackActivate(): void {
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      return;
+    }
+    this.openNow.emit();
+  }
+
+  /** A vertical upward drag on the mini player expands the full Now Playing view. */
+  protected onDragStart(event: PointerEvent): void {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const target = event.target as HTMLElement | null;
+    // Leave the transport, rate and volume controls to their own taps.
+    if (target?.closest('button:not(.player__track), input, .range')) return;
+    this.dragStartY = event.clientY;
+    this.dragged = false;
+    try {
+      (event.currentTarget as HTMLElement | null)?.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is best-effort; the document still receives the release.
+    }
+  }
+
+  protected onDragMove(event: PointerEvent): void {
+    if (this.dragStartY === null) return;
+    const dy = event.clientY - this.dragStartY;
+    if (dy < -6) {
+      this.dragged = true;
+      if (event.cancelable) event.preventDefault();
+    }
+    this.dragOffset.set(Math.max(-96, Math.min(0, dy)));
+  }
+
+  protected onDragEnd(event: PointerEvent): void {
+    const offset = this.dragOffset();
+    const wasDragged = this.dragged;
+    this.dragStartY = null;
+    this.dragged = false;
+    this.dragOffset.set(0);
+    try {
+      (event.currentTarget as HTMLElement | null)?.releasePointerCapture(event.pointerId);
+    } catch {
+      // Already released.
+    }
+    if (wasDragged && offset < -48) {
+      // The click event lands after pointerup; suppress the duplicate open.
+      this.suppressClick = true;
+      window.setTimeout(() => (this.suppressClick = false), 350);
+      this.openNow.emit();
+    }
+  }
+
+  protected onDragCancel(): void {
+    this.dragStartY = null;
+    this.dragged = false;
+    this.dragOffset.set(0);
   }
 
   @HostListener('document:keydown.escape')

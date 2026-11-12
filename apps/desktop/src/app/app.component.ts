@@ -20,12 +20,14 @@ import { PlaylistsStore } from './core/playlists.store';
 import { JellyfinStore } from './core/jellyfin.store';
 import { NavigationStore, type View } from './core/navigation.store';
 import { PlaybackStore } from './core/playback.store';
+import { PodcastPlaybackStore } from './core/podcast-playback.store';
 import { PodcastsStore } from './core/podcasts.store';
 import { ScreenTransitionService } from './core/screen-transition.service';
 import { SettingsStore } from './core/settings.store';
 import { ToastStore } from './core/toast.store';
 import { LibraryViewComponent } from './views/library-view.component';
 import { NowPlayingViewComponent } from './views/now-playing.component';
+import { PodcastNowPlayingComponent } from './views/podcast-now-playing.component';
 import { OfflineViewComponent } from './views/offline-view.component';
 import { PlaylistsViewComponent } from './views/playlists-view.component';
 import { PodcastsViewComponent } from './views/podcasts-view.component';
@@ -51,6 +53,7 @@ interface NavItem {
     NowPlayingViewComponent,
     OfflineViewComponent,
     PlaylistsViewComponent,
+    PodcastNowPlayingComponent,
     PodcastsViewComponent,
     QueueViewComponent,
     SettingsViewComponent,
@@ -148,7 +151,11 @@ interface NavItem {
                 <sc-podcasts-view />
               }
               @case ('now') {
-                <sc-now-playing (openQueue)="navigate('queue')" />
+                @if (podcastNow()) {
+                  <sc-podcast-now-playing (openPodcasts)="navigate('podcasts')" />
+                } @else {
+                  <sc-now-playing (openQueue)="navigate('queue')" />
+                }
               }
               @case ('queue') {
                 <sc-queue-view (openLibrary)="navigate('library')" />
@@ -665,6 +672,12 @@ export class AppComponent {
   protected readonly toasts = inject(ToastStore);
   protected readonly navigation = inject(NavigationStore);
   protected readonly podcastStore = inject(PodcastsStore);
+  protected readonly podcastPlayback = inject(PodcastPlaybackStore);
+  protected readonly podcastNow = computed(() => {
+    if (this.podcastPlayback.active()) return true;
+    const track = this.playback.track();
+    return track?.mediaKind === 'podcast' || track?.sourceKind === 'podcast';
+  });
   private readonly transitions = inject(ScreenTransitionService);
   protected readonly bridgeAvailable = bridgeAvailable;
   private readonly audio = inject(AudioEngineService);
