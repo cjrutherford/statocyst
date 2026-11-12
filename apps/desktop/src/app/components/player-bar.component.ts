@@ -54,7 +54,7 @@ import { formatDuration } from '../core/format';
           <span class="player__state">Buffering</span>
         }
         @if (state() === 'waiting-network') {
-          <span class="player__state player__state--waiting">Offline — will resume</span>
+          <span class="player__state player__state--waiting">Waiting for network…</span>
         }
         @if (state() === 'error') {
           <span class="player__state player__state--error">Playback error</span>

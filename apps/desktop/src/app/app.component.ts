@@ -709,8 +709,33 @@ export class AppComponent {
   }
 
   private setupConnectivity(): void {
-    window.addEventListener('online', () => this.online.set(true));
-    window.addEventListener('offline', () => this.online.set(false));
+    // The WebView's navigator.onLine can stay false behind a VPN or after a
+    // transient network event. The native ConnectivityManager is authoritative.
+    const refresh = async (): Promise<void> => {
+      if (!isNativePlatform()) return;
+      try {
+        const plugin = (window as unknown as {
+          Capacitor?: { Plugins?: Record<string, { networkOnline?: () => Promise<{ online?: boolean }> }> };
+        }).Capacitor?.Plugins?.['Statocyst'];
+        const result = await plugin?.networkOnline?.();
+        if (typeof result?.online === 'boolean') this.online.set(result.online);
+      } catch {
+        // Keep the browser's view when the native check is unavailable.
+      }
+    };
+    window.addEventListener('online', () => {
+      this.online.set(true);
+      void refresh();
+    });
+    window.addEventListener('offline', () => {
+      if (isNativePlatform()) void refresh();
+      else this.online.set(false);
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) void refresh();
+    });
+    void refresh();
+    window.setInterval(() => void refresh(), 30_000);
   }
 
   /**

@@ -1613,6 +1613,11 @@ class StatocystPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun networkOnline(call: PluginCall) {
+        call.resolve(JSObject().put("online", DownloadCenter.isOnline(context)))
+    }
+
+    @PluginMethod
     fun healthChecks(call: PluginCall) {
         val budget = call.getLong("budgetBytes") ?: DEFAULT_CACHE_BUDGET
         io(call) {
