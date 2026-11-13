@@ -16,7 +16,8 @@ a backend, cookies, or a third-party analytics script.
 
 Primary audience:
 
-- people who already keep a local music library or run Jellyfin;
+- people who already keep a local music library (they may never have heard of Jellyfin);
+- people who run Jellyfin and need to know that a stock server works without a plugin;
 - podcast listeners who want one player instead of three;
 - Android Auto drivers who want their own library in the car;
 - self-hosters who value an MIT licence, checksums, and no account.
@@ -24,38 +25,70 @@ Primary audience:
 Secondary audience: people evaluating the project from GitHub who need a reason to
 click **Releases** instead of bouncing off the README.
 
+**Reading level and vocabulary.** Assume the reader knows how to listen to music and
+nothing else. They may not know what Jellyfin, local-first, open source, a queue, an APK,
+an IPA or a checksum is. The page must define each term before asking the reader to act on
+it. The detailed rules live in `docs/marketing/copy-guide.md`.
+
 ## 2. Positioning
 
 **One line:** Your music. Every depth.
 
-**Short version:** A local-first music and podcast player for the files you own and the
-Jellyfin library you built — on desktop, phone, tablet, and in the car. One queue.
-No cloud account. Nothing leaves the device unless you ask it to.
+**What the line means:** “Depth” is reach across screens and sources — desktop, tablet,
+phone, car and offline — not audio fidelity, bit depth, bass or “deep cuts”. Say that in
+plain words near the headline and again in the water-theme section. Never let the tagline
+stand alone in a social card or store listing without a clarifier.
+
+**Short version:** Statocyst is a music and podcast player for the library you already
+own. Play audio files from your device, or connect a Jellyfin server you run yourself.
+Desktop, tablet, phone and Android Auto. One active queue, saved through restarts. No
+account with us, no ads, no tracking.
+
+**Definitions the page must carry:**
+
+- **Statocyst** — the balance organ in a jellyfish; a small stone in a fluid-filled sac
+  that tells the animal which way is up.
+- **Local-first** — the library index, queue, favourites and history live on the device;
+  there is no developer-run cloud library or account.
+- **Jellyfin** — free, open-source media-server software the user runs on their own
+  hardware. Optional; a stock server needs no plugin.
+- **Queue** — the ordered list of what plays next, plus the current track and position.
+  Music and podcasts each keep a queue; one is active at a time.
+- **Open source / MIT** — the source is public and may be used, copied, modified and shared
+  with the copyright notice kept. Explain the practical consequence, not just the licence
+  name.
+- **Manual install, APK, IPA, AppImage, .deb, checksum** — define these where the download
+  action is, not in a footnote.
 
 **Proof points, in order:**
 
-1. Local files and Jellyfin play without a network.
+1. Local files play without a network. Jellyfin streams from the user’s own server when
+   the network is available; downloaded copies play offline.
 2. The queue survives restarts and resumes where you left off.
 3. Podcasts and video podcasts live beside music, with their own persisted queue.
-4. Android Auto browses the indexed catalog without starting the WebView.
+4. Android Auto browses the indexed library without opening the phone app.
 5. The source is MIT; releases include SHA-256 checksums.
 6. Honest limits: unsigned builds, Linux is the reference desktop, and the car head-unit
    view is a constructed preview until a DHU run is recorded.
 
-Do not claim gapless, bit-perfect output, cloud sync, CarPlay, or a signed installer.
+Do not claim gapless, bit-perfect output, cloud sync, CarPlay, or a signed installer. Do not
+say “nothing leaves your device” without naming the Jellyfin, podcast-search and optional
+artwork-lookup exceptions.
 
 ## 3. Design direction — “Low tide at midnight”
 
-The app already owns a bathypelagic visual language: abyss navy, sonar cyan, violet
-bloom, rising motes, caustic sheets. The landing page extends it rather than inventing a
-second brand.
+The app already owns a deep-water visual language: abyss navy, sonar cyan, violet bloom,
+rising motes, caustic sheets. The landing page extends it rather than inventing a second
+brand. The page does not assume the metaphor is self-explanatory; the “Why water” section
+names the jellyfish organ, explains the depth markers and says plainly that “depth” is not
+an audio-quality claim.
 
 The page is a water column read top to bottom:
 
 | Zone | Surface | Twilight | Midnight |
 | --- | --- | --- | --- |
 | Background | sand light bleeding into deep teal | abyss 900 | abyss 950 |
-| Purpose | hero, promise, download intent | features and screen proof | downloads, honesty, footer |
+| Purpose | hero, glossary, theme, screens | features, podcasts, clips | car, ownership, limits, beta |
 | Accent | pearl + wet sand | cyan + violet | sea glass + foam |
 
 **Why sand?** A dark sand beach gives the cold neon water a warm edge and keeps the page
@@ -64,8 +97,9 @@ the hero horizon and the download/footer shelf. It never becomes a generic beige
 
 **Signature details**
 
-- Depth markers instead of section numbers: `SURFACE / 0 m`, `TWILIGHT / −200 m`,
-  `MIDNIGHT / −1000 m`.
+- Depth markers instead of section numbers: `SURFACE / 0 m`, then `TWILIGHT / −200 m` to
+  `−600 m`, `MIDNIGHT / −800 m` to `−1100 m`, then `LOW TIDE / 0 m` at the download shelf.
+  The page explains that these are a reading aid, not an audio measurement.
 - Device screenshots framed as thick glass floats, not browser screenshots dropped on a
   dark background.
 - A thin foam scallop separating the sand shelf from the water.
@@ -75,30 +109,41 @@ the hero horizon and the download/footer shelf. It never becomes a generic beige
 
 ## 4. Information architecture
 
-1. **Sticky top bar** — symbol, wordmark, `Screens`, `Features`, `Download`, GitHub link.
-2. **Hero** — headline, one-paragraph promise, auto-detected download button, secondary
-   `See every screen`, version/licence/checksum microcopy. Desktop screenshot with a
-   phone overlapping its lower-left corner.
-3. **Truth strip** — four facts: local playback, Jellyfin, queue persistence, Android Auto.
-4. **Screen system** — Desktop / Tablet / Phone. Real stills only. The car head unit is
+1. **Sticky top bar** — symbol, wordmark, `Start here`, `Screens`, `Features`, `Car`,
+   `Open source`, `Download`, GitHub link.
+2. **Hero** — headline, one-paragraph promise that defines the product without assuming
+   Jellyfin, auto-detected download button, secondary `New here? Start with plain English`,
+   version/licence/checksum microcopy, and a one-line explanation of “every depth”. Desktop
+   screenshot with a phone overlapping its lower-left corner.
+3. **Truth strip** — four plain facts: local playback, own media server, saved queue,
+   Android Auto.
+4. **Start here** — six short answers: the product, local-first, Jellyfin, the queue,
+   “every depth”, open source. This is the page’s glossary and the first thing a newcomer
+   should read.
+5. **Why water** — the name (jellyfish balance organ), why the theme exists, how the depth
+   markers work, and what the colours mean. The page explains the metaphor instead of
+   trusting it to land.
+6. **Screen system** — Desktop / Tablet / Phone. Real stills only. The car head unit is
    handled in its own section below.
-5. **Feature sections** (three alternating bands):
+7. **Feature sections** (three alternating bands):
    - *A library that stays yours* — import, local metadata, no account.
    - *One queue, all the way down* — restart recovery, resume, queue editing.
    - *The same library in your pocket* — Jellyfin login, sync, Android media session.
-6. **Podcasts** — real discovery and episode-settings captures; directory search,
+8. **Podcasts** — real discovery and episode-settings captures; directory search,
    subscriptions, resume, skip controls, offline pinning and video episodes.
-7. **Clips** — three real Android transition studies (Library into Playlists, Queue and
+9. **Clips** — three real Android transition studies (Library into Playlists, Queue and
    Now playing), with a play/pause control and reduced-motion fallback.
-8. **Android Auto section** — driver-safe browse, voice, no WebView cold start, with the
-   labelled constructed head-unit preview; the real in-app setup capture stays available.
-9. **Built in the open** — MIT, source, checksums, release notes, honest limitations.
-10. **Beta testers** — Google Play and App Store preparation; a GitHub issue form collects
-    platform, device, library and car testing details.
-11. **Download shelf** — sand background, platform cards, latest version, asset names,
-    checksums, install notes for unsigned builds.
-12. **Footer** — GitHub, releases, privacy, licence, “Named after the jellyfish’s balance
-   organ.”
+10. **Android Auto section** — driver-safe browse, voice, no phone-app cold start, with the
+    labelled constructed head-unit preview; the real in-app setup capture stays available.
+11. **Open source and ownership** — MIT explained in plain words, checksum explained,
+    “no account” explained, source, release notes, honest limitations.
+12. **Beta testers** — Google Play and App Store preparation, with “closed beta” and
+    “TestFlight” defined; a GitHub issue form collects platform, device, library and car
+    testing details.
+13. **Download shelf** — sand background, platform cards, latest version, asset names,
+    checksums, and install notes that define DMG, AppImage, .deb, APK and IPA.
+14. **Footer** — GitHub, releases, privacy, licence, “Named after the jellyfish’s balance
+    organ.”
 
 ## 5. Asset plan
 
@@ -206,6 +251,10 @@ Keep the existing release workflow untouched.
 - Works with JavaScript disabled: downloads still visible via static links.
 - Test at 360, 390, 768, 1024, 1440, and 1920 px.
 - Validate HTML and check for 404s in all asset paths.
+- Plain-language gate: no undefined jargon; Jellyfin defined before the first download
+  ask; “depth” explained wherever the tagline appears alone; offline claims limited to
+  local files and downloaded copies; open source explained as a practical right.
+  Use `docs/marketing/copy-guide.md` as the checklist.
 
 ## 9. Measurement
 
@@ -356,3 +405,30 @@ now native captures from `Medium_Phone_API_36.1` (Android 16, 1080 × 2400 at 42
 
 Remaining capture gap: the Android Auto previews are still constructed; a Desktop Head Unit
 capture is the next honest upgrade.
+
+## 17. Plain-language pass
+
+The page had grown a private vocabulary: “every depth” assumed the reader had seen the
+water theme, “local-first” and “Jellyfin” were used before they were defined, and “nothing
+leaves your device” was too broad once a Jellyfin stream, a podcast search or the optional
+artwork lookup was in play. This pass fixes the language, not the design.
+
+- Added **Start here**, a six-card glossary that defines the product, local-first, Jellyfin,
+  the queue, “every depth” and open source before the reader reaches the features.
+- Added **Why water**, which explains the name (the jellyfish balance organ), the water
+  column, the depth markers and the colour rules. It says explicitly that “depth” is not an
+  audio-quality claim.
+- Rewrote the hero, truth strip, features, podcasts, car, open-source, beta and download
+  copy in plain language. Jellyfin is now defined as free, self-hosted media-server software
+  and marked optional. “One queue” now says one active queue at a time, because music and
+  podcasts keep separate queues.
+- Moved the open-source explanation beyond the label: MIT, checksums and “no account” each
+  get a plain-language paragraph. The limits are explained before the install steps.
+- Replaced the hardcoded `2.2.0` in the screens copy with `{{VERSION}}` so the page does not
+  go stale.
+- Rewrote the install notes to define DMG, AppImage, .deb, APK and IPA, and to explain why
+  the OS warns about unsigned builds.
+- Updated the README, privacy policy, Play listing and social card to use the same
+  definitions. The rules are in `docs/marketing/copy-guide.md`.
+
+The guiding rule: **assume the reader knows how to listen to music, and nothing else.**

@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Statocyst — local-first music for every screen</title>
-  <meta name="description" content="Statocyst is a local-first music and podcast player for the files you own and the Jellyfin library you built. Desktop, tablet, phone and Android Auto. Now recruiting Android and iOS beta testers for Google Play and App Store release." />
+  <title>Statocyst — play your own music and Jellyfin library on every screen</title>
+  <meta name="description" content="Statocyst plays the music and podcasts you already own: files on your device or media from a Jellyfin server you run. Desktop, tablet, phone and Android Auto. Free, open source, no account with us." />
   <meta name="theme-color" content="#050a18" />
   <meta name="color-scheme" content="dark" />
   <meta name="statocyst-release" content="{{TAG}}" />
-  <meta property="og:title" content="Statocyst — Your music. Every depth." />
-  <meta property="og:description" content="Local-first music and podcasts for desktop, phone, tablet and Android Auto. Beta testers wanted for Google Play and the App Store." />
+  <meta property="og:title" content="Statocyst — your music and Jellyfin library, on every screen" />
+  <meta property="og:description" content="Play your own files or your Jellyfin library on desktop, phone, tablet and Android Auto. Free and open source; no account with us." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://cjrutherford.github.io/statocyst/" />
   <meta property="og:image" content="https://cjrutherford.github.io/statocyst/assets/branding/og.jpg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Statocyst desktop library in dark mode" />
+  <meta property="og:image:alt" content="Statocyst social card: Your music. Every depth. Every screen and every source you own." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://cjrutherford.github.io/statocyst/assets/branding/og.jpg" />
   <link rel="canonical" href="https://cjrutherford.github.io/statocyst/" />
@@ -31,7 +31,7 @@
       "name": "Statocyst",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Linux, macOS, Windows, Android, iOS",
-      "description": "Local-first music and podcast player for local files, Jellyfin and Android Auto.",
+      "description": "A music and podcast player for your own files and your own Jellyfin server, on desktop, phone, tablet and Android Auto.",
       "url": "https://cjrutherford.github.io/statocyst/",
       "downloadUrl": "{{RELEASE_URL}}",
       "softwareVersion": "{{VERSION}}",
@@ -55,11 +55,11 @@
         <span>Statocyst</span>
       </a>
       <nav class="nav" aria-label="Primary">
+        <a href="#start">Start here</a>
         <a href="#screens">Screens</a>
         <a href="#features">Features</a>
-        <a href="#podcasts">Podcasts</a>
         <a href="#car">Car</a>
-        <a href="#beta">Beta</a>
+        <a href="#open">Open source</a>
         <a href="#download">Download</a>
       </nav>
       <div class="topbar-actions">
@@ -88,15 +88,16 @@
 
       <div class="wrap hero-grid">
         <div class="hero-copy">
-          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Local-first music · Jellyfin · Podcasts</p>
+          <p class="eyebrow"><span class="pulse" aria-hidden="true"></span> Your files · Your server · Your car</p>
           <h1>Your music.<br /><span class="grad">Every depth.</span></h1>
-          <p class="lede">A player for the files you own, the Jellyfin library you built, and the podcasts you follow. Desktop, tablet, phone, and the car. One queue that survives restarts. Nothing leaves your device unless you ask it.</p>
+          <p class="lede">Statocyst is a music and podcast player for the library you already own. Play the audio files on your device, or connect the Jellyfin server you run yourself. Desktop, tablet, phone and Android Auto. One queue at a time, saved through restarts. No account with us, no ads, no tracking.</p>
           <div class="hero-actions">
             <a class="btn btn-primary" id="hero-download" href="#download" data-linux="{{ASSET_LINUX_APPIMAGE}}" data-mac="{{ASSET_MAC_ARM64}}" data-win="{{ASSET_WINDOWS}}" data-android="{{ASSET_ANDROID_APK}}" data-ios="{{ASSET_IOS_IPA}}">
               Download <span class="ver">{{VERSION}}</span><span class="dl-os" id="hero-os"></span>
             </a>
-            <a class="btn btn-ghost" href="#screens">See every screen</a>
+            <a class="btn btn-ghost" href="#start">New here? Start with plain English</a>
           </div>
+          <p class="tagline-note">“Every depth” means every screen and every source you own, not a claim about audio quality. <a href="#why">Why the water?</a></p>
           <p class="meta-row"><span>{{VERSION}}</span><i></i><span>{{RELEASE_DATE}}</span><i></i><span>MIT licence</span><i></i><a href="{{CHECKSUMS_URL}}">SHA-256</a></p>
         </div>
 
@@ -116,30 +117,97 @@
       <div class="wrap truth-strip" role="group" aria-label="What Statocyst does">
         <div class="truth">
           <span class="truth-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>
-          <div><strong>Your files, offline</strong><span>MP3, FLAC, OGG and WAV with no network.</span></div>
+          <div><strong>Your files play offline</strong><span>MP3, FLAC, OGG and WAV straight from your device. No connection needed.</span></div>
         </div>
         <div class="truth">
           <span class="truth-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v10H4zM8 7V5h8v2M8 12h8"/></svg></span>
-          <div><strong>Jellyfin, no plugin</strong><span>Standard server login, sync, artwork and direct play.</span></div>
+          <div><strong>Your own media server</strong><span>Jellyfin is free software you run yourself. Use your normal login; no plugin.</span></div>
         </div>
         <div class="truth">
           <span class="truth-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9"/><path d="m18 16 3 3-3 3"/></svg></span>
-          <div><strong>One queue</strong><span>Music and podcasts, restored after a restart.</span></div>
+          <div><strong>One queue at a time</strong><span>Music or podcasts; the list is still there after you close the app.</span></div>
         </div>
         <div class="truth">
           <span class="truth-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 15h16l-2 4H6zM6 15V9l2-3h8l2 3v6M8 12h.01M16 12h.01"/></svg></span>
-          <div><strong>Android Auto</strong><span>Native media service, browsable without the WebView.</span></div>
+          <div><strong>Your library in the car</strong><span>Android Auto — the in-car version of Android — browses it without opening the phone app.</span></div>
         </div>
+      </div>
+    </section>
+
+    <section class="section start" id="start">
+      <div class="wrap">
+        <header class="section-head">
+          <div class="depth"><span>01 / Surface</span><span class="rule"></span><span>0 m · Start here</span></div>
+          <div>
+            <h2>Plain English first.</h2>
+            <p>You do not need to know what “local-first”, “Jellyfin” or “depth” mean before you use this page. Here is the whole idea in six short answers.</p>
+          </div>
+        </header>
+
+        <div class="glossary-grid">
+          <article class="gloss">
+            <span class="gloss-term">The product</span>
+            <h3>A player, not a shop</h3>
+            <p>Statocyst does not sell, host or stream music of its own. It plays audio you already have: files on your device, or media from a Jellyfin server you control. There is nothing to subscribe to and no catalogue to rent.</p>
+          </article>
+          <article class="gloss">
+            <span class="gloss-term">Local-first</span>
+            <h3>Your device holds the original</h3>
+            <p>“Local-first” means the library list, queue, favourites and listening history live on your device. We do not run a cloud library or keep a profile of you. The app only uses the network for features you turn on: your own server, a podcast search, or optional artwork lookup.</p>
+          </article>
+          <article class="gloss">
+            <span class="gloss-term">Jellyfin</span>
+            <h3>Your own private streaming service</h3>
+            <p>Jellyfin is free, open-source software that you — or someone you trust — run on a home server, a NAS (network storage box) or a computer. It indexes your media and serves it to apps like Statocyst. Think of it as a streaming service where you own the server. Statocyst needs your address and normal login, not a plugin. If you do not have Jellyfin, local files work on their own.</p>
+          </article>
+          <article class="gloss">
+            <span class="gloss-term">The queue</span>
+            <h3>The list of what plays next</h3>
+            <p>Music and podcasts each keep their own saved queue; only one is active at a time. Change screen or close the app and the order is still there, along with the current track, position, shuffle and repeat state.</p>
+          </article>
+          <article class="gloss">
+            <span class="gloss-term">“Every depth”</span>
+            <h3>Reach, not audio fidelity</h3>
+            <p>Depth here is the water metaphor for going from the surface — the screen in front of you — down to the files and server you actually own, then back out to every device. It is not a claim about audio resolution, a bass setting or a “deep cuts” feature. “Every depth” means the same library on desktop, tablet, phone, car and offline.</p>
+          </article>
+          <article class="gloss">
+            <span class="gloss-term">Open source</span>
+            <h3>Yours to inspect and keep</h3>
+            <p>Statocyst is MIT licensed. You can read the code, build it yourself, change it for your own use and share your version. There is no account to cancel and no server of ours that can switch off. The open-source section explains what that means in practice.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section why" id="why">
+      <div class="wrap why-grid">
+        <div class="why-copy">
+          <div class="depth"><span>02 / Surface</span><span class="rule"></span><span>0 m · Why water</span></div>
+          <h2>Why a jellyfish? Why the water?</h2>
+          <p><strong>Statocyst</strong> (STAT-oh-sist) is a real organ. The word comes from Greek: <em>statos</em>, standing, and <em>kystis</em>, sac. It is the small balance sensor in a jellyfish: a tiny stone suspended in a fluid-filled sac. When the animal tilts, the stone presses on sensitive hairs and tells it which way is up. It is not an eye or an ear. It is the part that keeps its bearings.</p>
+          <p>That is the promise we borrowed. A large music library can feel like open water — thousands of tracks, several sources, no fixed up. We wanted a name for a small, calm instrument that helps you find your place again. It is also a quiet joke: the app is named after the part of the jellyfish that knows where it is, not the part that stings.</p>
+          <p>The water is not a claim that the sound is “deeper”. It is the shape of the page: surface light at the top, twilight in the middle, midnight at the bottom, then a sand shelf where you can actually download something. The depth markers are a reading aid, not an audio measurement. The app icon keeps the jellyfish silhouette, the suspended pearl and the sonar lines; this page extends that icon rather than inventing a second brand.</p>
+        </div>
+        <aside class="why-card" aria-label="How the page uses depth">
+          <p class="eyebrow">Reading the page</p>
+          <ol class="zone-list">
+            <li><span class="zone-depth">0 m · Surface</span><strong>Start here.</strong> What the words mean, why the theme exists, and what the screens look like.</li>
+            <li><span class="zone-depth">−200 to −600 m · Twilight</span><strong>The working middle.</strong> Features, podcasts and short clips of the app in motion.</li>
+            <li><span class="zone-depth">−800 to −1100 m · Midnight</span><strong>The honest bottom.</strong> The car, the licence, the limits and the beta.</li>
+            <li><span class="zone-depth">Low tide · 0 m</span><strong>Back to shore.</strong> The download shelf. Sand, ink and no more metaphor.</li>
+          </ol>
+          <p class="why-note">Cyan marks something live or clickable. Violet belongs to artwork. Bubbles are decoration and stop when your device asks for reduced motion.</p>
+        </aside>
       </div>
     </section>
 
     <section class="section screens" id="screens">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>01 / Surface</span><span class="rule"></span><span>0 m · Screens</span></div>
+          <div class="depth"><span>03 / Surface</span><span class="rule"></span><span>0 m · Screens</span></div>
           <div>
-            <h2>One library. Every horizon.</h2>
-            <p>These are captures from the current 2.2.0 build at desktop, tablet and phone widths — not renders. The same catalog, queue and artwork travel across each layout.</p>
+            <h2>One library. Every screen.</h2>
+            <p>Real screenshots from the current {{VERSION}} release, not mockups. The same library, queue and artwork appear on desktop, tablet and phone. The car view is the one exception; it is labelled where it appears.</p>
           </div>
         </header>
 
@@ -171,10 +239,10 @@
     <section class="section features" id="features">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>02 / Twilight</span><span class="rule"></span><span>−200 m · Features</span></div>
+          <div class="depth"><span>04 / Twilight</span><span class="rule"></span><span>−200 m · Features</span></div>
           <div>
-            <h2>Built for the way a library actually lives.</h2>
-            <p>No account layer, no cloud library. Import what you have, connect a server if you want one, and keep the queue yours.</p>
+            <h2>Your library is the starting point, not the fallback.</h2>
+            <p>Most players assume a streaming account and treat your own files as an import. Statocyst starts at the other end: your library is the original. Jellyfin, podcasts and the car are additions you can choose, not requirements.</p>
           </div>
         </header>
 
@@ -186,13 +254,13 @@
             </div>
           </div>
           <div class="feature-copy">
-            <p class="eyebrow">Local first</p>
+            <p class="eyebrow">Local files</p>
             <h3>Your library is not a rental.</h3>
-            <p>Import files, read their metadata, and play them straight from the device. The catalog lives in a local database on the device; local playback does not make a network request.</p>
+            <p>Add music from your device and Statocyst reads the artist, album and cover art already inside the files. It keeps that index on your device, so browsing and playback work without a connection or an account.</p>
             <ul class="check-list">
               <li>MP3, FLAC, OGG and WAV</li>
-              <li>Artwork and metadata read on import</li>
-              <li>No account, no upload, no telemetry</li>
+              <li>Metadata and cover art read from your files</li>
+              <li>No account with us, no ads, no usage tracking</li>
             </ul>
           </div>
         </div>
@@ -207,11 +275,11 @@
           <div class="feature-copy">
             <p class="eyebrow">Queue</p>
             <h3>One queue. All the way down.</h3>
-            <p>The queue is authoritative, not a side effect of the current screen. Move a track, remove one, close the app, come back; the queue and the play position are still there.</p>
+            <p>The queue is simply the list of what plays next. We made it the durable part of the app rather than a side effect of the current screen: reorder it, remove a track, close the app, and the same queue is waiting when you return. The current track and position come back too.</p>
             <ul class="check-list">
-              <li>Reorder and remove from the queue</li>
-              <li>Resume at the saved position</li>
-              <li>Shuffle and repeat state persisted</li>
+              <li>Reorder and remove anything in the queue</li>
+              <li>Resume the same track at the saved position</li>
+              <li>Shuffle and repeat state survive a restart</li>
             </ul>
           </div>
         </div>
@@ -225,11 +293,11 @@
           <div class="feature-copy">
             <p class="eyebrow">Jellyfin + mobile</p>
             <h3>The same library in your pocket.</h3>
-            <p>Connect a standard Jellyfin server, sync the music catalog and stream with the session kept on the device. Jellyfin is optional: standalone local playback stays the default.</p>
+            <p>If you already run Jellyfin, Statocyst signs in with the address and account you use there. It copies the list of albums, artists and tracks to your device, streams from your server over a secure connection when you are away, and plays downloaded copies when you are offline. Jellyfin is optional: local files never need it.</p>
             <ul class="check-list">
-              <li>Standard server login and catalog sync</li>
-              <li>Direct play where the source allows it</li>
-              <li>Android background media session</li>
+              <li>Your normal Jellyfin login; no plugin to install</li>
+              <li>Stream from your server or keep tracks offline</li>
+              <li>Background playback and lock-screen controls on Android</li>
             </ul>
           </div>
         </div>
@@ -239,10 +307,10 @@
     <section class="section podcasts" id="podcasts">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>03 / Twilight</span><span class="rule"></span><span>−400 m · Podcasts</span></div>
+          <div class="depth"><span>05 / Twilight</span><span class="rule"></span><span>−400 m · Podcasts</span></div>
           <div>
-            <h2>Podcasts, in the same water.</h2>
-            <p>Search Apple Podcasts and Fyyd, subscribe in one tap, and keep episodes beside your music. No feed URL, account, or API key required.</p>
+            <h2>Podcasts, in the same player.</h2>
+            <p>Search two public podcast directories — Apple Podcasts and Fyyd — without pasting a feed URL or creating an account with either. Subscribe in one tap, and episodes sit beside your albums. A feed URL is just the address a show publishes its episodes at.</p>
           </div>
         </header>
 
@@ -262,11 +330,11 @@
           <div class="podcast-copy">
             <p class="eyebrow">Apple Podcasts + Fyyd</p>
             <h3>Find, follow, finish.</h3>
-            <p>Discovery is built in, subscriptions persist, and episodes resume where you left off. Audio and video enclosures share the same careful queue.</p>
+            <p>Discovery is built in. Subscriptions are saved on your device, episodes resume where you stopped, and audio and video episodes share the podcast queue. Searching sends your query to those public directories; nothing about your library is included.</p>
             <ul class="check-list">
-              <li>Search directories without pasting feed URLs</li>
+              <li>Search by show name; no address to paste or key to request</li>
               <li>Per-show skip intro, skip outro and episode order</li>
-              <li>Per-episode resume, speed and offline pinning</li>
+              <li>Per-episode resume, speed and offline downloads</li>
               <li>Video episodes in the same player</li>
             </ul>
           </div>
@@ -277,10 +345,10 @@
     <section class="section motion" id="motion">
       <div class="wrap">
         <header class="section-head">
-          <div class="depth"><span>04 / Twilight</span><span class="rule"></span><span>−600 m · Clips</span></div>
+          <div class="depth"><span>06 / Twilight</span><span class="rule"></span><span>−600 m · Clips</span></div>
           <div>
             <h2>See it move.</h2>
-            <p>Three short screen recordings from the Android app, no sound: Library into Playlists, Queue, and Now playing.</p>
+            <p>Three short, silent recordings from the Android app: Library into Playlists, Library into Queue, and Library into Now playing. They show the transitions, not a scripted tour.</p>
           </div>
         </header>
 
@@ -319,23 +387,23 @@
             </figcaption>
           </figure>
         </div>
-        <p class="note">Desktop and car motion captures are not in this draft. Only clips that exist are shown.</p>
+        <p class="note">Only clips that exist are shown. Desktop and car motion captures are still to come.</p>
       </div>
     </section>
 
     <section class="section car" id="car">
       <div class="wrap car-grid">
         <div class="car-copy">
-          <div class="depth"><span>05 / Midnight</span><span class="rule"></span><span>−800 m · Android Auto</span></div>
-          <h2>Android Auto, without the WebView.</h2>
-          <p>The car browses the indexed catalog and the saved queue directly from the native media service. Playback keeps going when the app is not on screen, and the queue is the same one you left on the phone.</p>
+          <div class="depth"><span>07 / Midnight</span><span class="rule"></span><span>−800 m · Android Auto</span></div>
+          <h2>Android Auto, without waiting for the phone app.</h2>
+          <p>Android Auto is the in-car version of Android, shown on the head unit — the screen in your dashboard. Statocyst gives Android Auto its own connection to the library, so the car can browse your music and the saved queue without opening the full app on your phone. Playback keeps going when the phone screen is off, and the queue is the same one you left there.</p>
           <ul class="check-list">
-            <li>Cold-start browse without launching Angular</li>
-            <li>Saved queue, shuffle order and position restored</li>
-            <li>Artwork served through a token-free content provider</li>
-            <li>Head-unit and controller allowlist</li>
+            <li>Browse the library without opening the phone app</li>
+            <li>The same queue, shuffle order and position</li>
+            <li>Cover art from your own library</li>
+            <li>Only the controls Android Auto allows while driving</li>
           </ul>
-          <p class="callout"><strong>Preview note:</strong> these are constructed previews of the standard Android Auto surface, using Statocyst’s real browse categories and shuffle / repeat / heart actions. They are not a real head-unit capture.</p>
+          <p class="callout"><strong>Preview note:</strong> these two images are reconstructions, not photographs of a real dashboard. They use Statocyst’s real browse categories and buttons on the standard Android Auto layout. We will replace them with a real head-unit capture when we have one.</p>
         </div>
         <figure class="car-preview" data-car-preview>
           <div class="car-tabs" role="tablist" aria-label="Android Auto preview screens">
@@ -352,18 +420,37 @@
     </section>
 
     <section class="section open" id="open">
-      <div class="wrap open-grid">
-        <div>
-          <div class="depth"><span>06 / Midnight</span><span class="rule"></span><span>−1000 m · Open source</span></div>
-          <h2>Built in the open. Shipped with caveats.</h2>
-          <p>Statocyst is MIT licensed. The source, release notes and checksums are on GitHub. The desktop builds are unsigned, Android and iOS are sideloads, and Linux is the reference desktop target. We would rather say that plainly than bury it in a FAQ.</p>
-          <a class="text-link" href="https://github.com/cjrutherford/statocyst">Read the source <span aria-hidden="true">→</span></a>
+      <div class="wrap">
+        <div class="open-grid">
+          <div>
+            <div class="depth"><span>08 / Midnight</span><span class="rule"></span><span>−1000 m · Open source</span></div>
+            <h2>You own the app, not just the files.</h2>
+            <p>Statocyst is open source under the MIT licence. In plain words: you can read the code, build it yourself, change it for your own use, and share your version. Nobody can take the app away from you or force an update you do not want.</p>
+            <p>The project started as a personal library player, not a streaming product. The goal was simple: play the files and the server we already had, on every screen we actually use, without an account in the middle. The open licence is part of the same idea.</p>
+            <p>That is also why the promises on this page are checkable. The privacy policy lives in the same repository as the code. If we say there is no analytics, you can search for one. If you disagree with a decision, you can copy the code and change it.</p>
+            <p>We would rather show the seams than pretend there are none. The desktop builds are unsigned, Android and iOS are installed by you rather than through a store, and Linux is the reference desktop target. That is not a marketing footnote; it changes what you need to do to install the app, so the steps are below.</p>
+            <a class="text-link" href="https://github.com/cjrutherford/statocyst">Read the source <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="caveat-card">
+            <div class="caveat"><span class="mark ok" aria-hidden="true">✓</span><div><strong>MIT licensed</strong><span>Read, change, run it yourself or share your version. Full licence text on GitHub.</span></div></div>
+            <div class="caveat"><span class="mark ok" aria-hidden="true">✓</span><div><strong>Checksums attached</strong><span>Verify the file you downloaded matches the one we published. A checksum is a fingerprint, not a signature.</span></div></div>
+            <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Unsigned desktop builds</strong><span>We do not yet pay for Apple or Microsoft signing certificates. Your OS will warn you; the install steps are below.</span></div></div>
+            <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Mobile is not from a store yet</strong><span>Android APK and iOS IPA are installed by you. Store betas are forming below.</span></div></div>
+          </div>
         </div>
-        <div class="caveat-card">
-          <div class="caveat"><span class="mark ok" aria-hidden="true">✓</span><div><strong>MIT licensed</strong><span>Source and issue tracker are public.</span></div></div>
-          <div class="caveat"><span class="mark ok" aria-hidden="true">✓</span><div><strong>Checksums attached</strong><span>Every release includes SHA-256 sums.</span></div></div>
-          <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Unsigned desktop builds</strong><span>macOS needs right-click → Open; Windows may show SmartScreen.</span></div></div>
-          <div class="caveat"><span class="mark warn" aria-hidden="true">!</span><div><strong>Mobile is sideloaded</strong><span>Android APK and ad-hoc iOS IPA, not store builds.</span></div></div>
+        <div class="plain-notes">
+          <div>
+            <h3>What MIT actually means</h3>
+            <p>MIT is a short licence that allows use, copying, modification and sharing, including commercially, as long as you keep the copyright notice. It does not cost anything and it does not expire. It is the reason a community can continue the project if the original maintainers stop.</p>
+          </div>
+          <div>
+            <h3>What a checksum is for</h3>
+            <p>A SHA-256 checksum is a long fingerprint calculated from the download. If even one byte changes, the fingerprint changes. Compare the file you downloaded with the value on the release page if you want to be sure it arrived intact.</p>
+          </div>
+          <div>
+            <h3>What “no account” means</h3>
+            <p>There is no sign-up, no profile and no identifier with us. Your Jellyfin login goes to your server, not to us. If you delete the app, there is no account left behind to delete.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -371,21 +458,21 @@
     <section class="section beta" id="beta">
       <div class="wrap beta-grid">
         <div class="beta-copy">
-          <div class="depth"><span>07 / Midnight</span><span class="rule"></span><span>−1100 m · Beta testers</span></div>
-          <h2>Help us reach the stores.</h2>
-          <p>Statocyst is preparing for <strong>Google Play</strong> and the <strong>App Store</strong>. We are looking for Android and iOS beta testers with real libraries, Jellyfin servers, and car setups to help us meet store testing requirements and shake out the release builds.</p>
+          <div class="depth"><span>09 / Midnight</span><span class="rule"></span><span>−1100 m · Beta testers</span></div>
+          <h2>Help us test the store builds.</h2>
+          <p>Statocyst is preparing for <strong>Google Play</strong> and the <strong>App Store</strong>. Both stores review an app before it can be listed publicly, and Google Play also requires a period of real-world testing for new personal-account apps. We are looking for Android and iOS testers with real libraries, Jellyfin servers and car setups. A “closed beta” is a limited test group: you install a build, use it, and tell us what breaks.</p>
           <ul class="check-list">
             <li>Android phone or tablet, or iPhone / iPad</li>
             <li>A local library or Jellyfin server you can test with</li>
-            <li>Optional: an Android Auto head unit</li>
+            <li>Optional: an Android Auto head unit (the screen in your car)</li>
           </ul>
           <a class="btn btn-primary" href="https://github.com/cjrutherford/statocyst/issues/new?template=beta-tester.yml">Request beta access</a>
-          <p class="note">Current downloads are sideload builds. Store builds are not published yet.</p>
+          <p class="note">Current downloads are manual installs — files you install yourself. Store builds are not public yet.</p>
         </div>
         <aside class="store-card" aria-label="Store beta status">
           <div class="store-row"><span>Google Play</span><strong>Closed beta forming</strong></div>
           <div class="store-row"><span>App Store</span><strong>TestFlight beta forming</strong></div>
-          <p>Tell us what you run — phone, tablet, car — and what you want to test. We will reply with the current build and setup notes.</p>
+          <p>TestFlight is Apple’s beta-testing app. Tell us what you run — phone, tablet, car — and what you want to test. We will reply with the current build and setup notes.</p>
         </aside>
       </div>
     </section>
@@ -393,9 +480,9 @@
     <section class="shelf" id="download">
       <div class="wrap shelf-grid">
         <div class="shelf-copy">
-          <div class="depth"><span>08 / Low tide</span><span class="rule"></span><span>0 m · Download</span></div>
+          <div class="depth"><span>10 / Low tide</span><span class="rule"></span><span>0 m · Download</span></div>
           <h2>Take the tide home.</h2>
-          <p>Current release <strong>{{RELEASE_NAME}}</strong>, published {{RELEASE_DATE}}. Choose a platform; the release page carries checksums and notes.</p>
+          <p>Current release <strong>{{RELEASE_NAME}}</strong>, published {{RELEASE_DATE}}. Choose a platform; the release page on GitHub carries the checksums and full notes. If you are not sure which file you need, the install notes below explain AppImage, .deb, APK and IPA.</p>
           <div class="shelf-actions">
             <a class="btn btn-ink" id="shelf-primary" href="{{RELEASE_URL}}" data-linux="{{ASSET_LINUX_APPIMAGE}}" data-mac="{{ASSET_MAC_ARM64}}" data-win="{{ASSET_WINDOWS}}" data-android="{{ASSET_ANDROID_APK}}" data-ios="{{ASSET_IOS_IPA}}">Download latest <span aria-hidden="true">↓</span></a>
             <a class="btn btn-outline-ink" href="{{RELEASE_URL}}">Release notes</a>
@@ -431,7 +518,7 @@
             <span class="arrow" aria-hidden="true">↓</span>
           </a>
           <a class="download-row" href="{{ASSET_IOS_IPA}}" data-os="ios">
-            <span class="os">iOS <em>sideload</em></span>
+            <span class="os">iOS <em>manual install</em></span>
             <span class="file">{{NAME_IOS_IPA}}</span>
             <span class="size">{{SIZE_IOS_IPA}}</span>
             <span class="arrow" aria-hidden="true">↓</span>
@@ -442,13 +529,13 @@
 
       <div class="wrap install-notes">
         <details>
-          <summary>Install notes for unsigned and sideloaded builds</summary>
+          <summary>Install notes and what the file types mean</summary>
           <div class="notes-grid">
-            <p><strong>macOS</strong> Open the DMG, drag Statocyst to Applications, then right-click the app → Open the first time.</p>
-            <p><strong>Windows</strong> Run the installer. If SmartScreen appears, choose More info → Run anyway.</p>
-            <p><strong>Linux</strong> Make the AppImage executable: <code>chmod +x statocyst-*.AppImage</code>, then run it. Or install the .deb.</p>
-            <p><strong>Android</strong> Allow installs from your browser or file manager, then open the APK. Android Auto needs Unknown sources enabled for this build.</p>
-            <p><strong>iOS</strong> The IPA is ad-hoc signed and must be sideloaded with your own tool and signing identity.</p>
+            <p><strong>macOS</strong> Open the DMG (the disk image file), drag Statocyst into Applications, then right-click the app and choose Open the first time. macOS warns you because the build is not signed with a paid Apple certificate. You can also allow it in System Settings → Privacy &amp; Security.</p>
+            <p><strong>Windows</strong> Run the .exe installer. If SmartScreen says Windows protected your PC, choose More info → Run anyway. The build is not signed with a paid Windows certificate.</p>
+            <p><strong>Linux</strong> An AppImage is a single portable file: make it executable with <code>chmod +x statocyst-*.AppImage</code>, then run it. A .deb is the package format used by Debian and Ubuntu; open it with your software installer.</p>
+            <p><strong>Android</strong> An APK is the Android install file. Allow installs from the browser or file manager you downloaded it with, then open it. For Android Auto, enable “Unknown sources” for Statocyst — the car build is not from Play yet.</p>
+            <p><strong>iOS</strong> An IPA is an iOS app archive, not an App Store download. This one is signed for a limited set of devices, so it must be installed with a tool that loads app files directly and your own Apple signing identity. There is no one-click path; TestFlight will be easier when the beta opens.</p>
           </div>
         </details>
       </div>

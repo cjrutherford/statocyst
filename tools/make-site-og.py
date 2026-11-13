@@ -55,12 +55,13 @@ def main():
     logo = symbol.resize((86, 86), Image.LANCZOS)
     canvas.paste(logo, (64, 54), logo)
     draw.text((166, 66), 'Statocyst', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 38), fill=TEXT)
-    draw.text((168, 108), 'BATHYPELAGIC AUDIO', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 12), fill=CYAN)
+    draw.text((168, 108), 'A PLAYER FOR WHAT YOU OWN', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 12), fill=CYAN)
 
     draw.text((64, 228), 'Your music.', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 48), fill=TEXT)
     draw.text((64, 286), 'Every depth.', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', 48), fill=CYAN)
-    draw.text((64, 362), 'Local-first music · Jellyfin · Podcasts', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 18), fill=MUTED)
-    draw.text((64, 390), 'Desktop · tablet · phone · Android Auto', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 18), fill=MUTED)
+    draw.text((64, 362), 'Every screen and every source you own.', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 18), fill=MUTED)
+    draw.text((64, 390), 'Your files · Your own Jellyfin server', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 18), fill=MUTED)
+    draw.text((64, 416), 'Desktop · tablet · phone · Android Auto', font=font('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 18), fill=MUTED)
 
     draw.line((64, 548, 412, 548), fill=(148, 197, 255, 80), width=1)
     version = json.loads((ROOT / 'package.json').read_text())['version']

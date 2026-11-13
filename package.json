@@ -3,7 +3,7 @@
   "version": "2.2.0",
   "private": true,
   "license": "MIT",
-  "description": "Statocyst \u2014 local-first, Jellyfin-oriented music player",
+  "description": "Statocyst \u2014 a music and podcast player for your own files and your own Jellyfin server",
   "homepage": "https://github.com/cjrutherford/statocyst",
   "desktopName": "statocyst.desktop",
   "author": {

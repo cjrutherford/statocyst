@@ -37,5 +37,6 @@ bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 reg = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 d.text((500, 140), "Statocyst", font=ImageFont.truetype(bold, 84), fill=(240, 244, 255))
 d.text((504, 252), "Your music. Your server.", font=ImageFont.truetype(reg, 34), fill=(170, 190, 255))
-d.text((504, 304), "Local files + Jellyfin  |  Offline  |  Android Auto", font=ImageFont.truetype(reg, 22), fill=(130, 150, 220))
+d.text((504, 304), "Your own files  |  Your own Jellyfin server", font=ImageFont.truetype(reg, 20), fill=(130, 150, 220))
+d.text((504, 340), "Android Auto  |  No ads, no tracking", font=ImageFont.truetype(reg, 20), fill=(130, 150, 220))
 canvas.convert("RGB").save(out / "feature-graphic-1024x500.png", optimize=True)

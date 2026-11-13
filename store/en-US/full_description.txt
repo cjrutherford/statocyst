@@ -1,9 +1,15 @@
-Statocyst is a music player for the library you already own. Play audio files stored on your device or stream from your own Jellyfin server. There are no ads, no accounts with us, and no tracking.
+Statocyst is a music and podcast player for the library you already own. Play audio files stored on your device, or connect to a Jellyfin server you run yourself. There are no ads, no account with us, and no tracking.
+
+WHAT "LOCAL-FIRST" MEANS
+Your library list, queue, favorites and listening history live on your device. We do not run a cloud service that holds your music or keeps a profile of you. The app only uses the network for features you turn on: your own Jellyfin server, a podcast search, or the optional artwork lookup.
+
+WHAT IS JELLYFIN?
+Jellyfin is free, open-source software that you (or someone you trust) run on a home server, NAS or computer. It indexes your media and serves it to apps like this one — your own private streaming service. Statocyst uses your normal Jellyfin address and login. It needs no plugin, subscription or account with us. If you do not have Jellyfin, local files work on their own.
 
 PLAY YOUR MUSIC
 • Import individual files or whole folders from your device
 • Connect to your own Jellyfin server and browse your library
-• A queue that survives restarts so you can pick up where you left off
+• A queue that is saved as you edit it, so it is still there after a restart
 • Background playback with lock-screen and notification controls
 
 MADE FOR LISTENING
@@ -14,13 +20,20 @@ MADE FOR LISTENING
 
 TAKE IT WITH YOU
 • Download tracks for offline listening
-• A rolling cache that prefetches upcoming tracks
+• A rolling cache that prepares upcoming tracks
 • Home-screen widgets: now playing, quick picks and speed dial
-• Android Auto support for your car display
+• Android Auto support for your car display, with library browsing that does not need the phone app open
+
+PODCASTS
+• Search public podcast directories without pasting a feed URL
+• Subscribe and keep episodes beside your music
+• Per-show skip intro, skip outro and episode order
+• Video episodes in the same player
 
 YOUR DATA STAYS YOURS
 • Your Jellyfin address, sign-in and library live on your device and talk only to the server you choose
 • Artwork lookup is optional and sends only album and artist names to MusicBrainz and the Cover Art Archive
 • No analytics, no advertising, no data sold
+• The source code is public under the MIT license
 
 Statocyst does not provide or host any music. You bring the files or the server.

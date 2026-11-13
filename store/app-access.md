@@ -3,6 +3,11 @@
 Paste into Play Console > App content > App access ("All or some functionality is restricted").
 Reviewers cannot use the app without a media source, so give them one of the two paths below.
 
+Statocyst is a player, not a streaming service. It ships with no music and hosts nothing. A
+reviewer can test it with local audio files (Path A) or with a demo Jellyfin server (Path B).
+Jellyfin is free, open-source media-server software that the user runs on their own hardware;
+it is optional and is not required for local playback.
+
 ## Path A: local files (no account needed)
 1. Install the build from the testing track and open Statocyst.
 2. Download the sample audio pack from `<URL TO HOST THE SAMPLE FILES>` (the four files in

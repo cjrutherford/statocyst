@@ -4,8 +4,16 @@ Effective date: `<DATE BEFORE PUBLISHING>`
 Developer: Hopeful Aspirations Industries
 Contact: `<CONTACT EMAIL>`
 
-Statocyst is a music player. It plays audio files stored on your device and media from a Jellyfin
-server that you run or have access to. This policy explains what the app handles.
+Statocyst is a local-first music and podcast player. In plain terms: it plays audio files stored
+on your device, and — if you choose — media from a Jellyfin server that you run or have access to.
+“Local-first” means the library list, queue, favorites, listening history and settings live on
+your device. The developer does not run a cloud library or hold an account for you.
+
+Jellyfin is separate, free, open-source media-server software that you (or someone you trust)
+run on your own hardware. This policy covers the Statocyst app, not your server. If you run a
+Jellyfin server, its operator is responsible for that server’s privacy and security.
+
+This policy explains what the app handles.
 
 ## What stays on your device
 - Your library index, queue, favorites, listening history and settings.

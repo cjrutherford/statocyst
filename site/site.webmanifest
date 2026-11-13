@@ -1,7 +1,7 @@
 {
   "name": "Statocyst",
   "short_name": "Statocyst",
-  "description": "Local-first music and podcasts for desktop, phone, tablet and Android Auto.",
+  "description": "A music and podcast player for your own files and your own Jellyfin server, on desktop, phone, tablet and Android Auto.",
   "start_url": "/statocyst/",
   "display": "standalone",
   "background_color": "#050a18",

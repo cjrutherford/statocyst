@@ -28,7 +28,7 @@
     const dataKey = platform === 'windows' ? 'win' : platform;
     if (heroOs && labels[platform]) heroOs.textContent = labels[platform];
     // iOS users need the shelf's install notes, not a direct IPA tap.
-    if (platform === 'ios' && heroOs) heroOs.textContent = 'for iOS (sideload)';
+    if (platform === 'ios' && heroOs) heroOs.textContent = 'for iOS (manual install)';
 
     if (shelf) {
       const shelfUrl = shelf.dataset[dataKey];
