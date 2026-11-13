@@ -97,6 +97,7 @@
             </a>
             <a class="btn btn-ghost" href="#start">New here? Start with plain English</a>
           </div>
+          <p class="download-hint"><a href="#download">Other platforms, file sizes and install notes</a></p>
           <p class="tagline-note">“Every depth” means every screen and every source you own, not a claim about audio quality. <a href="#why">Why the water?</a></p>
           <p class="meta-row"><span>{{VERSION}}</span><i></i><span>{{RELEASE_DATE}}</span><i></i><span>MIT licence</span><i></i><a href="{{CHECKSUMS_URL}}">SHA-256</a></p>
         </div>
@@ -485,9 +486,10 @@
           <p>Current release <strong>{{RELEASE_NAME}}</strong>, published {{RELEASE_DATE}}. Choose a platform; the release page on GitHub carries the checksums and full notes. If you are not sure which file you need, the install notes below explain AppImage, .deb, APK and IPA.</p>
           <div class="shelf-actions">
             <a class="btn btn-ink" id="shelf-primary" href="{{RELEASE_URL}}" data-linux="{{ASSET_LINUX_APPIMAGE}}" data-mac="{{ASSET_MAC_ARM64}}" data-win="{{ASSET_WINDOWS}}" data-android="{{ASSET_ANDROID_APK}}" data-ios="{{ASSET_IOS_IPA}}">Download latest <span aria-hidden="true">↓</span></a>
-            <a class="btn btn-outline-ink" href="{{RELEASE_URL}}">Release notes</a>
+            <a class="btn btn-outline-ink" href="{{RELEASE_URL}}">All downloads &amp; notes</a>
           </div>
           <p class="shelf-meta"><span>✓ SHA-256 attached</span><span>MIT</span><span>No account</span></p>
+          <p class="shelf-hint">Downloads start directly from GitHub. If your browser does not start the file, use the platform list or open the <a href="{{RELEASE_URL}}">release page</a>. The size is listed beside each platform.</p>
         </div>
 
         <div class="download-list" role="group" aria-label="Release downloads">
@@ -535,7 +537,7 @@
             <p><strong>Windows</strong> Run the .exe installer. If SmartScreen says Windows protected your PC, choose More info → Run anyway. The build is not signed with a paid Windows certificate.</p>
             <p><strong>Linux</strong> An AppImage is a single portable file: make it executable with <code>chmod +x statocyst-*.AppImage</code>, then run it. A .deb is the package format used by Debian and Ubuntu; open it with your software installer.</p>
             <p><strong>Android</strong> An APK is the Android install file. Allow installs from the browser or file manager you downloaded it with, then open it. For Android Auto, enable “Unknown sources” for Statocyst — the car build is not from Play yet.</p>
-            <p><strong>iOS</strong> An IPA is an iOS app archive, not an App Store download. This one is signed for a limited set of devices, so it must be installed with a tool that loads app files directly and your own Apple signing identity. There is no one-click path; TestFlight will be easier when the beta opens.</p>
+            <p id="ios-install"><strong>iOS</strong> An IPA is an iOS app archive, not an App Store download. This one is signed for a limited set of devices, so it must be installed with a tool that loads app files directly and your own Apple signing identity. There is no one-click path; TestFlight will be easier when the beta opens.</p>
           </div>
         </details>
       </div>

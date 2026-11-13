@@ -134,6 +134,10 @@ sentence. Do not assume the reader knows what a licence is.
 - [ ] The water theme is tied to the name and the balance-organ idea, not just “deep”.
 - [ ] Open source is explained as a practical right, not a slogan.
 - [ ] Limits are stated before the download action.
+- [ ] A button labelled Download starts a download; it does not silently scroll to
+      another section.
+- [ ] If a download can stall or be blocked, the release page is offered as a visible
+      fallback.
 - [ ] Version numbers in body copy use the build token or no version at all.
 - [ ] Store descriptions use the same definitions as the landing page.
 

@@ -112,9 +112,10 @@ the hero horizon and the download/footer shelf. It never becomes a generic beige
 1. **Sticky top bar** — symbol, wordmark, `Start here`, `Screens`, `Features`, `Car`,
    `Open source`, `Download`, GitHub link.
 2. **Hero** — headline, one-paragraph promise that defines the product without assuming
-   Jellyfin, auto-detected download button, secondary `New here? Start with plain English`,
-   version/licence/checksum microcopy, and a one-line explanation of “every depth”. Desktop
-   screenshot with a phone overlapping its lower-left corner.
+   Jellyfin, auto-detected direct download button, a link to other platforms and install
+   notes, secondary `New here? Start with plain English`, version/licence/checksum
+   microcopy, and a one-line explanation of “every depth”. Desktop screenshot with a phone
+   overlapping its lower-left corner.
 3. **Truth strip** — four plain facts: local playback, own media server, saved queue,
    Android Auto.
 4. **Start here** — six short answers: the product, local-first, Jellyfin, the queue,
@@ -206,6 +207,11 @@ The page should never go stale.
 - Render the version, publish date, asset names, and sizes from the response.
 - If the API fails or is rate-limited, fall back to the static links for `v2.2.0`.
 - Detect the visitor’s platform and promote that card, but keep every platform visible.
+- The hero and shelf primary buttons link **directly to the detected platform asset**;
+  they must not pretend to download while only scrolling to the shelf. The platform rows
+  and the release page remain the fallback if a browser blocks or stalls the asset.
+- For iOS, both primary buttons open the iOS install notes, not the IPA. An IPA is not a
+  one-tap install, and a stalled IPA download is worse than clear sideloading steps.
 - Link `All releases` to `https://github.com/cjrutherford/statocyst/releases`.
 - Add install notes: unsigned macOS app (right-click → Open), Windows SmartScreen,
   Linux AppImage `chmod +x`, Android sideload, iOS sideload, and Android Auto

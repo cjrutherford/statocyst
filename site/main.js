@@ -21,20 +21,43 @@
   const hero = document.getElementById('hero-download');
   const heroOs = document.getElementById('hero-os');
   const shelf = document.getElementById('shelf-primary');
+  const iosInstall = document.getElementById('ios-install');
+  const installDetails = iosInstall?.closest('details');
+  const openIosInstall = () => {
+    if (installDetails) installDetails.open = true;
+  };
 
   if (platform) {
     document.documentElement.dataset.platform = platform;
     // The markup uses data-win for Windows; keep the platform keys readable.
     const dataKey = platform === 'windows' ? 'win' : platform;
+    const platformLabel = { linux: 'Linux', mac: 'macOS', windows: 'Windows', android: 'Android', ios: 'iOS' }[platform];
     if (heroOs && labels[platform]) heroOs.textContent = labels[platform];
-    // iOS users need the shelf's install notes, not a direct IPA tap.
-    if (platform === 'ios' && heroOs) heroOs.textContent = 'for iOS (manual install)';
 
-    if (shelf) {
-      const shelfUrl = shelf.dataset[dataKey];
-      if (shelfUrl) shelf.href = shelfUrl;
-      const label = { linux: 'Linux', mac: 'macOS', windows: 'Windows', android: 'Android', ios: 'iOS' }[platform];
-      if (label) shelf.firstChild.textContent = `Download for ${label} `;
+    if (platform === 'ios') {
+      // An IPA is not a one-tap install. Send both CTAs to the iOS install notes
+      // instead of starting a download the person cannot use yet.
+      if (hero) {
+        hero.href = '#ios-install';
+        hero.firstChild.textContent = 'iOS install steps ';
+        hero.addEventListener('click', openIosInstall);
+      }
+      if (heroOs) heroOs.textContent = '';
+      if (shelf) {
+        shelf.href = '#ios-install';
+        shelf.firstChild.textContent = 'iOS install steps ';
+        shelf.addEventListener('click', openIosInstall);
+      }
+    } else {
+      // The hero button is the primary download action: start the file directly.
+      const heroUrl = hero?.dataset[dataKey];
+      if (hero && heroUrl) hero.href = heroUrl;
+
+      if (shelf) {
+        const shelfUrl = shelf.dataset[dataKey];
+        if (shelfUrl) shelf.href = shelfUrl;
+        if (platformLabel) shelf.firstChild.textContent = `Download for ${platformLabel} `;
+      }
     }
 
     document.querySelectorAll('.download-row').forEach((row) => {
