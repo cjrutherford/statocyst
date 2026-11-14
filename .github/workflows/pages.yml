@@ -47,7 +47,11 @@ jobs:
           ! grep -q '{{' _site/index.html
           count=$(grep -o 'github.com/cjrutherford/statocyst/releases/download/[^"<]*' _site/index.html | wc -l)
           test "$count" -ge 5
+          apk=$(find _site/downloads -name '*.apk' -type f -print -quit)
+          test -n "$apk"
+          test -s "$apk"
           echo "baked $count release asset links"
+          echo "staged Android APK: $apk ($(stat -c%s "$apk") bytes)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

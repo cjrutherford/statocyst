@@ -13,6 +13,7 @@
 
 import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -72,6 +73,56 @@ async function loadRelease() {
     console.warn(`warning: ${error.message}`);
     console.warn('falling back to site/release-fallback.json');
     return JSON.parse(await readFile(fallbackFile, 'utf8'));
+  }
+}
+
+/**
+ * Serve the Android APK from the Pages origin instead of github.com.
+ *
+ * Chrome on Android can leave a cross-site GitHub release download at 100%
+ * even when the APK is complete. A same-origin file with the right extension
+ * and a `download` attribute avoids that flow. The bytes are checked against
+ * the release asset's size and SHA-256 digest before they are staged.
+ */
+async function stageAndroidApk(release, tokens) {
+  const asset = (release.assets ?? []).find(
+    (item) => item.name === tokens.NAME_ANDROID_APK && item.name.endsWith('.apk'),
+  );
+  if (!asset) {
+    console.log('android: no APK asset in this release; keeping the GitHub link');
+    return;
+  }
+  if (offline) {
+    console.log('offline: Android APK stays on GitHub');
+    return;
+  }
+
+  try {
+    const res = await fetch(asset.browser_download_url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'statocyst-site-builder' },
+    });
+    if (!res.ok) throw new Error(`APK download responded ${res.status} ${res.statusText}`);
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (Number.isFinite(asset.size) && asset.size > 0 && bytes.length !== asset.size) {
+      throw new Error(`APK size mismatch: expected ${asset.size}, got ${bytes.length}`);
+    }
+    const expected = String(asset.digest || '').replace(/^sha256:/, '').toLowerCase();
+    if (expected) {
+      const actual = createHash('sha256').update(bytes).digest('hex');
+      if (actual !== expected) {
+        throw new Error(`APK SHA-256 mismatch: expected ${expected}, got ${actual}`);
+      }
+    }
+
+    const downloadsDir = path.join(outDir, 'downloads');
+    await mkdir(downloadsDir, { recursive: true });
+    await writeFile(path.join(downloadsDir, asset.name), bytes);
+    tokens.ASSET_ANDROID_APK = `downloads/${encodeURIComponent(asset.name)}`;
+    console.log(`android: staged ${asset.name} (${formatBytes(bytes.length)}) on this site`);
+  } catch (error) {
+    if (strict) throw error;
+    console.warn(`warning: could not stage Android APK (${error.message}); linking to GitHub instead`);
   }
 }
 
@@ -173,6 +224,7 @@ async function main() {
 
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
+  await stageAndroidApk(release, tokens);
 
   for (const file of ['index.html', 'styles.css', 'main.js', 'site.webmanifest', 'robots.txt', 'sitemap.xml']) {
     await cp(path.join(siteDir, file), path.join(outDir, file));

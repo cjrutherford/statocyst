@@ -138,7 +138,8 @@ sentence. Do not assume the reader knows what a licence is.
       another section.
 - [ ] If a download can stall or be blocked, the release page is offered as a visible
       fallback.
-- [ ] Android guidance explains the Chrome 100% finalization bug: the APK may already be
+- [ ] The Android APK is staged same-origin, not linked cross-site to GitHub, and the
+      install note explains the Chrome 100% finalization bug: the APK may already be
       complete in Files → Downloads, and Firefox or the release page is the fallback.
 - [ ] Version numbers in body copy use the build token or no version at all.
 - [ ] Store descriptions use the same definitions as the landing page.

@@ -221,8 +221,15 @@ The page should never go stale.
   offer Firefox or the release page as a fallback. Show the short warning under the hero
   button and the fuller guidance at the shelf. This is a Chrome finalization bug, not a
   corrupt Statocyst file.
+- Android APK staging: Chrome Android can stall a cross-origin GitHub APK download at
+  100%. The build downloads the signed APK into `_site/downloads/`, checks its size and
+  SHA-256 against the release API, and serves it from the Pages origin with a `download`
+  attribute. This is the one cached payload. Desktop and iOS assets stay on GitHub.
 
-Do not proxy or mirror release binaries. Always link to GitHub release assets.
+Do not proxy or mirror desktop or iOS release binaries. Keep them on GitHub. The Android
+APK is the one deliberate exception: it is staged into the Pages artifact at build time and
+verified against the release’s SHA-256 so Chrome Android does not have to cross origins for
+the download. The GitHub release remains the canonical source and the checksum link.
 
 ## 7. Build and repository layout
 
@@ -238,6 +245,8 @@ site/
     screens/        avif/webp/png stills
     video/          mp4/webm loops + posters
   design-preview.html   (this review artifact; remove before launch or keep under /design)
+_site/
+  downloads/            staged Android APK (build output only, never committed)
 .github/workflows/pages.yml
 ```
 

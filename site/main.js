@@ -65,6 +65,10 @@
     });
 
     if (platform === 'android') {
+      // The build stages the APK on this origin, so a real `download` hint
+      // works here and keeps Chrome out of the cross-site download flow.
+      if (hero) hero.setAttribute('download', '');
+      if (shelf) shelf.setAttribute('download', '');
       for (const id of ['android-download-note', 'hero-android-note']) {
         const note = document.getElementById(id);
         if (note) note.hidden = false;

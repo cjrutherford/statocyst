@@ -489,7 +489,7 @@
             <a class="btn btn-outline-ink" href="{{RELEASE_URL}}">All downloads &amp; notes</a>
           </div>
           <p class="shelf-meta"><span>✓ SHA-256 attached</span><span>MIT</span><span>No account</span></p>
-          <p class="shelf-hint">Downloads start directly from GitHub. If your browser does not start the file, use the platform list or open the <a href="{{RELEASE_URL}}">release page</a>. The size is listed beside each platform.</p>
+          <p class="shelf-hint">Downloads start immediately. If your browser does not start the file, use the platform list or open the <a href="{{RELEASE_URL}}">release page</a>. The size is listed beside each platform.</p>
           <p class="android-download-note" id="android-download-note" hidden>On Android, Chrome sometimes finishes the APK but leaves the download at 100%. Check <strong>Files → Downloads</strong> for the APK; if its size matches the Android row, open it from there instead of downloading again. <a href="#android-install">Android install steps</a>.</p>
         </div>
 
@@ -514,7 +514,7 @@
             <span class="size">{{SIZE_WINDOWS}}</span>
             <span class="arrow" aria-hidden="true">↓</span>
           </a>
-          <a class="download-row" href="{{ASSET_ANDROID_APK}}" data-os="android">
+          <a class="download-row" href="{{ASSET_ANDROID_APK}}" data-os="android" download>
             <span class="os">Android <em>APK</em></span>
             <span class="file">{{NAME_ANDROID_APK}}</span>
             <span class="size">{{SIZE_ANDROID_APK}}</span>
@@ -537,7 +537,7 @@
             <p><strong>macOS</strong> Open the DMG (the disk image file), drag Statocyst into Applications, then right-click the app and choose Open the first time. macOS warns you because the build is not signed with a paid Apple certificate. You can also allow it in System Settings → Privacy &amp; Security.</p>
             <p><strong>Windows</strong> Run the .exe installer. If SmartScreen says Windows protected your PC, choose More info → Run anyway. The build is not signed with a paid Windows certificate.</p>
             <p><strong>Linux</strong> An AppImage is a single portable file: make it executable with <code>chmod +x statocyst-*.AppImage</code>, then run it. A .deb is the package format used by Debian and Ubuntu; open it with your software installer.</p>
-            <p id="android-install"><strong>Android</strong> An APK is the Android install file. Allow installs from the browser or file manager you downloaded it with, then open it. For Android Auto, enable “Unknown sources” for Statocyst — the car build is not from Play yet. If Chrome leaves the download at 100%, the APK is often already complete: check Files → Downloads for the file and its size. If it is not there, try Firefox or the release page.</p>
+            <p id="android-install"><strong>Android</strong> An APK is the Android install file. The APK is served from this site, and it is the same signed file as the GitHub release. Allow installs from the browser or file manager you downloaded it with, then open it. For Android Auto, enable “Unknown sources” for Statocyst — the car build is not from Play yet. If Chrome leaves the download at 100%, the APK is often already complete: check Files → Downloads for the file and its size. If it is not there, try Firefox or the release page.</p>
             <p id="ios-install"><strong>iOS</strong> An IPA is an iOS app archive, not an App Store download. This one is signed for a limited set of devices, so it must be installed with a tool that loads app files directly and your own Apple signing identity. There is no one-click path; TestFlight will be easier when the beta opens.</p>
           </div>
         </details>
