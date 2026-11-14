@@ -216,6 +216,11 @@ The page should never go stale.
 - Add install notes: unsigned macOS app (right-click → Open), Windows SmartScreen,
   Linux AppImage `chmod +x`, Android sideload, iOS sideload, and Android Auto
   “Unknown sources” setup.
+- Android note: Chrome on Android can finish the APK but leave the download UI at 100%.
+  Tell the reader to check Files → Downloads for the complete APK before retrying, and
+  offer Firefox or the release page as a fallback. Show the short warning under the hero
+  button and the fuller guidance at the shelf. This is a Chrome finalization bug, not a
+  corrupt Statocyst file.
 
 Do not proxy or mirror release binaries. Always link to GitHub release assets.
 

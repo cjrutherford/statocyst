@@ -63,6 +63,13 @@
     document.querySelectorAll('.download-row').forEach((row) => {
       if (row.dataset.os === platform) row.classList.add('is-detected');
     });
+
+    if (platform === 'android') {
+      for (const id of ['android-download-note', 'hero-android-note']) {
+        const note = document.getElementById(id);
+        if (note) note.hidden = false;
+      }
+    }
   }
 
   const clips = [...document.querySelectorAll('.video-phone')];
