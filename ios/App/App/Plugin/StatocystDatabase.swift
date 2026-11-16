@@ -180,12 +180,13 @@ struct PlaylistTrackEntity: Equatable {
 
 /**
  * Thread-safe SQLite database for the iOS host.
- * Schema 7 is additive parity with the Android Room v8 / desktop migration 7
- * video-podcast columns. Uses the system SQLite3 C library so zero external
+ * Schema 8 adds the local recent-play count, matching Android Room v9. Schema 7
+ * is additive parity with the Android Room v8 / desktop migration 7 video
+ * podcast columns. Uses the system SQLite3 C library so zero external
  * dependencies are required.
  */
 final class StatocystDatabase {
-    static let SCHEMA_VERSION = 7
+    static let SCHEMA_VERSION = 8
     static let shared = StatocystDatabase()
 
     let databaseURL: URL
@@ -309,7 +310,8 @@ final class StatocystDatabase {
         execRaw("""
             CREATE TABLE IF NOT EXISTS recent (
                 trackId TEXT NOT NULL PRIMARY KEY,
-                playedAt INTEGER NOT NULL
+                playedAt INTEGER NOT NULL,
+                playCount INTEGER NOT NULL DEFAULT 0
             );
         """)
         execRaw("""
@@ -451,6 +453,12 @@ final class StatocystDatabase {
             execRaw("ALTER TABLE podcast_episode ADD COLUMN videoHeight INTEGER;")
         }
         execRaw("CREATE INDEX IF NOT EXISTS index_podcast_episode_mediaForm ON podcast_episode(mediaForm);")
+        // Schema 7 -> 8: the shared recommendation model uses a local play count.
+        // Existing rows read as zero plays; the next start increments from there.
+        // Guarded so fresh databases (whose CREATE TABLE already has it) are untouched.
+        if !tableHasColumn("recent", "playCount") {
+            execRaw("ALTER TABLE recent ADD COLUMN playCount INTEGER NOT NULL DEFAULT 0;")
+        }
         execRaw("PRAGMA user_version = \(Self.SCHEMA_VERSION);")
     }
 
@@ -1013,19 +1021,23 @@ final class StatocystDatabase {
 
     /// Recent plays keyed by track id, newest first. Used by the Angular recently
     /// played list without a second round-trip per row.
-    func getRecentPlays(limit: Int) -> [(trackId: String, playedAt: Int64)] {
+    func getRecentPlays(limit: Int) -> [(trackId: String, playedAt: Int64, playCount: Int)] {
         return queue.sync {
             guard let db = db else { return [] }
             var stmt: OpaquePointer?
             defer { sqlite3_finalize(stmt) }
-            let sql = "SELECT trackId, playedAt FROM recent ORDER BY playedAt DESC LIMIT ?;"
+            let sql = "SELECT trackId, playedAt, playCount FROM recent ORDER BY playedAt DESC LIMIT ?;"
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             sqlite3_bind_int(stmt, 1, Int32(max(0, limit)))
-            var rows: [(trackId: String, playedAt: Int64)] = []
+            var rows: [(trackId: String, playedAt: Int64, playCount: Int)] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let trackId = colString(stmt, 0)
                 if trackId.isEmpty { continue }
-                rows.append((trackId: trackId, playedAt: sqlite3_column_int64(stmt, 1)))
+                rows.append((
+                    trackId: trackId,
+                    playedAt: sqlite3_column_int64(stmt, 1),
+                    playCount: Int(sqlite3_column_int(stmt, 2))
+                ))
             }
             return rows
         }
@@ -1038,8 +1050,10 @@ final class StatocystDatabase {
             var stmt: OpaquePointer?
             defer { sqlite3_finalize(stmt) }
             let sql = """
-                INSERT INTO recent (trackId, playedAt) VALUES (?, ?)
-                ON CONFLICT(trackId) DO UPDATE SET playedAt = excluded.playedAt;
+                INSERT INTO recent (trackId, playedAt, playCount) VALUES (?, ?, 1)
+                ON CONFLICT(trackId) DO UPDATE SET
+                    playedAt = excluded.playedAt,
+                    playCount = recent.playCount + 1;
                 """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             bindText(stmt, 1, trackId)

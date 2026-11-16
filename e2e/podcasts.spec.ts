@@ -179,9 +179,10 @@ test('subscribes, plays, marks played and keeps the podcast bar across views', a
   await page.locator('.nav__item').filter({ hasText: 'Podcasts' }).click();
   await expect(page.getByRole('heading', { name: 'Podcasts' })).toBeVisible();
   await page.getByRole('button', { name: 'Discover' }).click();
-  await expect(page.getByRole('heading', { name: 'Top podcasts' })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Popular this week' })).toBeVisible({
     timeout: 20_000,
   });
+  await expect(page.getByRole('heading', { name: 'Recommended for you' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Browse by category' })).toBeVisible();
   await expect(page.locator('.top-card .art__image').first()).toHaveAttribute(
     'src',
@@ -206,7 +207,9 @@ test('subscribes, plays, marks played and keeps the podcast bar across views', a
   );
   await page.locator('.result-grid').getByRole('button', { name: 'Subscribe' }).first().click();
 
-  await expect(page.getByRole('heading', { name: 'E2E Deep Water' })).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.getByRole('heading', { name: 'E2E Deep Water', level: 1 }),
+  ).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('.episode')).toHaveCount(2);
   await expect(page.getByText('First E2E Episode')).toBeVisible();
 
@@ -288,11 +291,13 @@ test('subscribes, plays, marks played and keeps the podcast bar across views', a
   await expect(page.locator('.player__podcast-tag')).toBeVisible();
   await expect(page.locator('.player__title')).toContainText('First E2E Episode');
   await page.locator('.nav__item').filter({ hasText: 'Podcasts' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Deep Water' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'E2E Deep Water', level: 1 }),
+  ).toBeVisible();
   await expect(page.locator('.player__podcast-tag')).toBeVisible();
 
   await page.getByRole('button', { name: 'Show settings' }).click();
-  await page.getByLabel('Default speed').selectOption('1.5');
+  await page.locator('.show-settings').getByLabel('Playback speed').selectOption('1.5');
   await expect
     .poll(async () =>
       page.evaluate(async () => {

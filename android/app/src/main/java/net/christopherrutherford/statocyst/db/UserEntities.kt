@@ -1,5 +1,6 @@
 package net.christopherrutherford.statocyst.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -25,9 +26,10 @@ data class PlaylistTrackEntity(
     val trackId: String,
 )
 
-/** Last time a track started playing; drives the "Recently played" folder. */
+/** Last start and local play count; drives the "Recently played" folder and recommendations. */
 @Entity(tableName = "recent")
 data class RecentEntity(
     @PrimaryKey val trackId: String,
     val playedAt: Long,
+    @ColumnInfo(defaultValue = "0") val playCount: Int = 0,
 )

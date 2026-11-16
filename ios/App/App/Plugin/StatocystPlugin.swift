@@ -182,18 +182,26 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 aliases[keeperId, default: []].append(hiddenId)
             }
             // Fold a hidden duplicate's play into the visible keeper row.
-            var recentByTrack: [String: Int64] = [:]
+            var recentByTrack: [String: (playedAt: Int64, playCount: Int)] = [:]
             for recent in self.db.getRecentPlays(limit: 200) {
                 let keeper = hidden[recent.trackId] ?? recent.trackId
-                recentByTrack[keeper] = max(recentByTrack[keeper] ?? 0, recent.playedAt)
+                if let existing = recentByTrack[keeper], existing.playedAt >= recent.playedAt {
+                    continue
+                }
+                recentByTrack[keeper] = (recent.playedAt, recent.playCount)
             }
             let visible = all.filter { hidden[$0.id] == nil }.map { track -> [String: Any] in
-                let playedAt = recentByTrack[track.id].map {
+                let recent = recentByTrack[track.id]
+                let playedAt = recent.map {
                     Self.recentDateFormatter.string(
-                        from: Date(timeIntervalSince1970: Double($0) / 1000)
+                        from: Date(timeIntervalSince1970: Double($0.playedAt) / 1000)
                     )
                 }
-                var dict = self.trackDict(track, lastPlayedAt: playedAt)
+                var dict = self.trackDict(
+                    track,
+                    lastPlayedAt: playedAt,
+                    playCount: recent?.playCount ?? 0
+                )
                 if let trackAliases = aliases[track.id], !trackAliases.isEmpty {
                     dict["aliases"] = trackAliases
                 }
@@ -1536,7 +1544,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         ]
     }
 
-    private func trackDict(_ t: MediaItemEntity, lastPlayedAt: String? = nil) -> [String: Any] {
+    private func trackDict(
+        _ t: MediaItemEntity,
+        lastPlayedAt: String? = nil,
+        playCount: Int = 0
+    ) -> [String: Any] {
         return [
             "id": t.id,
             "title": t.title,
@@ -1560,7 +1572,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "artworkUrl": artworkFor(t) as Any,
             "artistArtworkUrl": NSNull(),
             "missing": t.missing,
-            "lastPlayedAt": lastPlayedAt as Any
+            "lastPlayedAt": lastPlayedAt as Any,
+            "playCount": playCount
         ]
     }
 

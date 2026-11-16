@@ -87,15 +87,20 @@ class StatocystPlugin : Plugin() {
             val aliases = hidden.entries.groupBy({ it.value }, { it.key })
             // Recently played is per visible row. A hidden duplicate may be the row
             // that actually played, so fold its timestamp into the keeper.
-            val recentByTrack = mutableMapOf<String, Long>()
+            val recentByTrack = mutableMapOf<String, Pair<Long, Int>>()
             for (recent in db.userDao().recents(200)) {
                 val keeper = hidden[recent.trackId] ?: recent.trackId
-                recentByTrack[keeper] = maxOf(recentByTrack[keeper] ?: 0L, recent.playedAt)
+                val existing = recentByTrack[keeper]
+                if (existing == null || recent.playedAt > existing.first) {
+                    recentByTrack[keeper] = recent.playedAt to recent.playCount
+                }
             }
             val tracks = all.filterNot { it.id in hidden }.map { track ->
+                val recent = recentByTrack[track.id]
                 trackJson(
                     track,
-                    recentByTrack[track.id]?.let { Instant.ofEpochMilli(it).toString() },
+                    recent?.first?.let { Instant.ofEpochMilli(it).toString() },
+                    recent?.second ?: 0,
                 ).also { json ->
                     aliases[track.id]?.let { json.put("aliases", JSArray(it)) }
                 }
@@ -1718,7 +1723,11 @@ class StatocystPlugin : Plugin() {
         emit("cacheChanged", JSObject())
     }
 
-    private fun trackJson(t: MediaItemEntity, lastPlayedAt: String? = null): JSObject = JSObject()
+    private fun trackJson(
+        t: MediaItemEntity,
+        lastPlayedAt: String? = null,
+        playCount: Int = 0,
+    ): JSObject = JSObject()
         .put("id", t.id)
         .put("title", t.title)
         .put("artist", t.artist)
@@ -1742,6 +1751,7 @@ class StatocystPlugin : Plugin() {
         .put("artistArtworkUrl", versionedArtwork(artistArtworkFor(t)))
         .put("missing", t.missing)
         .put("lastPlayedAt", lastPlayedAt)
+        .put("playCount", playCount)
 
     /**
      * Loopback artwork URL. Opt-in MusicBrainz artwork overrides the server's; a Jellyfin track

@@ -22,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PodcastPlaybackStateEntity::class,
         PodcastDirectoryCacheEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class StatocystDatabase : RoomDatabase() {
@@ -221,6 +221,18 @@ abstract class StatocystDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 → v9 stores the local play count alongside the last play time so the
+         * shared recommendation model has the same behavioral signal as desktop.
+         */
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `recent` ADD COLUMN `playCount` INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun getInstance(context: Context): StatocystDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(context, StatocystDatabase::class.java, "statocyst.db")
@@ -232,6 +244,7 @@ abstract class StatocystDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
+                        MIGRATION_8_9,
                     )
                     .build()
                     .also { INSTANCE = it }

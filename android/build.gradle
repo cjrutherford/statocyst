@@ -23,6 +23,15 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Kotlin 1.8+ merged the JDK7/JDK8 compatibility artifacts into kotlin-stdlib.
+    // Some Capacitor/cordova test dependencies still pull the old 1.6.x stubs,
+    // which duplicate stdlib classes on the androidTest classpath. Exclude them
+    // for every module, not only :app.
+    configurations.all {
+        exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+        exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+    }
 }
 
 task clean(type: Delete) {

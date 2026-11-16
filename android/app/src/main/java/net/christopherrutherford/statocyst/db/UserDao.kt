@@ -29,8 +29,13 @@ abstract class UserDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertPlaylistTracks(rows: List<PlaylistTrackEntity>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    abstract suspend fun upsertRecent(row: RecentEntity)
+    /** Records a real start without losing the accumulated local play count. */
+    @Query(
+        "INSERT INTO recent (trackId, playedAt, playCount) VALUES (:trackId, :playedAt, 1) " +
+            "ON CONFLICT(trackId) DO UPDATE SET " +
+            "playedAt = excluded.playedAt, playCount = recent.playCount + 1",
+    )
+    abstract suspend fun recordRecent(trackId: String, playedAt: Long)
 
     @Query("SELECT COALESCE(MAX(position), -1) + 1 FROM favorite")
     abstract suspend fun nextFavoritePosition(): Int

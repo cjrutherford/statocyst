@@ -1,7 +1,8 @@
 # Recently played and the first recommendation slice
 
-**Status:** IMPLEMENTED_UNVERIFIED for the shared renderer; native iOS changes are not
-compiled in this environment.
+**Status:** shared renderer implemented and exercised on Electron; Android compiles and its
+migration test runs on an API 36 emulator; iOS Swift is not compiled in this Linux
+environment.
 
 ## Recently played
 
@@ -12,8 +13,12 @@ history:
 | Platform | Source |
 | --- | --- |
 | Electron | `media_item.last_played_at` and `play_count` in the local libSQL database |
-| Android | the Room `recent` table, folded onto the visible row for duplicates |
-| iOS | the SQLite `recent` table, now written when playback actually starts |
+| Android | Room `recent.playedAt` / `recent.playCount`, folded onto the visible row for duplicates |
+| iOS | SQLite `recent.playedAt` / `recent.playCount`, written when playback actually starts |
+
+All three hosts now record both the last start and an accumulating local play count, so
+the recommendation model receives the same behavioral signals everywhere. A pause, seek
+or queue restore is not a new play.
 
 Recording remains opt-in through **Settings → Privacy → Save local listening history**
 (ADR-015). Turning it off stops new writes; existing plays stay visible and can still be

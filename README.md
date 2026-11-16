@@ -112,6 +112,12 @@ shuffle/repeat/heart actions because no DHU capture exists yet. Every other scre
 real capture. The Pages workflow (`.github/workflows/pages.yml`) uploads `_site/`. The design
 direction board is `site/design-preview.html`; it is not part of the deployed site.
 
+### Android build prerequisites
+
+The Android build requires a **JDK 21** that includes `javac` (a JRE alone is not enough).
+Android Studio's bundled JBR works. See [docs/android-toolchain.md](docs/android-toolchain.md)
+for Ubuntu, macOS, Windows, Gradle and Kotlin update instructions.
+
 ### Android stills
 
 `site/captures/phone-library-dark.png`, `phone-now-playing-dark.png` and

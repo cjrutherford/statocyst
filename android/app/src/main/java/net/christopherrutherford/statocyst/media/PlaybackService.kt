@@ -58,7 +58,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
-import net.christopherrutherford.statocyst.db.RecentEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import java.io.File
 
@@ -663,7 +662,7 @@ class PlaybackService : MediaLibraryService() {
                 val recorded = withContext(Dispatchers.IO) {
                     // The music Recently played list and the car tree only show songs.
                     if (dao.getById(trackId)?.mediaKind != "music") return@withContext false
-                    userDao.upsertRecent(RecentEntity(trackId, System.currentTimeMillis()))
+                    userDao.recordRecent(trackId, System.currentTimeMillis())
                     userDao.trimRecents(RECENT_LIMIT)
                     true
                 }

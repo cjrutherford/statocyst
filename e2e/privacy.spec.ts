@@ -36,12 +36,14 @@ test('support bundle export contains no secrets and records the privacy policy',
     // Trigger a real failure whose message carries URL credentials. The logger
     // must redact them on disk, not only in the export.
     await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('tab', { name: 'Jellyfin' }).click();
     await page.getByLabel('Server URL').fill('https://alice:s3cret@127.0.0.1:1');
     await page.getByRole('button', { name: /Connect/ }).click();
     await expect(page.getByText(/Could not|failed|unreachable|Invalid|Jellyfin/i).first()).toBeVisible({
       timeout: 30_000,
     });
     await page.waitForTimeout(800);
+    await page.getByRole('tab', { name: 'Diagnostics' }).click();
 
     // Replace the native save dialog with a deterministic path for this run.
     await app.evaluate(async ({ dialog }, target) => {

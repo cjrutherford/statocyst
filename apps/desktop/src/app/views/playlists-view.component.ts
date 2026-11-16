@@ -203,6 +203,9 @@ interface RecommendedItem {
                 </button>
                 <span class="mini-meta">
                   <span class="mini-when">{{ playedAgo(entry.playedAt) }}</span>
+                  @if (entry.playCount > 1) {
+                    <span class="mini-plays">{{ entry.playCount }} plays</span>
+                  }
                 </span>
                 <button
                   type="button"
@@ -332,6 +335,7 @@ interface RecommendedItem {
       .mini-duration { color: var(--muted); font-size: 0.76rem; font-variant-numeric: tabular-nums; }
       .mini-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: none; text-align: right; }
       .mini-when { color: var(--muted); font-size: 0.74rem; }
+      .mini-plays { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
       .reason-chip { max-width: 34ch; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 0.72rem; line-height: 1.25; }
       .selection-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--cyan); background: rgba(75, 213, 238, 0.06); }
       .selection-count { font-size: 0.82rem; font-weight: 600; }
