@@ -61,6 +61,7 @@ import net.christopherrutherford.statocyst.podcast.PodcastFeedRecord
 import net.christopherrutherford.statocyst.podcast.PodcastRepository
 import net.christopherrutherford.statocyst.podcast.PodcastTransport
 import java.security.MessageDigest
+import java.time.Instant
 
 @CapacitorPlugin(name = "Statocyst")
 class StatocystPlugin : Plugin() {
@@ -84,8 +85,18 @@ class StatocystPlugin : Plugin() {
             val all = dao.getAll().filter { it.mediaKind == "music" }
             val hidden = Duplicates.hiddenToKeeper(all)
             val aliases = hidden.entries.groupBy({ it.value }, { it.key })
+            // Recently played is per visible row. A hidden duplicate may be the row
+            // that actually played, so fold its timestamp into the keeper.
+            val recentByTrack = mutableMapOf<String, Long>()
+            for (recent in db.userDao().recents(200)) {
+                val keeper = hidden[recent.trackId] ?: recent.trackId
+                recentByTrack[keeper] = maxOf(recentByTrack[keeper] ?: 0L, recent.playedAt)
+            }
             val tracks = all.filterNot { it.id in hidden }.map { track ->
-                trackJson(track).also { json ->
+                trackJson(
+                    track,
+                    recentByTrack[track.id]?.let { Instant.ofEpochMilli(it).toString() },
+                ).also { json ->
                     aliases[track.id]?.let { json.put("aliases", JSArray(it)) }
                 }
             }
@@ -1707,7 +1718,7 @@ class StatocystPlugin : Plugin() {
         emit("cacheChanged", JSObject())
     }
 
-    private fun trackJson(t: MediaItemEntity): JSObject = JSObject()
+    private fun trackJson(t: MediaItemEntity, lastPlayedAt: String? = null): JSObject = JSObject()
         .put("id", t.id)
         .put("title", t.title)
         .put("artist", t.artist)
@@ -1730,6 +1741,7 @@ class StatocystPlugin : Plugin() {
         .put("artworkUrl", versionedArtwork(artworkFor(t)))
         .put("artistArtworkUrl", versionedArtwork(artistArtworkFor(t)))
         .put("missing", t.missing)
+        .put("lastPlayedAt", lastPlayedAt)
 
     /**
      * Loopback artwork URL. Opt-in MusicBrainz artwork overrides the server's; a Jellyfin track

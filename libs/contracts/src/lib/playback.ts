@@ -92,6 +92,13 @@ export interface Track {
   missing: boolean;
   /** Ids of the same recording on other servers, hidden behind this row. */
   aliases?: string[];
+  /**
+   * When this track last started playing, from local listening history.
+   * Absent when listening history is off or the host does not record it.
+   */
+  lastPlayedAt?: string | null;
+  /** Local play count, when the host records one. 0 means never played. */
+  playCount?: number;
 }
 
 export interface QueueEntry {

@@ -1,6 +1,7 @@
 package net.christopherrutherford.statocyst.media
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -132,7 +133,6 @@ class PlaybackService : MediaLibraryService() {
                     persistQueue()
                     extendContext()
                     prefetchCurrent(mediaItem)
-                    recordRecent(mediaItem)
                     refreshButtons()
                     maybeMarkPodcastStarted()
                 }
@@ -170,6 +170,9 @@ class PlaybackService : MediaLibraryService() {
                         consecutiveErrors = 0
                         vanishedTried.clear()
                         maybeMarkPodcastStarted()
+                        // Only an actual audible start is listening history; building or
+                        // restoring a queue is not.
+                        recordRecent(player.currentMediaItem)
                         startPositionTicker()
                     } else {
                         positionTicker?.cancel()
@@ -641,16 +644,30 @@ class PlaybackService : MediaLibraryService() {
         )
     }
 
+    /** Local listening history is opt-in (ADR-015); the setting lives in Capacitor Preferences. */
+    private fun listeningHistoryEnabled(): Boolean =
+        getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+            .getString("listeningHistory", "false") == "true"
+
+    private var lastRecordedTrackId: String? = null
+
     private fun recordRecent(item: MediaItem?) {
         item ?: return
+        if (!listeningHistoryEnabled()) return
         val trackId = QueueItems.trackIdOf(item)
+        // Resuming the same song, or a buffering repaint, is not a new play.
+        if (trackId == lastRecordedTrackId) return
+        lastRecordedTrackId = trackId
         scope.launch {
             try {
-                withContext(Dispatchers.IO) {
+                val recorded = withContext(Dispatchers.IO) {
+                    // The music Recently played list and the car tree only show songs.
+                    if (dao.getById(trackId)?.mediaKind != "music") return@withContext false
                     userDao.upsertRecent(RecentEntity(trackId, System.currentTimeMillis()))
                     userDao.trimRecents(RECENT_LIMIT)
+                    true
                 }
-                notifyBrowseChanged(BrowseIds.RECENTS)
+                if (recorded) notifyBrowseChanged(BrowseIds.RECENTS)
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "recordRecent failed", e)
             }

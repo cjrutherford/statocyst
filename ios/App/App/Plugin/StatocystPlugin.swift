@@ -106,6 +106,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
 
     private static let DEFAULT_CACHE_BUDGET: Int64 = 2 * 1024 * 1024 * 1024
     private static let USER_STATE_SEEDED_KEY = "statocyst.user_state_seeded"
+    private static let recentDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     public override func load() {
         super.load()
@@ -176,8 +181,19 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             for (hiddenId, keeperId) in hidden {
                 aliases[keeperId, default: []].append(hiddenId)
             }
+            // Fold a hidden duplicate's play into the visible keeper row.
+            var recentByTrack: [String: Int64] = [:]
+            for recent in self.db.getRecentPlays(limit: 200) {
+                let keeper = hidden[recent.trackId] ?? recent.trackId
+                recentByTrack[keeper] = max(recentByTrack[keeper] ?? 0, recent.playedAt)
+            }
             let visible = all.filter { hidden[$0.id] == nil }.map { track -> [String: Any] in
-                var dict = self.trackDict(track)
+                let playedAt = recentByTrack[track.id].map {
+                    Self.recentDateFormatter.string(
+                        from: Date(timeIntervalSince1970: Double($0) / 1000)
+                    )
+                }
+                var dict = self.trackDict(track, lastPlayedAt: playedAt)
                 if let trackAliases = aliases[track.id], !trackAliases.isEmpty {
                     dict["aliases"] = trackAliases
                 }
@@ -1520,7 +1536,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         ]
     }
 
-    private func trackDict(_ t: MediaItemEntity) -> [String: Any] {
+    private func trackDict(_ t: MediaItemEntity, lastPlayedAt: String? = nil) -> [String: Any] {
         return [
             "id": t.id,
             "title": t.title,
@@ -1543,7 +1559,8 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "mediaForm": StatocystDatabase.normalizedMediaForm(t.mediaForm),
             "artworkUrl": artworkFor(t) as Any,
             "artistArtworkUrl": NSNull(),
-            "missing": t.missing
+            "missing": t.missing,
+            "lastPlayedAt": lastPlayedAt as Any
         ]
     }
 

@@ -14,6 +14,7 @@ import { UnderwaterBackdropComponent } from './components/underwater-backdrop.co
 import { AudioEngineService } from './core/audio-engine.service';
 import { bridge, bridgeAvailable, isNativePlatform } from './core/bridge';
 import { LibraryStore } from './core/library.store';
+import { ListeningHistoryStore } from './core/listening-history.store';
 import { DownloadsStore } from './core/downloads.store';
 import { DownloadStatusComponent } from './components/download-status.component';
 import { PlaylistsStore } from './core/playlists.store';
@@ -707,6 +708,9 @@ export class AppComponent {
   ];
 
   constructor() {
+    // Root-scoped history observer: starting the app must record plays even when
+    // the Playlists view has never been opened.
+    inject(ListeningHistoryStore);
     void this.podcastStore.init();
     this.setupBackButton();
     this.setupConnectivity();

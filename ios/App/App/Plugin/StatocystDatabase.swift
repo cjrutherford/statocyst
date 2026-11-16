@@ -1009,6 +1009,49 @@ final class StatocystDatabase {
         }
     }
 
+    // MARK: - Listening history
+
+    /// Recent plays keyed by track id, newest first. Used by the Angular recently
+    /// played list without a second round-trip per row.
+    func getRecentPlays(limit: Int) -> [(trackId: String, playedAt: Int64)] {
+        return queue.sync {
+            guard let db = db else { return [] }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            let sql = "SELECT trackId, playedAt FROM recent ORDER BY playedAt DESC LIMIT ?;"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            sqlite3_bind_int(stmt, 1, Int32(max(0, limit)))
+            var rows: [(trackId: String, playedAt: Int64)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let trackId = colString(stmt, 0)
+                if trackId.isEmpty { continue }
+                rows.append((trackId: trackId, playedAt: sqlite3_column_int64(stmt, 1)))
+            }
+            return rows
+        }
+    }
+
+    /// Records a real playback start. Local only; callers enforce the opt-in.
+    func recordRecent(trackId: String, playedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        queue.sync {
+            guard let db = db, !trackId.isEmpty else { return }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            let sql = """
+                INSERT INTO recent (trackId, playedAt) VALUES (?, ?)
+                ON CONFLICT(trackId) DO UPDATE SET playedAt = excluded.playedAt;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            bindText(stmt, 1, trackId)
+            sqlite3_bind_int64(stmt, 2, playedAt)
+            _ = sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+            stmt = nil
+            // Keep the native mirror bounded; the renderer asks for the newest rows only.
+            execRaw("DELETE FROM recent WHERE trackId NOT IN (SELECT trackId FROM recent ORDER BY playedAt DESC LIMIT 200);")
+        }
+    }
+
     func replaceUserState(
         favorites: [FavoriteEntity],
         playlists: [PlaylistEntity],

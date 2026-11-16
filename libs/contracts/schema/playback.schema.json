@@ -127,6 +127,16 @@
         },
         "missing": {
           "type": "boolean"
+        },
+        "lastPlayedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "playCount": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },

@@ -23,6 +23,7 @@ import type {
   PlaybackContext,
   PlaybackEvent,
   PlaybackSnapshot,
+  QueueEntryView,
   QueueSnapshot,
   Result,
   Settings,
@@ -282,18 +283,20 @@ export class CapacitorBridge {
 
   private adoptNativeState(raw: NativePlayerState): void {
     const track = raw.trackId ? (this.tracks.get(raw.trackId) ?? null) : null;
+    const previousEntryId = this.snapshot.currentEntryId;
+    const entryId = raw.entryId ?? null;
     this.queue = {
       ...this.queue,
       shuffle: !!raw.shuffle,
       repeat: raw.repeat ?? 'off',
-      currentEntryId: raw.entryId ?? null,
+      currentEntryId: entryId,
     };
     this.snapshot = {
       ...this.snapshot,
       state: raw.state,
       context: this.activeContext,
       active: true,
-      currentEntryId: raw.entryId ?? null,
+      currentEntryId: entryId,
       positionMs: raw.positionMs,
       durationMs: raw.durationMs || track?.durationMs || 0,
       shuffle: !!raw.shuffle,
@@ -305,6 +308,18 @@ export class CapacitorBridge {
       track,
     };
     this.emitState();
+    // Native hosts do not send a separate trackChanged event. Surface a real
+    // playing/buffering transition so listening history and Now Playing can
+    // react before the library is reloaded.
+    if (
+      entryId &&
+      entryId !== previousEntryId &&
+      track &&
+      (raw.state === 'playing' || raw.state === 'buffering')
+    ) {
+      const entry: QueueEntryView = { entryId, trackId: track.id, track };
+      this.emitEvent({ type: 'trackChanged', entry });
+    }
   }
 
   /** Pushes the JS-computed queue (after an edit) down to the native player. */
@@ -1057,6 +1072,8 @@ export class CapacitorBridge {
       sizeBytes: Number(raw['sizeBytes'] ?? 0),
       bitrate: raw['bitrate'] == null ? null : Number(raw['bitrate']),
       missing: Boolean(raw['missing']),
+      lastPlayedAt: typeof raw['lastPlayedAt'] === 'string' ? raw['lastPlayedAt'] : null,
+      playCount: typeof raw['playCount'] === 'number' ? raw['playCount'] : 0,
       ...(Array.isArray(raw['aliases']) && raw['aliases'].length > 0
         ? { aliases: (raw['aliases'] as unknown[]).map(String) }
         : {}),

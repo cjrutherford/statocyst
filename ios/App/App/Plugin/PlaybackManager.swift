@@ -972,7 +972,10 @@ final class PlaybackManager: NSObject {
         updateNowPlayingMetadata()
         emitState()
         prefetchNeighbors()
-        if autoplay { markPodcastStartedIfNeeded() }
+        if autoplay {
+            markPodcastStartedIfNeeded()
+            recordRecentIfEnabled(trackId: slot.trackId)
+        }
         return true
     }
 
@@ -1043,6 +1046,18 @@ final class PlaybackManager: NSObject {
               let track = db.getMediaItemById(slot.trackId),
               track.sourceKind == "podcast" else { return 0 }
         return PodcastRepository.shared.resumeForMedia(mediaItemId: slot.trackId)
+    }
+
+    /**
+     * Local listening history is opt-in (ADR-015). Capacitor Preferences stores
+     * values in UserDefaults under the `CapacitorStorage.` prefix.
+     */
+    private func recordRecentIfEnabled(trackId: String) {
+        guard UserDefaults.standard.string(forKey: "CapacitorStorage.listeningHistory") == "true" else {
+            return
+        }
+        guard let track = db.getMediaItemById(trackId), track.mediaKind == "music" else { return }
+        db.recordRecent(trackId: trackId)
     }
 
     private func markPodcastStartedIfNeeded() {

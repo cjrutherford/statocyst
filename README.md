@@ -164,7 +164,8 @@ https://github.com/cjrutherford/statocyst/issues/new?template=beta-tester.yml
 apps/desktop/                 Angular renderer (views, stores, audio engine)
 apps/desktop-electron/        Electron main + preload
 libs/contracts/               Shared playback contract, schemas, fixtures, bridge types
-libs/playback-core/           Pure queue state machine
+libs/playback-core/           Pure queue state machine and song-radio scorer
+libs/recommendation/          Local recently-played and explainable recommendation model
 libs/persistence/             libSQL adapter, migrations, catalog/queue storage
 libs/media-library/           Bounded local scan and metadata extraction
 e2e/                          Playwright acceptance test
@@ -186,7 +187,9 @@ MVP-1 slice reports and the roadmap live in `statocyst-architecture-pack/evidenc
   Jellyfin or a network. Downloads play offline; streaming does not.
 - Android Auto is implemented through the native Media3 service, but the landing-page head-unit
   images are constructed previews, not a Desktop Head Unit capture.
-- Cross-device sync, CarPlay and recommendations are not implemented.
+- Cross-device sync and CarPlay are not implemented. Recommendations are an early,
+  explainable local mix from favorites, listening history and metadata; acoustic features
+  and vector embeddings are not implemented. See `docs/recommendations.md`.
 - Chrome on Android can leave a completed sideloaded APK at 100% in its download UI. The
   landing page stages the APK on the Pages origin to avoid the cross-origin GitHub download
   path. If Chrome still stalls, the file is usually already in `Downloads`; this is a

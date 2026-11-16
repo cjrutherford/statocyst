@@ -380,8 +380,9 @@ type SettingsTab = 'general' | 'jellyfin' | 'storage' | 'car' | 'diagnostics' | 
             <span class="toggle-row__text">
               <strong>Save local listening history</strong>
               <span>
-                Records play counts and last-played dates in the local database so you can see
-                what you have heard. Off by default; never sent to a server.
+                Records play counts and last-played dates in the local database so the Recently
+                played list and local For you mixes can use them. Off by default; never sent to a
+                server.
               </span>
             </span>
           </label>

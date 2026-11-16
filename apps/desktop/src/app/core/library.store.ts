@@ -107,6 +107,24 @@ export class LibraryStore {
     }
   }
 
+  /**
+   * Applies a locally observed play to the catalog row without a full library
+   * round-trip. Native history remains authoritative; this keeps the recently
+   * played list current in the same session. The host has already enforced the
+   * listening-history opt-in before this is called.
+   */
+  notePlayed(trackId: string): void {
+    const id = this.canonicalId(trackId);
+    const playedAt = new Date().toISOString();
+    this.tracks.update((tracks) =>
+      tracks.map((track) =>
+        track.id === id
+          ? { ...track, lastPlayedAt: playedAt, playCount: (track.playCount ?? 0) + 1 }
+          : track,
+      ),
+    );
+  }
+
   async reanalyzeArtwork(): Promise<void> {
     try {
       const result = await bridge().library.reanalyzeArtwork();
