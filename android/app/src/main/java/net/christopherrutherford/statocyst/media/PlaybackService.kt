@@ -597,8 +597,8 @@ class PlaybackService : MediaLibraryService() {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
         val (favorites, recents, playlistRows) = user
-        val carMixes = withContext(Dispatchers.IO) {
-            CarRecommendations.parse(
+        val carSnapshot = withContext(Dispatchers.IO) {
+            CarRecommendations.parseSnapshot(
                 getSharedPreferences("statocyst", Context.MODE_PRIVATE)
                     .getString(CarRecommendations.PREF_KEY, null),
             )
@@ -646,7 +646,8 @@ class PlaybackService : MediaLibraryService() {
             },
             podcastFeeds = podcastFeeds.first,
             podcastMedia = podcastFeeds.second,
-            carMixes = carMixes,
+            carMixes = carSnapshot.mixes,
+            carMixesStale = CarRecommendations.isStale(carSnapshot),
         )
     }
 

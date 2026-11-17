@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -26,11 +27,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -93,7 +97,7 @@ private fun AutomotiveRoot(
     onPrevious: () -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -105,31 +109,68 @@ private fun AutomotiveRoot(
                     )
                 )
             )
-            .padding(18.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(14.dp),
     ) {
-        Sidebar(
-            selected = state.tab,
-            onSelect = onSelectTab,
-            modifier = Modifier.width(168.dp).fillMaxHeight(),
-        )
-        MainContent(
-            state = state,
-            onPlayMix = onPlayMix,
-            onPlayRecent = onPlayRecent,
-            onPlayFavorite = onPlayFavorite,
-            onPlayTrack = onPlayTrack,
-            onPlayRadio = onPlayRadio,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        NowPlayingPanel(
-            state = state,
-            onTogglePlay = onTogglePlay,
-            onNext = onNext,
-            onPrevious = onPrevious,
-            onToggleFavorite = onToggleFavorite,
-            modifier = Modifier.width(300.dp).fillMaxHeight(),
-        )
+        val compact = maxWidth < 900.dp
+        if (compact) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Sidebar(
+                        selected = state.tab,
+                        onSelect = onSelectTab,
+                        compact = true,
+                        modifier = Modifier.width(140.dp).fillMaxHeight(),
+                    )
+                    MainContent(
+                        state = state,
+                        onPlayMix = onPlayMix,
+                        onPlayRecent = onPlayRecent,
+                        onPlayFavorite = onPlayFavorite,
+                        onPlayTrack = onPlayTrack,
+                        onPlayRadio = onPlayRadio,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                    )
+                }
+                CompactNowPlaying(
+                    state = state,
+                    onTogglePlay = onTogglePlay,
+                    onNext = onNext,
+                    onPrevious = onPrevious,
+                    onToggleFavorite = onToggleFavorite,
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Sidebar(
+                    selected = state.tab,
+                    onSelect = onSelectTab,
+                    modifier = Modifier.width(168.dp).fillMaxHeight(),
+                )
+                MainContent(
+                    state = state,
+                    onPlayMix = onPlayMix,
+                    onPlayRecent = onPlayRecent,
+                    onPlayFavorite = onPlayFavorite,
+                    onPlayTrack = onPlayTrack,
+                    onPlayRadio = onPlayRadio,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
+                NowPlayingPanel(
+                    state = state,
+                    onTogglePlay = onTogglePlay,
+                    onNext = onNext,
+                    onPrevious = onPrevious,
+                    onToggleFavorite = onToggleFavorite,
+                    modifier = Modifier.width(300.dp).fillMaxHeight(),
+                )
+            }
+        }
     }
 }
 
@@ -138,6 +179,7 @@ private fun Sidebar(
     selected: AutomotiveTab,
     onSelect: (AutomotiveTab) -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     Column(
         modifier = modifier
@@ -174,11 +216,13 @@ private fun Sidebar(
                     style = MaterialTheme.typography.titleMedium,
                     color = AutomotiveColors.Text,
                 )
-                Text(
-                    "Bathypelagic audio",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = AutomotiveColors.MutedDim,
-                )
+                if (!compact) {
+                    Text(
+                        "Bathypelagic audio",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AutomotiveColors.MutedDim,
+                    )
+                }
             }
         }
 
@@ -223,9 +267,9 @@ private fun NavItem(
                 RoundedCornerShape(12.dp),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Icon(
             icon,
@@ -251,7 +295,28 @@ private fun MainContent(
     onPlayRadio: (AutomotiveTrack) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (state.drivingRestricted) {
+            StatusBanner(
+                Icons.Filled.DirectionsCar,
+                "Driving",
+                "Browsing is limited. Park to open the full library.",
+            )
+        }
+        if (state.offline) {
+            StatusBanner(
+                Icons.Filled.CloudOff,
+                "Offline",
+                "Local and downloaded audio only.",
+            )
+        }
+        if (state.recommendationsStale) {
+            StatusBanner(
+                Icons.Filled.Refresh,
+                "Mix may be out of date",
+                "Open Statocyst on your phone to refresh For you.",
+            )
+        }
         when (state.tab) {
             AutomotiveTab.FOR_YOU -> ForYouTab(state, onPlayMix, onPlayRecent)
             AutomotiveTab.LIBRARY -> LibraryTab(state, onPlayTrack)
@@ -291,7 +356,7 @@ private fun ColumnScope.ForYouTab(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     state.mixes.chunked(2).forEachIndexed { rowIndex, rowMixes ->
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(118.dp),
+                            modifier = Modifier.fillMaxWidth().height(104.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             rowMixes.forEachIndexed { index, mix ->
@@ -309,16 +374,26 @@ private fun ColumnScope.ForYouTab(
             }
         }
 
+        val recent = if (state.drivingRestricted) state.recent.take(DRIVING_LIST_LIMIT) else state.recent
         item {
-            SectionLabel("Recently played", "${state.recent.size} tracks")
+            SectionLabel("Recently played", "${recent.size} tracks")
         }
-        if (state.recent.isEmpty()) {
+        if (recent.isEmpty()) {
             item {
                 EmptyCard("Nothing played yet", "Start a mix or pick a song from the library.")
             }
         } else {
-            items(state.recent, key = { it.track.id }) { recent ->
-                RecentRow(recent, onClick = { onPlayRecent(recent) })
+            items(recent, key = { it.track.id }) { entry ->
+                RecentRow(entry, onClick = { onPlayRecent(entry) })
+            }
+        }
+        if (state.drivingRestricted && state.recent.size > recent.size) {
+            item {
+                Text(
+                    "Park to see the rest of your history.",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = AutomotiveColors.MutedDim,
+                )
             }
         }
     }
@@ -326,39 +401,56 @@ private fun ColumnScope.ForYouTab(
 
 @Composable
 private fun ColumnScope.LibraryTab(state: AutomotiveUiState, onPlay: (AutomotiveTrack) -> Unit) {
+    val tracks = if (state.drivingRestricted) state.tracks.take(DRIVING_LIST_LIMIT) else state.tracks
     SectionHead(
         eyebrow = "Library",
         title = "All tracks",
-        subtitle = "${state.tracks.size} songs on this device",
+        subtitle = if (state.drivingRestricted) {
+            "Showing first ${tracks.size} while driving"
+        } else {
+            "${state.tracks.size} songs on this device"
+        },
     )
-    TrackList(state.tracks, onPlay, modifier = Modifier.weight(1f))
+    TrackList(tracks, onPlay, modifier = Modifier.weight(1f))
 }
 
 @Composable
 private fun ColumnScope.FavoritesTab(state: AutomotiveUiState, onPlay: (AutomotiveTrack) -> Unit) {
+    val favorites =
+        if (state.drivingRestricted) state.favorites.take(DRIVING_LIST_LIMIT) else state.favorites
     SectionHead(
         eyebrow = "Favorites",
         title = "The ones you keep",
-        subtitle = "${state.favorites.size} tracks",
+        subtitle = if (state.drivingRestricted) {
+            "Showing first ${favorites.size} while driving"
+        } else {
+            "${state.favorites.size} tracks"
+        },
     )
-    if (state.favorites.isEmpty()) {
+    if (favorites.isEmpty()) {
         EmptyCard("No favorites yet", "Star a song on your phone and it will appear here.")
     } else {
-        TrackList(state.favorites, onPlay, modifier = Modifier.weight(1f))
+        TrackList(favorites, onPlay, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun ColumnScope.RadioTab(state: AutomotiveUiState, onPlay: (AutomotiveTrack) -> Unit) {
+    val seeds =
+        if (state.drivingRestricted) state.radioSeeds.take(DRIVING_LIST_LIMIT) else state.radioSeeds
     SectionHead(
         eyebrow = "Radio",
         title = "Start from a song",
-        subtitle = "A local radio from your recent plays and favorites",
+        subtitle = if (state.drivingRestricted) {
+            "Showing first ${seeds.size} while driving"
+        } else {
+            "A local radio from your recent plays and favorites"
+        },
     )
-    if (state.radioSeeds.isEmpty()) {
+    if (seeds.isEmpty()) {
         EmptyCard("No seeds yet", "Play or favorite a song to start a radio.")
     } else {
-        TrackList(state.radioSeeds, onPlay, radio = true, modifier = Modifier.weight(1f))
+        TrackList(seeds, onPlay, radio = true, modifier = Modifier.weight(1f))
     }
 }
 
@@ -393,13 +485,41 @@ private fun SectionHead(eyebrow: String, title: String, subtitle: String) {
         )
         Text(
             title,
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineMedium,
             color = AutomotiveColors.Text,
         )
         Text(
             subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = AutomotiveColors.Muted,
+        )
+    }
+}
+
+@Composable
+private fun StatusBanner(icon: ImageVector, title: String, detail: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color(0x1A38E1FF))
+            .border(1.dp, AutomotiveColors.LineStrong, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = AutomotiveColors.Cyan,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(
+            "$title · $detail",
+            style = MaterialTheme.typography.bodyMedium,
+            color = AutomotiveColors.Muted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -652,6 +772,115 @@ private fun EmptyCard(title: String, detail: String) {
 }
 
 @Composable
+private fun CompactNowPlaying(
+    state: AutomotiveUiState,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(AutomotiveColors.PanelStrong)
+            .border(1.dp, AutomotiveColors.Line, RoundedCornerShape(18.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Artwork(state.nowPlaying?.artUri, 48.dp, 10.dp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    state.nowPlaying?.title ?: "Nothing playing",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AutomotiveColors.Text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    state.nowPlaying?.artist?.takeIf { it.isNotBlank() } ?: "Pick a mix to start",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = AutomotiveColors.Muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = onPrevious) {
+                Icon(
+                    Icons.Filled.SkipPrevious,
+                    contentDescription = "Previous track",
+                    tint = AutomotiveColors.Muted,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(AutomotiveColors.Cyan, AutomotiveColors.CyanDeep, AutomotiveColors.VioletDeep)
+                        )
+                    )
+                    .clickable(onClick = onTogglePlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (state.isPlaying) "Pause" else "Play",
+                    tint = AutomotiveColors.Abyss,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+            IconButton(onClick = onNext) {
+                Icon(
+                    Icons.Filled.SkipNext,
+                    contentDescription = "Next track",
+                    tint = AutomotiveColors.Muted,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (state.currentIsFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (state.currentIsFavorite) "Remove favorite" else "Favorite",
+                    tint = if (state.currentIsFavorite) AutomotiveColors.Cyan else AutomotiveColors.Muted,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+        val fraction = if (state.durationMs > 0) {
+            (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0x3394C5FF))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(AutomotiveColors.Cyan, AutomotiveColors.Violet)
+                        )
+                    )
+            )
+        }
+    }
+}
+
+@Composable
 private fun NowPlayingPanel(
     state: AutomotiveUiState,
     onTogglePlay: () -> Unit,
@@ -882,6 +1111,8 @@ private fun formatTime(ms: Long): String {
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+
+private const val DRIVING_LIST_LIMIT = 6
 
 private fun relativeTime(epochMs: Long): String =
     DateUtils.getRelativeTimeSpanString(

@@ -66,8 +66,13 @@ android {
         abortOnError true
         checkReleaseBuilds true
     }
+    // AAOS-only platform APIs (CarUxRestrictionsManager). The class is only
+    // referenced by the automotive surface, which never loads on a phone.
+    useLibrary 'android.car'
+
     buildFeatures {
         compose true
+        buildConfig true
     }
     composeOptions {
         // Kotlin 1.9.25 pairs with Compose Compiler 1.5.15.

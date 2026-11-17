@@ -1,8 +1,9 @@
 # Car surfaces: shared recommendation snapshot
 
-**Status:** Phases 1–4 implemented in the shared renderer and Android Auto/CarPlay
-data paths. Android compiles and unit tests pass; CarPlay’s Swift changes need a
-macOS/Xcode build and a real entitlement before they can be called verified.
+**Status:** Phases 1–6 implemented. Android Auto/CarPlay data paths and the AAOS
+Compose surface compile; the AAOS surface is verified on a real Android Automotive
+OS emulator. CarPlay’s Swift changes still need a macOS/Xcode build and a real
+entitlement before they can be called verified.
 
 ## Why a snapshot
 
@@ -76,9 +77,75 @@ uses the same local Room catalog, `PlaybackService` Media3 session and
   `adb shell am start -n <package>/.automotive.AutomotiveActivity`; release keeps it
   non-exported.
 
-Runtime status: debug and release builds pass, and the surface was launched on an API 36
-phone emulator with seeded tracks, four mixes and real Media3 playback. A real Android
-Automotive OS image or head unit is still required for the automotive gate.
+Runtime status: debug and release builds pass, and the surface is verified on the
+Android Automotive OS emulator (see below) with seeded tracks, four mixes, real Media3
+playback, the driving banner, the offline banner and the stale-snapshot banner. The
+phone WebView path was re-checked after adding `useLibrary 'android.car'` and Compose.
+
+### Driving and connectivity hardening
+
+- `useLibrary 'android.car'` gives the automotive module `CarUxRestrictionsManager`.
+  The monitor is only constructed by the AAOS surface; phones never load `android.car`.
+- When the car reports `isRequiresDistractionOptimization`, AAOS shows a driving banner
+  and limits Library/Favorites/Radio/Recently played to six rows. Playback, mixes,
+  radio, favorite and the now-playing bar remain available.
+- Debug builds can simulate the driving state:
+  ```bash
+  adb shell am start -n \
+    com.hopefulaspirationsindustries.statocyst/com.hopefulaspirationsindustries.statocyst.automotive.AutomotiveActivity \
+    --ez force_driving true
+  ```
+  Release builds ignore the extra.
+- A `ConnectivityManager` callback plus a one-second fallback check drives the offline
+  banner. The local catalog and car snapshot still work offline.
+- `CarRecommendations` keeps the snapshot’s `generatedAt`. Snapshots older than 24 hours
+  are marked stale:
+  - AAOS shows “Mix may be out of date · open Statocyst on your phone to refresh”.
+  - Android Auto replaces the For you folder subtitle with “Open Statocyst on your phone
+    to refresh”.
+  - CarPlay keeps the last grid and refreshes on the next connection.
+
+### AAOS verification recipe
+
+Command-line tools are installed at
+`$ANDROID_HOME/cmdline-tools/latest`. The working image is:
+
+```bash
+sdkmanager \
+  "system-images;android-35-ext15;android-automotive-playstore;x86_64"
+
+echo no | avdmanager create avd \
+  -n StatocystAAOS \
+  -k "system-images;android-35-ext15;android-automotive-playstore;x86_64" \
+  -d automotive_1024p_landscape
+
+emulator -avd StatocystAAOS -no-window -no-audio -no-snapshot \
+  -gpu swiftshader_indirect
+```
+
+The same install/create/boot flow is wrapped in
+[`tools/aaos-emulator.sh`](../tools/aaos-emulator.sh).
+
+The emulator ran as the `Driver` user (user 0 for `run-as` fixtures). Install the debug
+APK, launch `net.christopherrutherford.statocyst.MainActivity`, and confirm it hands off to
+`AutomotiveActivity`. Use `tools/android-seed-fixtures.py --demo` plus the AAOS snapshot
+fixture to populate the car surface.
+
+### Play automotive review path
+
+Before submitting an automotive build:
+
+- Keep `android:appCategory="audio"` and `xml/automotive_app_desc.xml` with
+  `<uses name="media" />`.
+- Re-run the distraction checks on a real automotive image/head unit:
+  restricted driving state must not expose unbounded lists, text entry, video or setup
+  flows.
+- Verify the release build is non-exported for `AutomotiveActivity` and that the debug
+  export does not ship.
+- Complete Play Console automotive review with the privacy policy, content rating and
+  screenshots of the driving-optimized surface.
+- Keep the AAOS surface and the projected Android Auto/CarPlay browse tree on the same
+  snapshot and catalog schema.
 
 ## Phone-only actions
 

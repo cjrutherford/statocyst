@@ -114,6 +114,8 @@ data class BrowseData(
     val podcastMedia: Map<String, MediaItemEntity> = emptyMap(),
     /** Phone-ranked mixes published for the car surfaces. */
     val carMixes: List<CarMix> = emptyList(),
+    /** The snapshot is old enough that the phone should refresh it. */
+    val carMixesStale: Boolean = false,
 )
 
 /**
@@ -316,7 +318,12 @@ object BrowseTree {
             BrowseIds.FOR_YOU -> data.carMixes.size.takeIf { it > 0 || always }
                 ?.let {
                     val picks = data.carMixes.sumOf { mix -> mix.trackIds.size }
-                    BrowseNode(id, "For you", "$picks picks · ${it} mixes", childStyle = ChildStyle.GRID)
+                    val subtitle = if (data.carMixesStale) {
+                        "Open Statocyst on your phone to refresh"
+                    } else {
+                        "$picks picks · ${it} mixes"
+                    }
+                    BrowseNode(id, "For you", subtitle, childStyle = ChildStyle.GRID)
                 }
             BrowseIds.RECENTS -> data.recents.size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Recently played", count(it, "track"), childStyle = ChildStyle.LIST) }

@@ -129,6 +129,19 @@ class BrowseTreeTest {
     }
 
     @Test
+    fun staleForYouFolderAsksThePhoneToRefresh() {
+        val withMixes = data.copy(
+            carMixes = listOf(
+                CarMix("daily-drift", "Daily drift", "Picks", listOf("t1"), emptyMap()),
+            ),
+            carMixesStale = true,
+        )
+        val forYou = BrowseTree.children(BrowseIds.ROOT, withMixes)
+            .first { it.id == BrowseIds.FOR_YOU }
+        assertEquals("Open Statocyst on your phone to refresh", forYou.subtitle)
+    }
+
+    @Test
     fun podcastFolderGroupsShowsAndEpisodes() {
         val episode = entity("p1", "Episode One", "Deep Water", "Deep Water").copy(
             path = "https://example.com/one.mp3",

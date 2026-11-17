@@ -197,8 +197,9 @@ MVP-1 slice reports and the roadmap live in `statocyst-architecture-pack/evidenc
   from favorites, listening history and metadata; acoustic features and vector embeddings
   are not implemented. See `docs/recommendations.md`. Android Auto and CarPlay now expose
   the phone-built “For you” mixes; CarPlay still needs a macOS/Xcode entitlement build
-  before release. Android Automotive OS has a full Compose surface, verified on a phone
-  emulator but not yet on a real automotive image or head unit. See `docs/car-surfaces.md`.
+  before release. Android Automotive OS has a full Compose surface, verified on an Android
+  Automotive OS emulator; a real head unit and Play automotive review remain external
+  gates. See `docs/car-surfaces.md`.
 - Chrome on Android can leave a completed sideloaded APK at 100% in its download UI. The
   landing page stages the APK on the Pages origin to avoid the cross-origin GitHub download
   path. If Chrome still stalls, the file is usually already in `Downloads`; this is a

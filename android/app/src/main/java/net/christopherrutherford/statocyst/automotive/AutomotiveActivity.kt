@@ -5,6 +5,7 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import net.christopherrutherford.statocyst.BuildConfig
 
 /**
  * The Android Automotive OS surface. It uses the same Room catalog, Media3
@@ -14,6 +15,8 @@ import androidx.activity.compose.setContent
 class AutomotiveActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AutomotiveDebug.forceDriving =
+            BuildConfig.DEBUG && intent?.getBooleanExtra("force_driving", false) == true
         window.setBackgroundDrawable(ColorDrawable(COLOR_ABYSS))
         setContent {
             AutomotiveApp()
