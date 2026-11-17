@@ -618,7 +618,9 @@ class PlaybackService : MediaLibraryService() {
         ).toSet()
         val stale = CarRecommendations.isStale(carSnapshot)
         val fallback = if (carSnapshot.mixes.isEmpty() || stale) {
-            CarRecommender.build(catalog, favoriteIds, recentRows)
+            withContext(Dispatchers.IO) {
+                CarRecommender.build(catalog, favoriteIds, recentRows)
+            }
         } else {
             null
         }
