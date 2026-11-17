@@ -278,10 +278,10 @@ enum CarPlayRecommender {
             ? "library"
             : seeds.map { $0.id }.sorted().joined(separator: "|")
 
-        let profile = profile(byId: byId, favorites: favorites, recent: recent, nowMs: nowMs)
-        let artistAffinity = normalized(profile.artist)
-        let genreAffinity = normalized(profile.genre)
-        let albumAffinity = normalized(profile.album)
+        let affinityProfile = profile(byId: byId, favorites: favorites, recent: recent, nowMs: nowMs)
+        let artistAffinity = normalized(affinityProfile.artist)
+        let genreAffinity = normalized(affinityProfile.genre)
+        let albumAffinity = normalized(affinityProfile.album)
 
         var scored: [Scored] = []
         for candidate in candidates {
