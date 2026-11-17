@@ -180,13 +180,14 @@ struct PlaylistTrackEntity: Equatable {
 
 /**
  * Thread-safe SQLite database for the iOS host.
+ * Schema 9 adds the app-state table used for the car recommendation snapshot.
  * Schema 8 adds the local recent-play count, matching Android Room v9. Schema 7
  * is additive parity with the Android Room v8 / desktop migration 7 video
  * podcast columns. Uses the system SQLite3 C library so zero external
  * dependencies are required.
  */
 final class StatocystDatabase {
-    static let SCHEMA_VERSION = 8
+    static let SCHEMA_VERSION = 9
     static let shared = StatocystDatabase()
 
     let databaseURL: URL
@@ -312,6 +313,13 @@ final class StatocystDatabase {
                 trackId TEXT NOT NULL PRIMARY KEY,
                 playedAt INTEGER NOT NULL,
                 playCount INTEGER NOT NULL DEFAULT 0
+            );
+        """)
+        execRaw("""
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT NOT NULL PRIMARY KEY,
+                value TEXT NOT NULL,
+                updatedAt TEXT NOT NULL
             );
         """)
         execRaw("""
@@ -1063,6 +1071,50 @@ final class StatocystDatabase {
             stmt = nil
             // Keep the native mirror bounded; the renderer asks for the newest rows only.
             execRaw("DELETE FROM recent WHERE trackId NOT IN (SELECT trackId FROM recent ORDER BY playedAt DESC LIMIT 200);")
+        }
+    }
+
+    func getAppState(_ key: String) -> String? {
+        return queue.sync {
+            guard let db = db else { return nil }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, "SELECT value FROM app_state WHERE key = ? LIMIT 1;", -1, &stmt, nil) == SQLITE_OK else {
+                return nil
+            }
+            bindText(stmt, 1, key)
+            guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+            return colString(stmt, 0)
+        }
+    }
+
+    func setAppState(_ key: String, _ value: String) {
+        queue.sync {
+            guard let db = db else { return }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            let sql = """
+                INSERT INTO app_state (key, value, updatedAt) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updatedAt = excluded.updatedAt;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            bindText(stmt, 1, key)
+            bindText(stmt, 2, value)
+            bindText(stmt, 3, ISO8601DateFormatter().string(from: Date()))
+            _ = sqlite3_step(stmt)
+        }
+    }
+
+    func removeAppState(_ key: String) {
+        queue.sync {
+            guard let db = db else { return }
+            var stmt: OpaquePointer?
+            defer { sqlite3_finalize(stmt) }
+            guard sqlite3_prepare_v2(db, "DELETE FROM app_state WHERE key = ?;", -1, &stmt, nil) == SQLITE_OK else {
+                return
+            }
+            bindText(stmt, 1, key)
+            _ = sqlite3_step(stmt)
         }
     }
 

@@ -229,7 +229,11 @@ test('subscribes, plays, marks played and keeps the podcast bar across views', a
   expect(artwork.feed).toBeTruthy();
   expect(artwork.episode).toBeTruthy();
 
-  await page.locator('.episode__play').first().click();
+  await page
+    .locator('.episode')
+    .filter({ hasText: 'First E2E Episode' })
+    .locator('.episode__play')
+    .click();
   await expect.poll(
     async () =>
       page.evaluate(async () => {

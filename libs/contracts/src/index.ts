@@ -1,4 +1,5 @@
 export * from './lib/playback';
+export * from './lib/car';
 export * from './lib/podcast';
 export * from './lib/bridge';
 export * from './lib/channels';

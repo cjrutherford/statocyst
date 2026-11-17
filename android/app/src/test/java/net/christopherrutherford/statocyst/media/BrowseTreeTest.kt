@@ -80,9 +80,52 @@ class BrowseTreeTest {
                 podcastFeeds = listOf(
                     PodcastFeedInfo("pod1", "Deep Water", "Studio", null, listOf("p1")),
                 ),
+                carMixes = listOf(
+                    CarMix(
+                        "daily-drift",
+                        "Daily drift",
+                        "Favorites + today's plays",
+                        listOf("t1"),
+                        mapOf("t1" to "More from your top artists"),
+                    ),
+                ),
             ),
         )
         assertEquals(BrowseIds.ROOT_FOLDERS, full.map { it.id })
+    }
+
+    @Test
+    fun forYouFolderListsMixesAndCarriesReasonsIntoTheTrackList() {
+        val withMixes = data.copy(
+            carMixes = listOf(
+                CarMix(
+                    "daily-drift",
+                    "Daily drift",
+                    "Favorites + today's plays",
+                    listOf("t1", "t4"),
+                    mapOf("t1" to "More from your top artists"),
+                ),
+                CarMix("favorites-radio", "Favorites radio", "One tap", listOf("t2"), emptyMap()),
+            ),
+        )
+
+        val root = BrowseTree.children(BrowseIds.ROOT, withMixes)
+        assertEquals(BrowseIds.FOR_YOU, root.first().id)
+        assertEquals("For you", root.first().title)
+
+        val mixes = BrowseTree.children(BrowseIds.FOR_YOU, withMixes)
+        assertEquals(
+            listOf("car-mix::daily-drift", "car-mix::favorites-radio"),
+            mixes.map { it.id },
+        )
+        assertEquals(ChildStyle.LIST, mixes.first().childStyle)
+
+        val tracks = BrowseTree.children("car-mix::daily-drift", withMixes)
+        assertEquals(listOf("t1", "t4"), tracks.map { it.trackId })
+        assertEquals("A Perfect Circle · More from your top artists", tracks.first().subtitle)
+        assertEquals("Audioslave", tracks.last().subtitle)
+        assertEquals(listOf("t1", "t4"), BrowseTree.contextTrackIds("car-mix::daily-drift", withMixes))
+        assertEquals("car-mix::daily-drift", BrowseTree.node("car-mix::daily-drift", withMixes)?.id)
     }
 
     @Test

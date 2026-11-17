@@ -1350,6 +1350,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     @objc func syncUserState(_ call: CAPPluginCall) {
         let favorites = call.getArray("favorites", String.self) ?? []
         let rawPlaylists = call.getArray("playlists", JSObject.self) ?? []
+        let carRecommendations = call.getObject("carRecommendations")
         ioQueue.async { [weak self] in
             guard let self = self else { return }
             let favRows = favorites.enumerated().map { FavoriteEntity(trackId: $0.element, position: $0.offset) }
@@ -1368,6 +1369,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 }
             }
             self.db.replaceUserState(favorites: favRows, playlists: plRows, playlistTracks: ptRows)
+            if let car = carRecommendations,
+               JSONSerialization.isValidJSONObject(car),
+               let data = try? JSONSerialization.data(withJSONObject: car),
+               let json = String(data: data, encoding: .utf8) {
+                self.db.setAppState("car.recommendations", json)
+            } else {
+                self.db.removeAppState("car.recommendations")
+            }
             UserDefaults.standard.set(true, forKey: Self.USER_STATE_SEEDED_KEY)
             call.resolve([
                 "favorites": favRows.count,

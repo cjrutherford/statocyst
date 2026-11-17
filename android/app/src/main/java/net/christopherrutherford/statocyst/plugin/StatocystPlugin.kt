@@ -37,6 +37,7 @@ import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.BrowseAccess
+import net.christopherrutherford.statocyst.media.CarRecommendations
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.AdaptiveQuality
 import net.christopherrutherford.statocyst.media.PlaybackService
@@ -1482,6 +1483,7 @@ class StatocystPlugin : Plugin() {
     fun syncUserState(call: PluginCall) {
         val favorites = call.getArray("favorites")?.toList<String>().orEmpty()
         val playlistsJson = call.getArray("playlists")
+        val carRecommendations = call.getObject("carRecommendations")
         io(call) {
             try {
                 val favoriteRows = favorites.mapIndexed { i, id -> FavoriteEntity(id, i) }
@@ -1498,11 +1500,25 @@ class StatocystPlugin : Plugin() {
                     }
                 }
                 db.userDao().replaceUserState(favoriteRows, playlistRows, trackRows)
-                context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
-                    .edit().putBoolean("user_state_seeded", true).apply()
+                val prefs = context.getSharedPreferences(
+                    "statocyst",
+                    android.content.Context.MODE_PRIVATE,
+                ).edit()
+                    .putBoolean("user_state_seeded", true)
+                if (carRecommendations != null) {
+                    prefs.putString(CarRecommendations.PREF_KEY, carRecommendations.toString())
+                } else {
+                    prefs.remove(CarRecommendations.PREF_KEY)
+                }
+                prefs.apply()
                 PlaybackService.onUserStateChanged()
                 net.christopherrutherford.statocyst.widget.NowPlayingWidget.refresh(context)
-                call.resolve(JSObject().put("favorites", favoriteRows.size).put("playlists", playlistRows.size))
+                call.resolve(
+                    JSObject()
+                        .put("favorites", favoriteRows.size)
+                        .put("playlists", playlistRows.size)
+                        .put("carMixes", carRecommendations?.optJSONArray("mixes")?.length() ?: 0),
+                )
             } catch (error: Exception) {
                 call.reject(error.message ?: "syncUserState failed", error)
             }

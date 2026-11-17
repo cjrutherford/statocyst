@@ -597,6 +597,12 @@ class PlaybackService : MediaLibraryService() {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
         val (favorites, recents, playlistRows) = user
+        val carMixes = withContext(Dispatchers.IO) {
+            CarRecommendations.parse(
+                getSharedPreferences("statocyst", Context.MODE_PRIVATE)
+                    .getString(CarRecommendations.PREF_KEY, null),
+            )
+        }
         val podcastFeeds = withContext(Dispatchers.IO) {
             val mediaById = mutableMapOf<String, MediaItemEntity>()
             podcastDao.listFeeds().map { feed ->
@@ -640,6 +646,7 @@ class PlaybackService : MediaLibraryService() {
             },
             podcastFeeds = podcastFeeds.first,
             podcastMedia = podcastFeeds.second,
+            carMixes = carMixes,
         )
     }
 
@@ -978,7 +985,13 @@ class PlaybackService : MediaLibraryService() {
                 },
             )
         }
-        val artUrl = node.podcastArtworkPath?.let { LocalMediaServer.localUri(this, File(it)) }
+        val carArt = when {
+            node.id in BrowseIds.ROOT_FOLDERS || node.id.startsWith("car-mix::") ->
+                CarArt.tile(this, node.id, node.title)
+            else -> null
+        }
+        val artUrl = carArt?.let { LocalMediaServer.localUri(this, File(it)) }
+            ?: node.podcastArtworkPath?.let { LocalMediaServer.localUri(this, File(it)) }
             ?: resolver.artwork(node.albumId, node.imageTag, node.art)
         if (artUrl != null) {
             metadataBuilder.setArtworkUri(Uri.parse(artUrl))
@@ -1309,7 +1322,12 @@ class PlaybackService : MediaLibraryService() {
         fun onUserStateChanged() = instance?.let { svc ->
             svc.scope.launch {
                 svc.loadFavorites()
-                svc.notifyBrowseChanged(BrowseIds.FAVORITES, BrowseIds.PLAYLISTS)
+                svc.notifyBrowseChanged(
+                    BrowseIds.ROOT,
+                    BrowseIds.FOR_YOU,
+                    BrowseIds.FAVORITES,
+                    BrowseIds.PLAYLISTS,
+                )
             }
         }
     }

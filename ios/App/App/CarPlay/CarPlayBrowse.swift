@@ -41,6 +41,37 @@ struct CarPlayRow: Equatable {
     let title: String
     let subtitle: String?
     let destination: Destination
+    /// Local catalog row whose artwork should be shown on the car row.
+    let artworkTrackId: String?
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String?,
+        destination: Destination,
+        artworkTrackId: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.destination = destination
+        self.artworkTrackId = artworkTrackId
+    }
+}
+
+/// Versioned snapshot published by the phone renderer for CarPlay and AAOS.
+struct CarPlayMix: Decodable, Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let trackIds: [String]
+    let reasons: [String: String]
+}
+
+struct CarPlayRecommendationSnapshot: Decodable, Equatable {
+    let version: Int
+    let generatedAt: String
+    let mixes: [CarPlayMix]
 }
 
 enum CarPlayBrowse {
@@ -177,14 +208,22 @@ enum CarPlayBrowse {
 
     // MARK: - Detail
 
-    static func trackList(tracks: [CarPlayTrack]) -> [CarPlaySection] {
+    static func trackList(
+        tracks: [CarPlayTrack],
+        reasons: [String: String] = [:]
+    ) -> [CarPlaySection] {
         guard !tracks.isEmpty else {
             return [emptySection(
                 title: "Nothing to play",
                 detail: "These tracks are not available in the local catalog."
             )]
         }
-        return [CarPlaySection(header: nil, rows: tracks.map { trackRow($0) })]
+        return [
+            CarPlaySection(
+                header: nil,
+                rows: tracks.map { trackRow($0, reason: reasons[$0.id]) }
+            )
+        ]
     }
 
     // MARK: - Row construction
@@ -202,19 +241,23 @@ enum CarPlayBrowse {
         var albumKeys: Set<String>
     }
 
-    private static func trackRow(_ track: CarPlayTrack) -> CarPlayRow {
+    private static func trackRow(_ track: CarPlayTrack, reason: String? = nil) -> CarPlayRow {
         if track.isPodcast {
             return CarPlayRow(
                 id: "episode:\(track.id)",
                 title: display(track.title, fallback: "Untitled episode"),
                 subtitle: episodeSubtitle(track),
-                destination: .track(track.id)
+                destination: .track(track.id),
+                artworkTrackId: track.id
             )
         }
         var detail = display(track.artist, fallback: "Unknown Artist")
         let album = display(track.album, fallback: "")
         if !album.isEmpty {
             detail += " · \(album)"
+        }
+        if let reason, !reason.isEmpty {
+            detail += " · \(reason)"
         }
         if track.isDownloaded {
             detail += " · Downloaded"
@@ -223,7 +266,8 @@ enum CarPlayBrowse {
             id: "track:\(track.id)",
             title: display(track.title, fallback: "Untitled"),
             subtitle: detail,
-            destination: .track(track.id)
+            destination: .track(track.id),
+            artworkTrackId: track.id
         )
     }
 
