@@ -38,6 +38,15 @@
 
         </activity>
 
+        <!-- Custom Android Automotive OS surface. MainActivity launches this only
+             when the device reports FEATURE_AUTOMOTIVE, so phones keep one icon. -->
+        <activity
+            android:name=".automotive.AutomotiveActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <service
             android:name=".media.PlaybackService"
             android:exported="true"

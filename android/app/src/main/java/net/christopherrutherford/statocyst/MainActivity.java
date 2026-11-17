@@ -1,6 +1,7 @@
 package net.christopherrutherford.statocyst;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.os.Build;
@@ -14,6 +15,7 @@ import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 
+import net.christopherrutherford.statocyst.automotive.AutomotiveActivity;
 import net.christopherrutherford.statocyst.media.LocalMediaServer;
 import net.christopherrutherford.statocyst.media.VideoPresentation;
 import net.christopherrutherford.statocyst.plugin.StatocystPlugin;
@@ -27,16 +29,30 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         // Android 13+: without this the media notification and lock-screen
-        // controls are silently suppressed.
-        if (Build.VERSION.SDK_INT >= 33
+        // controls are silently suppressed. Embedded automotive owns its own
+        // surface and does not need the phone permission prompt.
+        if (!isAutomotive()
+                && Build.VERSION.SDK_INT >= 33
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.POST_NOTIFICATIONS}, 1001);
         }
     }
 
+    private boolean isAutomotive() {
+        return getPackageManager().hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE);
+    }
+
     @Override
     protected void load() {
+        // Embedded Android Automotive gets the native Compose surface; the
+        // projected Android Auto / CarPlay clients still use the media browse
+        // tree and never launch this activity.
+        if (isAutomotive()) {
+            startActivity(new Intent(this, AutomotiveActivity.class));
+            finish();
+            return;
+        }
         super.load();
         if (bridge == null || bridge.getWebView() == null) return;
         WebView wv = bridge.getWebView();

@@ -58,6 +58,28 @@ The first mix is the default “For you” list. Empty mixes are omitted.
   refreshing on the next connection.
 - CarPlay remains system-styled. The artwork is the branding surface.
 
+## Android Automotive OS
+
+The embedded OS surface is a real Compose app, not a template. `AutomotiveActivity`
+uses the same local Room catalog, `PlaybackService` Media3 session and
+`car_recommendations` snapshot, but draws the phone design system directly.
+
+- `MainActivity.load()` checks `PackageManager.FEATURE_AUTOMOTIVE` and launches the
+  automotive activity instead of the Capacitor WebView. Phones keep a single launcher icon.
+- The surface has **For you**, **Library**, **Favorites** and **Radio** destinations.
+- For you shows the four mix tiles, a recently played list, and a persistent Now Playing
+  panel with artwork, progress, transport, favorite and up-next.
+- Mix playback uses the existing `BrowseIds.carMix(...)` context; Radio uses the existing
+  native `RadioBuilder` path. No queue or playback logic is duplicated.
+- Saving and editing remain phone-only.
+- A debug-only manifest exports the activity so a normal emulator can launch it with
+  `adb shell am start -n <package>/.automotive.AutomotiveActivity`; release keeps it
+  non-exported.
+
+Runtime status: debug and release builds pass, and the surface was launched on an API 36
+phone emulator with seeded tracks, four mixes and real Media3 playback. A real Android
+Automotive OS image or head unit is still required for the automotive gate.
+
 ## Phone-only actions
 
 Selecting songs, naming a mix and saving a playlist stay in the Angular app. The car

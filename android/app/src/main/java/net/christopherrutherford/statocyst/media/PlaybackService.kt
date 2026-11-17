@@ -1286,7 +1286,7 @@ class PlaybackService : MediaLibraryService() {
         private const val RECENT_LIMIT = 100
         private const val CMD_SHUFFLE = "statocyst.shuffle"
         private const val CMD_REPEAT = "statocyst.repeat"
-        private const val CMD_FAVORITE = "statocyst.favorite"
+        const val CMD_FAVORITE = "statocyst.favorite"
 
         /** Set by the WebView plugin so favorites toggled from the car reach the web layer. */
         @Volatile

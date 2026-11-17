@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!-- Debug-only: lets a phone emulator open the automotive surface with
+             `adb shell am start -n .../.automotive.AutomotiveActivity`.
+             Release keeps the activity non-exported. -->
+        <activity
+            android:name=".automotive.AutomotiveActivity"
+            android:exported="true"
+            tools:replace="android:exported" />
+    </application>
+</manifest>
