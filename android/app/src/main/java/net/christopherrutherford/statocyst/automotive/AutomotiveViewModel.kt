@@ -30,8 +30,10 @@ import kotlinx.coroutines.withContext
 import net.christopherrutherford.statocyst.db.MediaItemEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import net.christopherrutherford.statocyst.library.Duplicates
+import net.christopherrutherford.statocyst.db.RecentEntity
 import net.christopherrutherford.statocyst.media.BrowseIds
 import net.christopherrutherford.statocyst.media.CarRecommendations
+import net.christopherrutherford.statocyst.media.CarRecommender
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.PlaybackService
 import net.christopherrutherford.statocyst.media.QueueItems
@@ -287,30 +289,42 @@ class AutomotiveViewModel(application: Application) : AndroidViewModel(applicati
         val visible = all.filter { it.id !in hidden }
         val byId = visible.associateBy { it.id }
 
-        val snapshot = CarRecommendations.parseSnapshot(
-            prefs.getString(CarRecommendations.PREF_KEY, null),
-        )
-        val mixes = snapshot.mixes.mapNotNull { mix ->
-            val tracks = mix.trackIds.mapNotNull { byId[it] }.map { it.toAutomotiveTrack() }
-            if (tracks.isEmpty()) null else AutomotiveMix(mix.id, mix.title, mix.subtitle, tracks)
-        }
-
-        val recentById = mutableMapOf<String, Long>()
-        for (row in userDao.recents(30)) {
-            val keeper = hidden[row.trackId] ?: row.trackId
-            recentById[keeper] = maxOf(recentById[keeper] ?: 0L, row.playedAt)
-        }
-        val recent = recentById.entries
-            .sortedByDescending { it.value }
-            .mapNotNull { (id, playedAt) ->
-                byId[id]?.let { AutomotiveRecent(it.toAutomotiveTrack(), playedAt) }
-            }
-
         val favoriteRows = userDao.favorites().sortedByDescending { it.position }
         val favoriteIds = favoriteRows
             .map { hidden[it.trackId] ?: it.trackId }
             .distinct()
             .toSet()
+
+        val recentById = mutableMapOf<String, RecentEntity>()
+        for (row in userDao.recents(30)) {
+            val keeper = hidden[row.trackId] ?: row.trackId
+            val existing = recentById[keeper]
+            if (existing == null || row.playedAt > existing.playedAt) {
+                recentById[keeper] = row.copy(trackId = keeper)
+            }
+        }
+        val recentRows = recentById.values.sortedByDescending { it.playedAt }
+        val recent = recentRows.mapNotNull { row ->
+            byId[row.trackId]?.let { track ->
+                AutomotiveRecent(track.toAutomotiveTrack(), row.playedAt)
+            }
+        }
+
+        val snapshot = CarRecommendations.parseSnapshot(
+            prefs.getString(CarRecommendations.PREF_KEY, null),
+        )
+        val stale = CarRecommendations.isStale(snapshot)
+        val fallback = if (snapshot.mixes.isEmpty() || stale) {
+            CarRecommender.build(visible, favoriteIds, recentRows)
+        } else {
+            null
+        }
+        val effectiveMixes = fallback?.mixes ?: snapshot.mixes
+        val mixes = effectiveMixes.mapNotNull { mix ->
+            val tracks = mix.trackIds.mapNotNull { byId[it] }.map { it.toAutomotiveTrack() }
+            if (tracks.isEmpty()) null else AutomotiveMix(mix.id, mix.title, mix.subtitle, tracks)
+        }
+
         val favorites = favoriteIds.mapNotNull { byId[it] }.map { it.toAutomotiveTrack() }
 
         val tracks = visible
@@ -330,7 +344,7 @@ class AutomotiveViewModel(application: Application) : AndroidViewModel(applicati
             tracks = tracks,
             radioSeeds = radioSeeds,
             favoriteIds = favoriteIds,
-            recommendationsStale = CarRecommendations.isStale(snapshot),
+            recommendationsStale = stale && fallback?.mixes?.isNotEmpty() != true,
         )
     }
 

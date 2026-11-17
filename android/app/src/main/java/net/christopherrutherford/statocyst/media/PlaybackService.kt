@@ -603,6 +603,26 @@ class PlaybackService : MediaLibraryService() {
                     .getString(CarRecommendations.PREF_KEY, null),
             )
         }
+        val canonicalRecentById = mutableMapOf<String, net.christopherrutherford.statocyst.db.RecentEntity>()
+        for (row in recents) {
+            val keeper = aliases[row.trackId] ?: row.trackId
+            val existing = canonicalRecentById[keeper]
+            if (existing == null || row.playedAt > existing.playedAt) {
+                canonicalRecentById[keeper] = row.copy(trackId = keeper)
+            }
+        }
+        val recentRows = canonicalRecentById.values.sortedByDescending { it.playedAt }
+        val favoriteIds = canonical(
+            favorites.sortedByDescending { it.position }.map { it.trackId },
+            aliases,
+        ).toSet()
+        val stale = CarRecommendations.isStale(carSnapshot)
+        val fallback = if (carSnapshot.mixes.isEmpty() || stale) {
+            CarRecommender.build(catalog, favoriteIds, recentRows)
+        } else {
+            null
+        }
+        val effectiveMixes = fallback?.mixes ?: carSnapshot.mixes
         val podcastFeeds = withContext(Dispatchers.IO) {
             val mediaById = mutableMapOf<String, MediaItemEntity>()
             podcastDao.listFeeds().map { feed ->
@@ -635,19 +655,19 @@ class PlaybackService : MediaLibraryService() {
             notice = notice,
             currentTrackId = player.currentMediaItem?.let(QueueItems::trackIdOf),
             // Web order is oldest-first; Auto shows the most recent favorite on top.
-            favorites = canonical(favorites.sortedByDescending { it.position }.map { it.trackId }, aliases),
+            favorites = favoriteIds.toList(),
             playlists = playlistRows.first.map { pl ->
                 PlaylistInfo(pl.id, pl.name, canonical(tracksByPlaylist[pl.id].orEmpty().map { it.trackId }, aliases))
             },
-            recents = canonical(recents.map { it.trackId }, aliases),
+            recents = recentRows.map { it.trackId },
             queue = (0 until player.mediaItemCount).map {
                 val item = player.getMediaItemAt(it)
                 QueueEntry(item.mediaId, QueueItems.trackIdOf(item))
             },
             podcastFeeds = podcastFeeds.first,
             podcastMedia = podcastFeeds.second,
-            carMixes = carSnapshot.mixes,
-            carMixesStale = CarRecommendations.isStale(carSnapshot),
+            carMixes = effectiveMixes,
+            carMixesStale = stale && fallback?.mixes?.isNotEmpty() != true,
         )
     }
 

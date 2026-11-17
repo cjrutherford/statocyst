@@ -74,6 +74,430 @@ struct CarPlayRecommendationSnapshot: Decodable, Equatable {
     let mixes: [CarPlayMix]
 }
 
+struct CarPlayPlayed: Equatable {
+    let trackId: String
+    let playedAt: Int64
+    let playCount: Int
+}
+
+/**
+ * Native fallback for the four car mixes. Mirrors
+ * libs/recommendation/src/lib/recommendation.ts and car-mixes.ts, with the shared
+ * fixture at libs/recommendation/fixtures/car-recommendation-golden.json.
+ *
+ * CarPlay reads the phone snapshot when it is fresh; this builder is used when
+ * the snapshot is missing or older than 24 hours.
+ */
+enum CarPlayRecommender {
+    private static let favoriteWeight = 25.0
+    private static let artistAffinityWeight = 30.0
+    private static let genreAffinityWeight = 18.0
+    private static let albumAffinityWeight = 8.0
+    private static let seedSimilarity = 20.0
+    private static let discovery = 4.0
+    private static let rediscover = 6.0
+    private static let recentWindowPenalty = 22.0
+    private static let recentWeekPenalty = 10.0
+    private static let recentExclusionDays = 0.5
+    private static let maxPerArtist = 2
+    private static let dayMs = 86_400_000.0
+    private static let candidateLimit = 80
+    private static let mixLimit = 12
+    private static let staleAfterMs: Int64 = 24 * 60 * 60 * 1000
+
+    private struct Candidate {
+        let entity: MediaItemEntity
+        let lastPlayedAt: Int64?
+        let playCount: Int
+    }
+
+    private struct Reason {
+        let code: String
+        let label: String
+        let weight: Double
+        let order: Int
+    }
+
+    private struct Scored {
+        let entity: MediaItemEntity
+        let score: Double
+        let reasons: [Reason]
+    }
+
+    private struct Profile {
+        var artist: [String: Double] = [:]
+        var genre: [String: Double] = [:]
+        var album: [String: Double] = [:]
+    }
+
+    private static let generatedAtFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static func isStale(_ snapshot: CarPlayRecommendationSnapshot, now: Date = Date()) -> Bool {
+        guard let at = generatedAtFormatter.date(from: snapshot.generatedAt) else { return true }
+        return now.timeIntervalSince1970 * 1000 - at.timeIntervalSince1970 * 1000 > Double(staleAfterMs)
+    }
+
+    static func snapshot(
+        tracks: [MediaItemEntity],
+        favorites: Set<String>,
+        recent: [CarPlayPlayed],
+        now: Date = Date()
+    ) -> CarPlayRecommendationSnapshot {
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let byId = Dictionary(uniqueKeysWithValues: tracks.filter { !$0.missing }.map { ($0.id, $0) })
+        var recentById: [String: CarPlayPlayed] = [:]
+        for entry in recent where byId[entry.trackId] != nil {
+            if let existing = recentById[entry.trackId], existing.playedAt >= entry.playedAt { continue }
+            recentById[entry.trackId] = entry
+        }
+        let candidates = tracks.filter { !$0.missing }.map { track in
+            Candidate(
+                entity: track,
+                lastPlayedAt: recentById[track.id]?.playedAt,
+                playCount: recentById[track.id]?.playCount ?? 0
+            )
+        }
+        let ranked = Array(
+            rank(
+                candidates: candidates,
+                byId: byId,
+                favorites: favorites,
+                recent: recent,
+                nowMs: nowMs
+            ).prefix(candidateLimit)
+        )
+
+        let rediscoverIds = Set(tracks.filter { track in
+            if track.missing { return false }
+            if favorites.contains(track.id) && recentById[track.id] == nil { return true }
+            guard let playedAt = recentById[track.id]?.playedAt else { return false }
+            return nowMs - playedAt > 30 * 86_400_000
+        }.map { $0.id })
+
+        let rediscoverTracks = ranked.filter { rediscoverIds.contains($0.entity.id) }
+            .prefix(mixLimit)
+        let deepCuts = ranked.filter { entry in
+            entry.reasons.contains { $0.code == "artist-affinity" || $0.code == "album-affinity" }
+        }.prefix(mixLimit)
+
+        let rankedIndex = Dictionary(uniqueKeysWithValues: ranked.enumerated().map { ($1.entity.id, $0) })
+        let favoriteTracks = favorites
+            .compactMap { byId[$0] }
+            .sorted { a, b in
+                let left = rankedIndex[a.id] ?? Int.max
+                let right = rankedIndex[b.id] ?? Int.max
+                if left != right { return left < right }
+                if a.title != b.title { return a.title < b.title }
+                return a.id < b.id
+            }
+            .prefix(mixLimit)
+
+        let mixes = [
+            makeMix(
+                id: "daily-drift",
+                title: "Daily drift",
+                subtitle: "Favorites + today's plays",
+                trackIds: ranked.prefix(mixLimit).map { $0.entity.id },
+                reasons: Dictionary(uniqueKeysWithValues: ranked.prefix(mixLimit).map {
+                    ($0.entity.id, $0.reasons.first?.label ?? "Picked for you")
+                })
+            ),
+            makeMix(
+                id: "rediscover",
+                title: "Rediscover",
+                subtitle: "Not played in 30+ days",
+                trackIds: rediscoverTracks.map { $0.entity.id },
+                reasons: Dictionary(uniqueKeysWithValues: rediscoverTracks.map {
+                    ($0.entity.id, "Not played in a while")
+                })
+            ),
+            makeMix(
+                id: "deep-cuts",
+                title: "Deep cuts",
+                subtitle: "More from your top artists",
+                trackIds: deepCuts.map { $0.entity.id },
+                reasons: Dictionary(uniqueKeysWithValues: deepCuts.map {
+                    ($0.entity.id, "More from your top artists")
+                })
+            ),
+            makeMix(
+                id: "favorites-radio",
+                title: "Favorites radio",
+                subtitle: "One tap, already familiar",
+                trackIds: favoriteTracks.map { $0.id },
+                reasons: Dictionary(uniqueKeysWithValues: favoriteTracks.map {
+                    ($0.id, "In your favorites")
+                })
+            ),
+        ].compactMap { $0 }
+
+        return CarPlayRecommendationSnapshot(
+            version: 1,
+            generatedAt: generatedAtFormatter.string(from: now),
+            mixes: mixes
+        )
+    }
+
+    private static func makeMix(
+        id: String,
+        title: String,
+        subtitle: String,
+        trackIds: [String],
+        reasons: [String: String]
+    ) -> CarPlayMix? {
+        var seen = Set<String>()
+        let unique = trackIds.filter { seen.insert($0).inserted }.prefix(mixLimit)
+        guard !unique.isEmpty else { return nil }
+        return CarPlayMix(
+            id: id,
+            title: title,
+            subtitle: subtitle,
+            trackIds: Array(unique),
+            reasons: Dictionary(uniqueKeysWithValues: unique.map { ($0, reasons[$0] ?? "For you") })
+        )
+    }
+
+    private static func rank(
+        candidates: [Candidate],
+        byId: [String: MediaItemEntity],
+        favorites: Set<String>,
+        recent: [CarPlayPlayed],
+        nowMs: Int64
+    ) -> [Scored] {
+        let seeds = recent
+            .compactMap { byId[$0.trackId] }
+            .reduce(into: [MediaItemEntity]()) { result, track in
+                if !result.contains(where: { $0.id == track.id }) { result.append(track) }
+            }
+            .prefix(3)
+        let signature = seeds.isEmpty
+            ? "library"
+            : seeds.map { $0.id }.sorted().joined(separator: "|")
+
+        let profile = profile(byId: byId, favorites: favorites, recent: recent, nowMs: nowMs)
+        let artistAffinity = normalized(profile.artist)
+        let genreAffinity = normalized(profile.genre)
+        let albumAffinity = normalized(profile.album)
+
+        var scored: [Scored] = []
+        for candidate in candidates {
+            let track = candidate.entity
+            let days: Double? = candidate.lastPlayedAt.map {
+                max(0, Double(nowMs - $0) / dayMs)
+            }
+            if let days, days < recentExclusionDays { continue }
+
+            var score = 0.0
+            var reasons: [Reason] = []
+            var order = 0
+            func addReason(_ code: String, _ label: String, _ weight: Double) {
+                reasons.append(Reason(code: code, label: label, weight: weight, order: order))
+                order += 1
+            }
+            let favorite = favorites.contains(track.id)
+            if favorite {
+                score += favoriteWeight
+                addReason("favorite", "In your favorites", favoriteWeight)
+            }
+
+            let artistWeight = artistAffinity[norm(track.artist)] ?? 0
+            if artistWeight > 0 {
+                let weight = artistWeight * artistAffinityWeight
+                score += weight
+                addReason(
+                    "artist-affinity",
+                    "More from \(track.artist.isEmpty ? "an artist you play" : track.artist)",
+                    weight
+                )
+            }
+
+            var bestGenre: (label: String, weight: Double)?
+            for (label, key) in genresOf(track) {
+                let weight = genreAffinity[key] ?? 0
+                if weight > 0 && (bestGenre == nil || weight > bestGenre!.weight) {
+                    bestGenre = (label, weight)
+                }
+            }
+            if let bestGenre {
+                let weight = bestGenre.weight * genreAffinityWeight
+                score += weight
+                addReason(
+                    "genre-affinity",
+                    "Matches your \(bestGenre.label) listening",
+                    weight
+                )
+            }
+
+            let albumWeight = albumAffinity[norm(track.album)] ?? 0
+            if albumWeight > 0 {
+                let weight = albumWeight * albumAffinityWeight
+                score += weight
+                addReason(
+                    "album-affinity",
+                    "From \(track.album.isEmpty ? "an album you play" : track.album)",
+                    weight
+                )
+            }
+
+            var bestSeed: (seed: MediaItemEntity, weight: Double)?
+            for seed in seeds where seed.id != track.id {
+                let weight = Double(RadioScorer.score(seed: seed, candidate: track, favorite: false)) / 80.0
+                if weight > 0 && (bestSeed == nil || weight > bestSeed!.weight) {
+                    bestSeed = (seed, weight)
+                }
+            }
+            if let bestSeed {
+                let weight = min(1, bestSeed.weight) * seedSimilarity
+                score += weight
+                addReason(
+                    "seed-similarity",
+                    "Similar to songs you played recently",
+                    weight
+                )
+            }
+
+            if let days {
+                if days <= 2 {
+                    score -= recentWindowPenalty
+                } else if days <= 7 {
+                    score -= recentWeekPenalty
+                } else if days > 30 {
+                    score += rediscover
+                    addReason(
+                        "rediscover",
+                        favorite ? "A favorite you have not played lately" : "Not played in a while",
+                        rediscover
+                    )
+                }
+            } else if favorite {
+                score += rediscover
+                addReason("rediscover", "A favorite you have not played yet", rediscover)
+            } else {
+                score += discovery
+                addReason("discovery", "New to you", discovery)
+            }
+
+            score += Double(jitter(signature, track.id))
+            var ordered = reasons.sorted {
+                if $0.weight != $1.weight { return $0.weight > $1.weight }
+                return $0.order < $1.order
+            }
+            ordered = Array(ordered.prefix(2))
+            if ordered.isEmpty {
+                ordered = [Reason(code: "discovery", label: "A fresh pick from your library", weight: 0, order: 0)]
+            }
+            scored.append(
+                Scored(
+                    entity: track,
+                    score: (score * 10).rounded() / 10,
+                    reasons: ordered
+                )
+            )
+        }
+
+        scored.sort { a, b in
+            if a.score != b.score { return a.score > b.score }
+            return a.entity.id < b.entity.id
+        }
+
+        var picked: [Scored] = []
+        var deferred: [Scored] = []
+        var perArtist: [String: Int] = [:]
+        for entry in scored {
+            let artist = norm(entry.entity.artist)
+            let count = perArtist[artist] ?? 0
+            if !artist.isEmpty && count >= maxPerArtist {
+                deferred.append(entry)
+                continue
+            }
+            picked.append(entry)
+            if !artist.isEmpty { perArtist[artist] = count + 1 }
+            if picked.count == candidateLimit { break }
+        }
+        if picked.count < candidateLimit {
+            for entry in deferred {
+                picked.append(entry)
+                if picked.count == candidateLimit { break }
+            }
+        }
+        return picked
+    }
+
+    private static func profile(
+        byId: [String: MediaItemEntity],
+        favorites: Set<String>,
+        recent: [CarPlayPlayed],
+        nowMs: Int64
+    ) -> Profile {
+        var profile = Profile()
+        for id in favorites.sorted() {
+            guard let track = byId[id], !track.missing else { continue }
+            add(&profile.artist, norm(track.artist), 2.5)
+            for (_, key) in genresOf(track) { add(&profile.genre, key, 1.5) }
+            add(&profile.album, norm(track.album), 0.3)
+        }
+        for entry in recent {
+            guard let track = byId[entry.trackId], !track.missing else { continue }
+            let weight = recencyWeight(entry.playedAt, nowMs) *
+                (1 + min(1, log1p(Double(entry.playCount)) / 4))
+            add(&profile.artist, norm(track.artist), weight)
+            for (_, key) in genresOf(track) { add(&profile.genre, key, weight * 0.8) }
+            add(&profile.album, norm(track.album), weight * 0.4)
+        }
+        return profile
+    }
+
+    private static func recencyWeight(_ playedAt: Int64, _ nowMs: Int64) -> Double {
+        let days = max(0, Double(nowMs - playedAt) / dayMs)
+        if days <= 7 { return 1 }
+        if days <= 30 { return 0.65 }
+        if days <= 90 { return 0.35 }
+        return 0.15
+    }
+
+    private static func add(_ map: inout [String: Double], _ key: String, _ amount: Double) {
+        guard !key.isEmpty else { return }
+        map[key, default: 0] += amount
+    }
+
+    private static func normalized(_ map: [String: Double]) -> [String: Double] {
+        guard let max = map.values.max(), max > 0 else { return [:] }
+        return map.mapValues { $0 / max }
+    }
+
+    private static func genresOf(_ track: MediaItemEntity) -> [(label: String, key: String)] {
+        (track.genre ?? "")
+            .components(separatedBy: CharacterSet(charactersIn: ",;/|"))
+            .map { (label: $0.trimmingCharacters(in: .whitespacesAndNewlines), key: norm($0)) }
+            .filter { !$0.key.isEmpty }
+    }
+
+    private static func norm(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "" }
+        let lowered = value.lowercased()
+        let scalars = lowered.unicodeScalars.map { scalar -> Character in
+            if CharacterSet.alphanumerics.contains(scalar) { return Character(scalar) }
+            return " "
+        }
+        return String(scalars)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private static func jitter(_ signature: String, _ id: String) -> Int {
+        var hash: Int32 = 0
+        for unit in "\(signature)|\(id)".utf16 {
+            hash = hash &* 31 &+ Int32(unit)
+        }
+        return Int(abs(Int64(hash)) % 4)
+    }
+}
+
 enum CarPlayBrowse {
     // MARK: - Root categories
 

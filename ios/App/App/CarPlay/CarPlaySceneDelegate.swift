@@ -348,6 +348,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     private func browseSnapshot() -> BrowseSnapshot {
         let all = db.getAllMediaItems().filter { $0.mediaKind == "music" }
+        let hidden = Duplicates.hiddenToKeeper(all)
         let visible = Duplicates.collapse(all)
         let entitiesById = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
@@ -410,11 +411,21 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             )
         }
 
-        let mixes: [CarPlayMix]
+        let favoriteIds = Set(db.getFavorites().map { hidden[$0.trackId] ?? $0.trackId })
+        let recentPlays = db.getRecentPlays(limit: 30).map { row in
+            CarPlayPlayed(
+                trackId: hidden[row.trackId] ?? row.trackId,
+                playedAt: row.playedAt,
+                playCount: row.playCount
+            )
+        }
+
+        var mixes: [CarPlayMix] = []
         if let raw = db.getAppState("car.recommendations"),
            let data = raw.data(using: .utf8),
            let snapshot = try? JSONDecoder().decode(CarPlayRecommendationSnapshot.self, from: data),
-           snapshot.version == 1 {
+           snapshot.version == 1,
+           !CarPlayRecommender.isStale(snapshot) {
             mixes = snapshot.mixes.compactMap { mix in
                 let known = mix.trackIds.filter { tracksById[$0] != nil }
                 guard !known.isEmpty else { return nil }
@@ -426,8 +437,24 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                     reasons: mix.reasons
                 )
             }
-        } else {
-            mixes = []
+        }
+        if mixes.isEmpty {
+            let fallback = CarPlayRecommender.snapshot(
+                tracks: visible,
+                favorites: favoriteIds,
+                recent: recentPlays
+            )
+            mixes = fallback.mixes.compactMap { mix in
+                let known = mix.trackIds.filter { tracksById[$0] != nil }
+                guard !known.isEmpty else { return nil }
+                return CarPlayMix(
+                    id: mix.id,
+                    title: mix.title,
+                    subtitle: mix.subtitle,
+                    trackIds: known,
+                    reasons: mix.reasons
+                )
+            }
         }
 
         return BrowseSnapshot(

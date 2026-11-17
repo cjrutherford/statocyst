@@ -199,7 +199,8 @@ MVP-1 slice reports and the roadmap live in `statocyst-architecture-pack/evidenc
   the phone-built “For you” mixes; CarPlay still needs a macOS/Xcode entitlement build
   before release. Android Automotive OS has a full Compose surface, verified on an Android
   Automotive OS emulator; a real head unit and Play automotive review remain external
-  gates. See `docs/car-surfaces.md`.
+  gates. Car surfaces fall back to a native four-mix ranking when the phone snapshot is
+  missing or stale. See `docs/car-surfaces.md` and `docs/car-recommender.md`.
 - Chrome on Android can leave a completed sideloaded APK at 100% in its download UI. The
   landing page stages the APK on the Pages origin to avoid the cross-origin GitHub download
   path. If Chrome still stalls, the file is usually already in `Downloads`; this is a

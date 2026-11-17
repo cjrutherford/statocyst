@@ -147,6 +147,18 @@ Before submitting an automotive build:
 - Keep the AAOS surface and the projected Android Auto/CarPlay browse tree on the same
   snapshot and catalog schema.
 
+## Native fallback ranking
+
+The car surfaces no longer depend on the phone WebView to have run before For you
+works. A fresh snapshot still wins; a missing, malformed or stale snapshot falls back
+to a native ranking over the local catalog, favorites and recent plays. Android Auto
+and AAOS use `CarRecommender.kt`; CarPlay uses `CarPlayRecommender` in
+`CarPlayBrowse.swift`.
+
+The exact weights, mix rules, fixture and divergence policy are in
+[`car-recommender.md`](car-recommender.md). The AAOS fallback was verified cold-start
+on the automotive emulator with the `car_recommendations` preference removed.
+
 ## Phone-only actions
 
 Selecting songs, naming a mix and saving a playlist stay in the Angular app. The car
