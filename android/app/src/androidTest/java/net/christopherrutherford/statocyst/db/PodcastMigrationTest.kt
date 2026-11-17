@@ -41,7 +41,11 @@ class PodcastMigrationTest {
         raw.close()
 
         val database = Room.databaseBuilder(context, StatocystDatabase::class.java, databaseName)
-            .addMigrations(StatocystDatabase.MIGRATION_6_7, StatocystDatabase.MIGRATION_7_8)
+            .addMigrations(
+                StatocystDatabase.MIGRATION_6_7,
+                StatocystDatabase.MIGRATION_7_8,
+                StatocystDatabase.MIGRATION_8_9,
+            )
             .allowMainThreadQueries()
             .build()
         try {

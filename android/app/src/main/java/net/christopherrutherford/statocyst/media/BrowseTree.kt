@@ -9,6 +9,7 @@ import net.christopherrutherford.statocyst.db.MediaItemEntity
  */
 object BrowseIds {
     const val ROOT = "statocyst"
+    const val FOR_YOU = "for-you"
     const val RECENTS = "recents"
     const val FAVORITES = "favorites"
     const val PLAYLISTS = "playlists"
@@ -23,9 +24,12 @@ object BrowseIds {
 
     /** Folders that sit directly under the root, in display order. */
     val ROOT_FOLDERS =
-        listOf(RECENTS, FAVORITES, PLAYLISTS, PODCASTS, RADIO, ALBUMS, ARTISTS, TRACKS, QUEUE)
+        listOf(FOR_YOU, RECENTS, FAVORITES, PLAYLISTS, PODCASTS, RADIO, ALBUMS, ARTISTS, TRACKS, QUEUE)
 
     fun album(albumArtist: String, album: String): String = "album::$albumArtist::$album"
+    fun carMix(id: String): String = "car-mix::$id"
+    fun carMixId(mediaId: String): String? =
+        if (mediaId.startsWith("car-mix::")) mediaId.removePrefix("car-mix::") else null
     fun artist(artist: String): String = "artist::$artist"
     fun playlist(id: String): String = "playlist::$id"
     fun podcastFeed(id: String): String = "podcast-feed::$id"
@@ -108,6 +112,10 @@ data class BrowseData(
     val queue: List<QueueEntry> = emptyList(),
     val podcastFeeds: List<PodcastFeedInfo> = emptyList(),
     val podcastMedia: Map<String, MediaItemEntity> = emptyMap(),
+    /** Phone-ranked mixes published for the car surfaces. */
+    val carMixes: List<CarMix> = emptyList(),
+    /** The snapshot is old enough that the phone should refresh it. */
+    val carMixesStale: Boolean = false,
 )
 
 /**
@@ -133,6 +141,8 @@ object BrowseTree {
     private fun allChildren(parentId: String, data: BrowseData): List<BrowseNode> = when {
         parentId == BrowseIds.ROOT ->
             listOfNotNull(data.notice?.let(::noticeNode)) + BrowseIds.ROOT_FOLDERS.mapNotNull { folder(it, data) }
+        parentId == BrowseIds.FOR_YOU -> data.carMixes.map(::carMixNode)
+        parentId.startsWith("car-mix::") -> carMixTrackNodes(parentId, data)
         parentId == BrowseIds.RECENTS -> trackNodes(data.recents, data, parentId)
         parentId == BrowseIds.FAVORITES -> trackNodes(data.favorites, data, parentId)
         parentId == BrowseIds.PLAYLISTS -> data.playlists.map(::playlistNode)
@@ -181,6 +191,9 @@ object BrowseTree {
                 )
             }
         mediaId == BrowseIds.NOTICE -> data.notice?.let(::noticeNode)
+        mediaId == BrowseIds.FOR_YOU -> folder(mediaId, data, always = true)
+        mediaId.startsWith("car-mix::") ->
+            data.carMixes.firstOrNull { BrowseIds.carMix(it.id) == mediaId }?.let(::carMixNode)
         mediaId in BrowseIds.ROOT_FOLDERS -> folder(mediaId, data, always = true)
         mediaId.startsWith("playlist::") ->
             data.playlists.firstOrNull { BrowseIds.playlist(it.id) == mediaId }?.let(::playlistNode)
@@ -225,6 +238,9 @@ object BrowseTree {
      * list into "play this list from here". Null when [contextId] is not a track list.
      */
     fun contextTrackIds(contextId: String, data: BrowseData): List<String>? = when {
+        contextId.startsWith("car-mix::") ->
+            data.carMixes.firstOrNull { BrowseIds.carMix(it.id) == contextId }
+                ?.trackIds?.filter { known(it, data) }
         contextId == BrowseIds.RECENTS -> data.recents.filter { known(it, data) }
         contextId == BrowseIds.FAVORITES -> data.favorites.filter { known(it, data) }
         contextId.startsWith("playlist::") ->
@@ -299,6 +315,16 @@ object BrowseTree {
     private fun folder(id: String, data: BrowseData, always: Boolean = false): BrowseNode? {
         fun count(n: Int, noun: String) = "$n $noun" + if (n == 1) "" else "s"
         return when (id) {
+            BrowseIds.FOR_YOU -> data.carMixes.size.takeIf { it > 0 || always }
+                ?.let {
+                    val picks = data.carMixes.sumOf { mix -> mix.trackIds.size }
+                    val subtitle = if (data.carMixesStale) {
+                        "Open Statocyst on your phone to refresh"
+                    } else {
+                        "$picks picks · ${it} mixes"
+                    }
+                    BrowseNode(id, "For you", subtitle, childStyle = ChildStyle.GRID)
+                }
             BrowseIds.RECENTS -> data.recents.size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Recently played", count(it, "track"), childStyle = ChildStyle.LIST) }
             BrowseIds.FAVORITES -> data.favorites.size.takeIf { it > 0 || always }
@@ -315,6 +341,25 @@ object BrowseTree {
             BrowseIds.QUEUE -> data.queue.size.takeIf { it > 0 || always }
                 ?.let { BrowseNode(id, "Now playing queue", count(it, "track"), childStyle = ChildStyle.LIST) }
             else -> null
+        }
+    }
+
+    private fun carMixNode(mix: CarMix) = BrowseNode(
+        id = BrowseIds.carMix(mix.id),
+        title = mix.title,
+        subtitle = mix.subtitle,
+        childStyle = ChildStyle.LIST,
+    )
+
+    private fun carMixTrackNodes(parentId: String, data: BrowseData): List<BrowseNode> {
+        val mix = data.carMixes.firstOrNull { BrowseIds.carMix(it.id) == parentId } ?: return emptyList()
+        val byId = data.tracks.associateBy { it.id }
+        return mix.trackIds.mapNotNull { id ->
+            val track = byId[id] ?: return@mapNotNull null
+            val reason = mix.reasons[id]
+            trackNode(track, parentId).copy(
+                subtitle = if (reason.isNullOrBlank()) track.artist else "${track.artist} · $reason",
+            )
         }
     }
 

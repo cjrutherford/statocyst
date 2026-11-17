@@ -37,6 +37,7 @@ import net.christopherrutherford.statocyst.jellyfin.JellyfinClient
 import net.christopherrutherford.statocyst.library.Duplicates
 import net.christopherrutherford.statocyst.library.LibraryImporter
 import net.christopherrutherford.statocyst.media.BrowseAccess
+import net.christopherrutherford.statocyst.media.CarRecommendations
 import net.christopherrutherford.statocyst.media.LocalMediaServer
 import net.christopherrutherford.statocyst.media.AdaptiveQuality
 import net.christopherrutherford.statocyst.media.PlaybackService
@@ -61,6 +62,7 @@ import net.christopherrutherford.statocyst.podcast.PodcastFeedRecord
 import net.christopherrutherford.statocyst.podcast.PodcastRepository
 import net.christopherrutherford.statocyst.podcast.PodcastTransport
 import java.security.MessageDigest
+import java.time.Instant
 
 @CapacitorPlugin(name = "Statocyst")
 class StatocystPlugin : Plugin() {
@@ -84,8 +86,23 @@ class StatocystPlugin : Plugin() {
             val all = dao.getAll().filter { it.mediaKind == "music" }
             val hidden = Duplicates.hiddenToKeeper(all)
             val aliases = hidden.entries.groupBy({ it.value }, { it.key })
+            // Recently played is per visible row. A hidden duplicate may be the row
+            // that actually played, so fold its timestamp into the keeper.
+            val recentByTrack = mutableMapOf<String, Pair<Long, Int>>()
+            for (recent in db.userDao().recents(200)) {
+                val keeper = hidden[recent.trackId] ?: recent.trackId
+                val existing = recentByTrack[keeper]
+                if (existing == null || recent.playedAt > existing.first) {
+                    recentByTrack[keeper] = recent.playedAt to recent.playCount
+                }
+            }
             val tracks = all.filterNot { it.id in hidden }.map { track ->
-                trackJson(track).also { json ->
+                val recent = recentByTrack[track.id]
+                trackJson(
+                    track,
+                    recent?.first?.let { Instant.ofEpochMilli(it).toString() },
+                    recent?.second ?: 0,
+                ).also { json ->
                     aliases[track.id]?.let { json.put("aliases", JSArray(it)) }
                 }
             }
@@ -1466,6 +1483,7 @@ class StatocystPlugin : Plugin() {
     fun syncUserState(call: PluginCall) {
         val favorites = call.getArray("favorites")?.toList<String>().orEmpty()
         val playlistsJson = call.getArray("playlists")
+        val carRecommendations = call.getObject("carRecommendations")
         io(call) {
             try {
                 val favoriteRows = favorites.mapIndexed { i, id -> FavoriteEntity(id, i) }
@@ -1482,11 +1500,25 @@ class StatocystPlugin : Plugin() {
                     }
                 }
                 db.userDao().replaceUserState(favoriteRows, playlistRows, trackRows)
-                context.getSharedPreferences("statocyst", android.content.Context.MODE_PRIVATE)
-                    .edit().putBoolean("user_state_seeded", true).apply()
+                val prefs = context.getSharedPreferences(
+                    "statocyst",
+                    android.content.Context.MODE_PRIVATE,
+                ).edit()
+                    .putBoolean("user_state_seeded", true)
+                if (carRecommendations != null) {
+                    prefs.putString(CarRecommendations.PREF_KEY, carRecommendations.toString())
+                } else {
+                    prefs.remove(CarRecommendations.PREF_KEY)
+                }
+                prefs.apply()
                 PlaybackService.onUserStateChanged()
                 net.christopherrutherford.statocyst.widget.NowPlayingWidget.refresh(context)
-                call.resolve(JSObject().put("favorites", favoriteRows.size).put("playlists", playlistRows.size))
+                call.resolve(
+                    JSObject()
+                        .put("favorites", favoriteRows.size)
+                        .put("playlists", playlistRows.size)
+                        .put("carMixes", carRecommendations?.optJSONArray("mixes")?.length() ?: 0),
+                )
             } catch (error: Exception) {
                 call.reject(error.message ?: "syncUserState failed", error)
             }
@@ -1707,7 +1739,11 @@ class StatocystPlugin : Plugin() {
         emit("cacheChanged", JSObject())
     }
 
-    private fun trackJson(t: MediaItemEntity): JSObject = JSObject()
+    private fun trackJson(
+        t: MediaItemEntity,
+        lastPlayedAt: String? = null,
+        playCount: Int = 0,
+    ): JSObject = JSObject()
         .put("id", t.id)
         .put("title", t.title)
         .put("artist", t.artist)
@@ -1730,6 +1766,8 @@ class StatocystPlugin : Plugin() {
         .put("artworkUrl", versionedArtwork(artworkFor(t)))
         .put("artistArtworkUrl", versionedArtwork(artistArtworkFor(t)))
         .put("missing", t.missing)
+        .put("lastPlayedAt", lastPlayedAt)
+        .put("playCount", playCount)
 
     /**
      * Loopback artwork URL. Opt-in MusicBrainz artwork overrides the server's; a Jellyfin track

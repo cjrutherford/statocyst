@@ -93,10 +93,18 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let sections: [CarPlaySection]
         let queue: [String]
         let imageName: String
+        var mixes: [CarPlayMix] = []
     }
 
     private func makeRootTemplate(snapshot: BrowseSnapshot) -> CPTabBarTemplate {
         let categories: [BrowseCategory] = [
+            BrowseCategory(
+                title: "For you",
+                sections: [],
+                queue: [],
+                imageName: "sparkles",
+                mixes: snapshot.mixes
+            ),
             BrowseCategory(
                 title: "Library",
                 sections: CarPlayBrowse.library(tracks: snapshot.library, isOffline: isOffline),
@@ -138,32 +146,62 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let maximumTabs = max(1, CPTabBarTemplate.maximumTabCount)
 
         if categories.count <= maximumTabs {
-            let templates: [CPTemplate] = categories.map { category -> CPTemplate in
-                makeListTemplate(
-                    title: category.title,
-                    sections: category.sections,
-                    queue: category.queue,
-                    tabImageName: category.imageName
-                )
-            }
+            let templates: [CPTemplate] = categories.map { makeTemplate($0) }
             return CPTabBarTemplate(templates: templates)
         }
 
         // Audio-entitled hosts currently allow four tabs. Keep every required
         // destination reachable by folding the overflow into a final More tab.
         let directCount = max(0, maximumTabs - 1)
-        let direct = categories.prefix(directCount).map { category -> CPTemplate in
-            makeListTemplate(
-                title: category.title,
-                sections: category.sections,
-                queue: category.queue,
-                tabImageName: category.imageName
-            )
-        }
+        let direct = categories.prefix(directCount).map { makeTemplate($0) }
         let overflow = Array(categories.dropFirst(directCount))
         var templates: [CPTemplate] = direct
         templates.append(makeMoreTemplate(overflow))
         return CPTabBarTemplate(templates: templates)
+    }
+
+    private func makeTemplate(_ category: BrowseCategory) -> CPTemplate {
+        if category.title == "For you" {
+            return makeForYouTemplate(mixes: category.mixes)
+        }
+        return makeListTemplate(
+            title: category.title,
+            sections: category.sections,
+            queue: category.queue,
+            tabImageName: category.imageName
+        )
+    }
+
+    private func makeForYouTemplate(mixes: [CarPlayMix]) -> CPTemplate {
+        let usable = mixes.filter { !$0.trackIds.isEmpty }
+        guard !usable.isEmpty else {
+            let item = CPListItem(
+                text: "For you is warming up",
+                detailText: "Open Statocyst on your phone to build a mix from your recent listening."
+            )
+            item.isEnabled = false
+            let template = CPListTemplate(title: "For you", sections: [CPListSection(items: [item])])
+            template.tabTitle = "For you"
+            template.tabImage = UIImage(systemName: "sparkles")
+            return template
+        }
+
+        let buttons: [CPGridButton] = usable.prefix(8).enumerated().map { index, mix in
+            CPGridButton(
+                titleVariants: [mix.title],
+                image: CarPlayArtwork.mixTile(index: index)
+            ) { [weak self] _ in
+                self?.pushTrackList(
+                    title: mix.title,
+                    trackIds: mix.trackIds,
+                    reasons: mix.reasons
+                )
+            }
+        }
+        let template = CPGridTemplate(title: "For you", gridButtons: buttons)
+        template.tabTitle = "For you"
+        template.tabImage = UIImage(systemName: "sparkles")
+        return template
     }
 
     private func makeMoreTemplate(_ categories: [BrowseCategory]) -> CPListTemplate {
@@ -182,13 +220,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
     }
 
     private func pushCategory(_ category: BrowseCategory) {
-        let template = makeListTemplate(
-            title: category.title,
-            sections: category.sections,
-            queue: category.queue,
-            tabImageName: category.imageName
-        )
-        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+        interfaceController?.pushTemplate(makeTemplate(category), animated: true, completion: nil)
     }
 
     private func makeListTemplate(
@@ -227,14 +259,26 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                 completion()
             }
         }
+        if let trackId = row.artworkTrackId,
+           let entity = db.getMediaItemById(trackId) {
+            CarPlayArtwork.loadImage(for: entity) { image in
+                if let image = image {
+                    item.setImage(image)
+                }
+            }
+        }
         return item
     }
 
-    private func pushTrackList(title: String, trackIds: [String]) {
+    private func pushTrackList(
+        title: String,
+        trackIds: [String],
+        reasons: [String: String] = [:]
+    ) {
         let tracks = trackIds.compactMap { tracksById[$0] }
         let template = makeListTemplate(
             title: title,
-            sections: CarPlayBrowse.trackList(tracks: tracks),
+            sections: CarPlayBrowse.trackList(tracks: tracks, reasons: reasons),
             queue: tracks.map { $0.id }
         )
         interfaceController?.pushTemplate(template, animated: true, completion: nil)
@@ -299,10 +343,12 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let playlists: [CarPlayPlaylist]
         let podcasts: [CarPlayPodcastFeed]
         let tracksById: [String: CarPlayTrack]
+        let mixes: [CarPlayMix]
     }
 
     private func browseSnapshot() -> BrowseSnapshot {
         let all = db.getAllMediaItems().filter { $0.mediaKind == "music" }
+        let hidden = Duplicates.hiddenToKeeper(all)
         let visible = Duplicates.collapse(all)
         let entitiesById = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
@@ -365,12 +411,59 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             )
         }
 
+        let favoriteIds = Set(db.getFavorites().map { hidden[$0.trackId] ?? $0.trackId })
+        let recentPlays = db.getRecentPlays(limit: 30).map { row in
+            CarPlayPlayed(
+                trackId: hidden[row.trackId] ?? row.trackId,
+                playedAt: row.playedAt,
+                playCount: row.playCount
+            )
+        }
+
+        var mixes: [CarPlayMix] = []
+        if let raw = db.getAppState("car.recommendations"),
+           let data = raw.data(using: .utf8),
+           let snapshot = try? JSONDecoder().decode(CarPlayRecommendationSnapshot.self, from: data),
+           snapshot.version == 1,
+           !CarPlayRecommender.isStale(snapshot) {
+            mixes = snapshot.mixes.compactMap { mix in
+                let known = mix.trackIds.filter { tracksById[$0] != nil }
+                guard !known.isEmpty else { return nil }
+                return CarPlayMix(
+                    id: mix.id,
+                    title: mix.title,
+                    subtitle: mix.subtitle,
+                    trackIds: known,
+                    reasons: mix.reasons
+                )
+            }
+        }
+        if mixes.isEmpty {
+            let fallback = CarPlayRecommender.snapshot(
+                tracks: visible,
+                favorites: favoriteIds,
+                recent: recentPlays
+            )
+            mixes = fallback.mixes.compactMap { mix in
+                let known = mix.trackIds.filter { tracksById[$0] != nil }
+                guard !known.isEmpty else { return nil }
+                return CarPlayMix(
+                    id: mix.id,
+                    title: mix.title,
+                    subtitle: mix.subtitle,
+                    trackIds: known,
+                    reasons: mix.reasons
+                )
+            }
+        }
+
         return BrowseSnapshot(
             library: library,
             downloaded: downloaded,
             playlists: playlists,
             podcasts: podcastFeeds,
-            tracksById: tracksById
+            tracksById: tracksById,
+            mixes: mixes
         )
     }
 

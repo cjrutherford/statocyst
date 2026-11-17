@@ -212,7 +212,7 @@ test.describe('accessibility', () => {
   let page: Page;
   let dataDir: string;
 
-  const VIEWS = ['Library', 'Now playing', 'Queue', 'Settings'] as const;
+  const VIEWS = ['Library', 'Playlists', 'Now playing', 'Queue', 'Settings'] as const;
 
   async function visit(view: (typeof VIEWS)[number]): Promise<void> {
     if (view === 'Now playing') {

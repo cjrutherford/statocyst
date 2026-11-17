@@ -218,6 +218,7 @@ test('local import, real playback, queue edits and restart recovery', async () =
     // --- Settings ---------------------------------------------------------
     await page.locator('.nav__item').filter({ hasText: 'Settings' }).click();
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Diagnostics' }).click();
     await expect(page.getByText('Database healthy')).toBeVisible({ timeout: 15_000 });
     await shot(page, '06-settings.png');
 

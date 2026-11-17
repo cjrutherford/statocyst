@@ -106,6 +106,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
 
     private static let DEFAULT_CACHE_BUDGET: Int64 = 2 * 1024 * 1024 * 1024
     private static let USER_STATE_SEEDED_KEY = "statocyst.user_state_seeded"
+    private static let recentDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     public override func load() {
         super.load()
@@ -176,8 +181,27 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             for (hiddenId, keeperId) in hidden {
                 aliases[keeperId, default: []].append(hiddenId)
             }
+            // Fold a hidden duplicate's play into the visible keeper row.
+            var recentByTrack: [String: (playedAt: Int64, playCount: Int)] = [:]
+            for recent in self.db.getRecentPlays(limit: 200) {
+                let keeper = hidden[recent.trackId] ?? recent.trackId
+                if let existing = recentByTrack[keeper], existing.playedAt >= recent.playedAt {
+                    continue
+                }
+                recentByTrack[keeper] = (recent.playedAt, recent.playCount)
+            }
             let visible = all.filter { hidden[$0.id] == nil }.map { track -> [String: Any] in
-                var dict = self.trackDict(track)
+                let recent = recentByTrack[track.id]
+                let playedAt = recent.map {
+                    Self.recentDateFormatter.string(
+                        from: Date(timeIntervalSince1970: Double($0.playedAt) / 1000)
+                    )
+                }
+                var dict = self.trackDict(
+                    track,
+                    lastPlayedAt: playedAt,
+                    playCount: recent?.playCount ?? 0
+                )
                 if let trackAliases = aliases[track.id], !trackAliases.isEmpty {
                     dict["aliases"] = trackAliases
                 }
@@ -1326,6 +1350,7 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
     @objc func syncUserState(_ call: CAPPluginCall) {
         let favorites = call.getArray("favorites", String.self) ?? []
         let rawPlaylists = call.getArray("playlists", JSObject.self) ?? []
+        let carRecommendations = call.getObject("carRecommendations")
         ioQueue.async { [weak self] in
             guard let self = self else { return }
             let favRows = favorites.enumerated().map { FavoriteEntity(trackId: $0.element, position: $0.offset) }
@@ -1344,6 +1369,14 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
                 }
             }
             self.db.replaceUserState(favorites: favRows, playlists: plRows, playlistTracks: ptRows)
+            if let car = carRecommendations,
+               JSONSerialization.isValidJSONObject(car),
+               let data = try? JSONSerialization.data(withJSONObject: car),
+               let json = String(data: data, encoding: .utf8) {
+                self.db.setAppState("car.recommendations", json)
+            } else {
+                self.db.removeAppState("car.recommendations")
+            }
             UserDefaults.standard.set(true, forKey: Self.USER_STATE_SEEDED_KEY)
             call.resolve([
                 "favorites": favRows.count,
@@ -1520,7 +1553,11 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
         ]
     }
 
-    private func trackDict(_ t: MediaItemEntity) -> [String: Any] {
+    private func trackDict(
+        _ t: MediaItemEntity,
+        lastPlayedAt: String? = nil,
+        playCount: Int = 0
+    ) -> [String: Any] {
         return [
             "id": t.id,
             "title": t.title,
@@ -1543,7 +1580,9 @@ public class StatocystPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDeleg
             "mediaForm": StatocystDatabase.normalizedMediaForm(t.mediaForm),
             "artworkUrl": artworkFor(t) as Any,
             "artistArtworkUrl": NSNull(),
-            "missing": t.missing
+            "missing": t.missing,
+            "lastPlayedAt": lastPlayedAt as Any,
+            "playCount": playCount
         ]
     }
 

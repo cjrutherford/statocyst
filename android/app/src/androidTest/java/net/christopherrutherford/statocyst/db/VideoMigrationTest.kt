@@ -10,9 +10,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * Proves the v7 → v8 video-podcast migration. It is additive: existing music and
- * podcast rows keep their data and read as `mediaForm = "audio"`, and the new
- * podcast columns/index exist with Room's expected schema.
+ * Proves the v7 → v9 schema migrations. They are additive: existing music and
+ * podcast rows keep their data and read as `mediaForm = "audio"`, the new podcast
+ * columns/index exist, and the recent-play count starts at zero and accumulates.
  */
 class VideoMigrationTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -64,7 +64,7 @@ class VideoMigrationTest {
         raw.close()
 
         val database = Room.databaseBuilder(context, StatocystDatabase::class.java, databaseName)
-            .addMigrations(StatocystDatabase.MIGRATION_7_8)
+            .addMigrations(StatocystDatabase.MIGRATION_7_8, StatocystDatabase.MIGRATION_8_9)
             .allowMainThreadQueries()
             .build()
         try {
@@ -101,6 +101,34 @@ class VideoMigrationTest {
             assertEquals(1920, stored?.videoWidth)
             assertEquals(1080, stored?.videoHeight)
             assertEquals("https://cdn.example.com/ep.jpg", stored?.posterUrl)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun migrate7To9AddsRecentPlayCountWithoutLosingTheLastPlay() {
+        context.deleteDatabase(databaseName)
+        val raw = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(databaseName), null)
+        createV7Schema(raw)
+        raw.execSQL("INSERT INTO recent (trackId, playedAt) VALUES ('music-1', 1234)")
+        raw.version = 7
+        raw.close()
+
+        val database = Room.databaseBuilder(context, StatocystDatabase::class.java, databaseName)
+            .addMigrations(StatocystDatabase.MIGRATION_7_8, StatocystDatabase.MIGRATION_8_9)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val existing = runBlocking { database.userDao().recents(10) }.single()
+            assertEquals("music-1", existing.trackId)
+            assertEquals(1234L, existing.playedAt)
+            assertEquals(0, existing.playCount)
+
+            runBlocking { database.userDao().recordRecent("music-1", 5678L) }
+            val updated = runBlocking { database.userDao().recents(10) }.single()
+            assertEquals(5678L, updated.playedAt)
+            assertEquals(1, updated.playCount)
         } finally {
             database.close()
         }

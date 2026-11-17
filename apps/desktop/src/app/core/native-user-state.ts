@@ -1,6 +1,12 @@
+import type { CarRecommendationSnapshot } from '@statocyst/contracts';
+
 interface UserStatePlugin {
   getUserState?: () => Promise<{ seeded: boolean; favorites: string[] }>;
-  syncUserState?: (state: { favorites: string[]; playlists: StoredPlaylist[] }) => Promise<unknown>;
+  syncUserState?: (state: {
+    favorites: string[];
+    playlists: StoredPlaylist[];
+    carRecommendations?: CarRecommendationSnapshot | null;
+  }) => Promise<unknown>;
   addListener?: (event: string, handler: (payload: { favorites: string[] }) => void) => unknown;
 }
 
@@ -21,6 +27,7 @@ interface StoredPlaylist {
 let timer: ReturnType<typeof setTimeout> | undefined;
 let favorites: string[] = [];
 let playlists: StoredPlaylist[] = [];
+let carRecommendations: CarRecommendationSnapshot | null | undefined;
 let ready = false;
 let adoptFavorites: ((ids: string[]) => void) | undefined;
 
@@ -32,9 +39,15 @@ function schedulePush(): void {
   if (!ready || !native?.syncUserState) return;
   clearTimeout(timer);
   timer = setTimeout(() => {
-    void native.syncUserState?.({ favorites, playlists }).catch((error: unknown) => {
-      console.warn('syncUserState failed', error);
-    });
+    void native
+      .syncUserState?.({
+        favorites,
+        playlists,
+        ...(carRecommendations !== undefined ? { carRecommendations } : {}),
+      })
+      .catch((error: unknown) => {
+        console.warn('syncUserState failed', error);
+      });
   }, 400);
 }
 
@@ -64,9 +77,14 @@ export function initNativeUserState(localFavorites: string[], adopt: (ids: strin
 }
 
 export function pushNativeUserState(
-  next: Partial<{ favorites: string[]; playlists: StoredPlaylist[] }>,
+  next: Partial<{
+    favorites: string[];
+    playlists: StoredPlaylist[];
+    carRecommendations: CarRecommendationSnapshot | null;
+  }>,
 ): void {
   if (next.favorites) favorites = next.favorites;
   if (next.playlists) playlists = next.playlists;
+  if (next.carRecommendations !== undefined) carRecommendations = next.carRecommendations;
   schedulePush();
 }

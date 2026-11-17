@@ -4,6 +4,9 @@ buildscript {
     
     repositories {
         google()
+        // Official Google mirror of Maven Central. CI runners occasionally get
+        // HTTP 429 from repo.maven.apache.org when resolving new artifacts.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
     }
     dependencies {
@@ -21,7 +24,19 @@ apply from: "variables.gradle"
 allprojects {
     repositories {
         google()
+        // Prefer the official Google mirror; repo.maven.apache.org rate-limits
+        // bursty CI dependency downloads with HTTP 429.
+        maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
         mavenCentral()
+    }
+
+    // Kotlin 1.8+ merged the JDK7/JDK8 compatibility artifacts into kotlin-stdlib.
+    // Some Capacitor/cordova test dependencies still pull the old 1.6.x stubs,
+    // which duplicate stdlib classes on the androidTest classpath. Exclude them
+    // for every module, not only :app.
+    configurations.all {
+        exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+        exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
     }
 }
 

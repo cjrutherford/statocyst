@@ -1,6 +1,7 @@
 package net.christopherrutherford.statocyst.media
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -57,7 +58,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import net.christopherrutherford.statocyst.R
 import net.christopherrutherford.statocyst.db.MediaItemEntity
-import net.christopherrutherford.statocyst.db.RecentEntity
 import net.christopherrutherford.statocyst.db.StatocystDatabase
 import java.io.File
 
@@ -132,7 +132,6 @@ class PlaybackService : MediaLibraryService() {
                     persistQueue()
                     extendContext()
                     prefetchCurrent(mediaItem)
-                    recordRecent(mediaItem)
                     refreshButtons()
                     maybeMarkPodcastStarted()
                 }
@@ -170,6 +169,9 @@ class PlaybackService : MediaLibraryService() {
                         consecutiveErrors = 0
                         vanishedTried.clear()
                         maybeMarkPodcastStarted()
+                        // Only an actual audible start is listening history; building or
+                        // restoring a queue is not.
+                        recordRecent(player.currentMediaItem)
                         startPositionTicker()
                     } else {
                         positionTicker?.cancel()
@@ -595,6 +597,34 @@ class PlaybackService : MediaLibraryService() {
             Triple(userDao.favorites(), userDao.recents(RECENT_LIMIT), Pair(userDao.playlists(), userDao.playlistTracks()))
         }
         val (favorites, recents, playlistRows) = user
+        val carSnapshot = withContext(Dispatchers.IO) {
+            CarRecommendations.parseSnapshot(
+                getSharedPreferences("statocyst", Context.MODE_PRIVATE)
+                    .getString(CarRecommendations.PREF_KEY, null),
+            )
+        }
+        val canonicalRecentById = mutableMapOf<String, net.christopherrutherford.statocyst.db.RecentEntity>()
+        for (row in recents) {
+            val keeper = aliases[row.trackId] ?: row.trackId
+            val existing = canonicalRecentById[keeper]
+            if (existing == null || row.playedAt > existing.playedAt) {
+                canonicalRecentById[keeper] = row.copy(trackId = keeper)
+            }
+        }
+        val recentRows = canonicalRecentById.values.sortedByDescending { it.playedAt }
+        val favoriteIds = canonical(
+            favorites.sortedByDescending { it.position }.map { it.trackId },
+            aliases,
+        ).toSet()
+        val stale = CarRecommendations.isStale(carSnapshot)
+        val fallback = if (carSnapshot.mixes.isEmpty() || stale) {
+            withContext(Dispatchers.IO) {
+                CarRecommender.build(catalog, favoriteIds, recentRows)
+            }
+        } else {
+            null
+        }
+        val effectiveMixes = fallback?.mixes ?: carSnapshot.mixes
         val podcastFeeds = withContext(Dispatchers.IO) {
             val mediaById = mutableMapOf<String, MediaItemEntity>()
             podcastDao.listFeeds().map { feed ->
@@ -627,30 +657,46 @@ class PlaybackService : MediaLibraryService() {
             notice = notice,
             currentTrackId = player.currentMediaItem?.let(QueueItems::trackIdOf),
             // Web order is oldest-first; Auto shows the most recent favorite on top.
-            favorites = canonical(favorites.sortedByDescending { it.position }.map { it.trackId }, aliases),
+            favorites = favoriteIds.toList(),
             playlists = playlistRows.first.map { pl ->
                 PlaylistInfo(pl.id, pl.name, canonical(tracksByPlaylist[pl.id].orEmpty().map { it.trackId }, aliases))
             },
-            recents = canonical(recents.map { it.trackId }, aliases),
+            recents = recentRows.map { it.trackId },
             queue = (0 until player.mediaItemCount).map {
                 val item = player.getMediaItemAt(it)
                 QueueEntry(item.mediaId, QueueItems.trackIdOf(item))
             },
             podcastFeeds = podcastFeeds.first,
             podcastMedia = podcastFeeds.second,
+            carMixes = effectiveMixes,
+            carMixesStale = stale && fallback?.mixes?.isNotEmpty() != true,
         )
     }
 
+    /** Local listening history is opt-in (ADR-015); the setting lives in Capacitor Preferences. */
+    private fun listeningHistoryEnabled(): Boolean =
+        getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+            .getString("listeningHistory", "false") == "true"
+
+    private var lastRecordedTrackId: String? = null
+
     private fun recordRecent(item: MediaItem?) {
         item ?: return
+        if (!listeningHistoryEnabled()) return
         val trackId = QueueItems.trackIdOf(item)
+        // Resuming the same song, or a buffering repaint, is not a new play.
+        if (trackId == lastRecordedTrackId) return
+        lastRecordedTrackId = trackId
         scope.launch {
             try {
-                withContext(Dispatchers.IO) {
-                    userDao.upsertRecent(RecentEntity(trackId, System.currentTimeMillis()))
+                val recorded = withContext(Dispatchers.IO) {
+                    // The music Recently played list and the car tree only show songs.
+                    if (dao.getById(trackId)?.mediaKind != "music") return@withContext false
+                    userDao.recordRecent(trackId, System.currentTimeMillis())
                     userDao.trimRecents(RECENT_LIMIT)
+                    true
                 }
-                notifyBrowseChanged(BrowseIds.RECENTS)
+                if (recorded) notifyBrowseChanged(BrowseIds.RECENTS)
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "recordRecent failed", e)
             }
@@ -962,7 +1008,13 @@ class PlaybackService : MediaLibraryService() {
                 },
             )
         }
-        val artUrl = node.podcastArtworkPath?.let { LocalMediaServer.localUri(this, File(it)) }
+        val carArt = when {
+            node.id in BrowseIds.ROOT_FOLDERS || node.id.startsWith("car-mix::") ->
+                CarArt.tile(this, node.id, node.title)
+            else -> null
+        }
+        val artUrl = carArt?.let { LocalMediaServer.localUri(this, File(it)) }
+            ?: node.podcastArtworkPath?.let { LocalMediaServer.localUri(this, File(it)) }
             ?: resolver.artwork(node.albumId, node.imageTag, node.art)
         if (artUrl != null) {
             metadataBuilder.setArtworkUri(Uri.parse(artUrl))
@@ -1257,7 +1309,7 @@ class PlaybackService : MediaLibraryService() {
         private const val RECENT_LIMIT = 100
         private const val CMD_SHUFFLE = "statocyst.shuffle"
         private const val CMD_REPEAT = "statocyst.repeat"
-        private const val CMD_FAVORITE = "statocyst.favorite"
+        const val CMD_FAVORITE = "statocyst.favorite"
 
         /** Set by the WebView plugin so favorites toggled from the car reach the web layer. */
         @Volatile
@@ -1293,7 +1345,12 @@ class PlaybackService : MediaLibraryService() {
         fun onUserStateChanged() = instance?.let { svc ->
             svc.scope.launch {
                 svc.loadFavorites()
-                svc.notifyBrowseChanged(BrowseIds.FAVORITES, BrowseIds.PLAYLISTS)
+                svc.notifyBrowseChanged(
+                    BrowseIds.ROOT,
+                    BrowseIds.FOR_YOU,
+                    BrowseIds.FAVORITES,
+                    BrowseIds.PLAYLISTS,
+                )
             }
         }
     }

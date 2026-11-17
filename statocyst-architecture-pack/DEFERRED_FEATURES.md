@@ -37,3 +37,10 @@ Do not build the following in MVP-1..MVP-5 unless a specifically accepted depend
 | Cross-device video resume, casting and AirPlay/Chromecast | Expansion | Requires the accepted sync/casting design; not part of MVP-6 |
 
 Every deferred item must have rationale, owner (if known), blocking prerequisite and acceptance criteria before promotion into an active slice.
+
+**Implementation note (2026-11-16):** a first explainable local slice now exists in
+`libs/recommendation` and the Playlists screen: favorites, recency-weighted listening
+history and metadata similarity, with per-result reasons. It deliberately does not include
+acoustic extraction, vector embeddings, cross-device profiles or server-side training, so
+the full Statolith hybrid recommender row above remains deferred. See
+`docs/recommendations.md`.

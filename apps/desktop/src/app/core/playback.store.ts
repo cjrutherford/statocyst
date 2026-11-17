@@ -3,6 +3,7 @@ import type {
   PlaybackCommand,
   PlaybackEvent,
   PlaybackSnapshot,
+  QueueEntryView,
   QueueSnapshot,
   RepeatMode,
   Result,
@@ -73,6 +74,12 @@ export class PlaybackStore {
   readonly durationMs = signal(0);
   readonly ready = signal(false);
   readonly lastError = signal<string | null>(null);
+  /**
+   * The entry from the most recent `trackChanged` event. Unlike `snapshot.track`
+   * this only changes when playback actually moves to a new entry, so listening
+   * history can record real starts rather than restored or repainted state.
+   */
+  readonly lastTrackChange = signal<QueueEntryView | null>(null);
 
   readonly track = computed<Track | null>(() => this.snapshot().track);
   readonly isPlaying = computed(() => {
@@ -288,6 +295,7 @@ export class PlaybackStore {
         this.queue.set(event.queue);
         break;
       case 'trackChanged':
+        this.lastTrackChange.set(event.entry);
         break;
       case 'error':
         this.lastError.set(event.error.message);

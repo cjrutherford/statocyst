@@ -5,6 +5,7 @@ export default defineConfig({
     projects: [
       'libs/contracts/vitest.config.ts',
       'libs/playback-core/vitest.config.ts',
+      'libs/recommendation/vitest.config.ts',
       'libs/persistence/vitest.config.ts',
       'libs/media-library/vitest.config.ts',
     ],

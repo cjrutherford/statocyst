@@ -101,7 +101,7 @@ jobs:
       - name: Typecheck and test
         run: >
           pnpm exec nx run-many -t typecheck test
-          -p contracts playback-core persistence media-library jellyfin-client desktop desktop-electron
+          -p contracts playback-core recommendation persistence media-library jellyfin-client desktop desktop-electron
 
       - name: Build web assets and sync them into the Android project
         run: |
