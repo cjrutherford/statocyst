@@ -2,46 +2,46 @@
   "tag_name": "v2.3.0",
   "name": "Statocyst 2.3.0",
   "html_url": "https://github.com/cjrutherford/statocyst/releases/tag/v2.3.0",
-  "published_at": "",
+  "published_at": "2026-11-17T18:24:28Z",
   "assets": [
     {
       "name": "SHA256SUMS",
-      "size": 0,
+      "size": 172,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/SHA256SUMS"
     },
     {
       "name": "statocyst-2.3.0-linux-amd64.deb",
-      "size": 0,
+      "size": 115685052,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0-linux-amd64.deb"
     },
     {
       "name": "statocyst-2.3.0-linux-x86_64.AppImage",
-      "size": 0,
+      "size": 143722350,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0-linux-x86_64.AppImage"
     },
     {
       "name": "statocyst-2.3.0-mac-arm64.dmg",
-      "size": 0,
+      "size": 135790370,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0-mac-arm64.dmg"
     },
     {
       "name": "statocyst-2.3.0-mac-arm64.zip",
-      "size": 0,
+      "size": 130690007,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0-mac-arm64.zip"
     },
     {
       "name": "statocyst-2.3.0-win-x64.exe",
-      "size": 0,
+      "size": 131505248,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0-win-x64.exe"
     },
     {
       "name": "statocyst-2.3.0.apk",
-      "size": 0,
+      "size": 5725756,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0.apk"
     },
     {
       "name": "statocyst-2.3.0.ipa",
-      "size": 0,
+      "size": 6624549,
       "browser_download_url": "https://github.com/cjrutherford/statocyst/releases/download/v2.3.0/statocyst-2.3.0.ipa"
     }
   ]
