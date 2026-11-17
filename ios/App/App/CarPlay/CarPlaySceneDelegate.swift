@@ -263,7 +263,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
            let entity = db.getMediaItemById(trackId) {
             CarPlayArtwork.loadImage(for: entity) { image in
                 if let image = image {
-                    item.image = image
+                    item.setImage(image)
                 }
             }
         }
