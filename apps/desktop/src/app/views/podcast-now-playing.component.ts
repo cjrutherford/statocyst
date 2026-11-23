@@ -10,7 +10,6 @@ import { ArtworkComponent } from '../components/artwork.component';
 import { IconComponent } from '../components/icon.component';
 import { PodcastVideoStageComponent } from '../components/podcast-video-stage.component';
 import { PlaybackStore } from '../core/playback.store';
-import { ScreenTransitionService } from '../core/screen-transition.service';
 import { formatDuration } from '../core/format';
 
 /**
@@ -404,8 +403,8 @@ import { formatDuration } from '../core/format';
 })
 export class PodcastNowPlayingComponent {
   protected readonly playback = inject(PlaybackStore);
-  private readonly transitions = inject(ScreenTransitionService);
   readonly openPodcasts = output<void>();
+  readonly requestBack = output<void>();
 
   protected readonly formatDuration = formatDuration;
   protected readonly dragging = signal(false);
@@ -448,7 +447,7 @@ export class PodcastNowPlayingComponent {
   }
 
   protected minimize(): void {
-    if (!this.transitions.back()) void this.transitions.go('podcasts');
+    this.requestBack.emit();
   }
 
   protected toggle(): void {

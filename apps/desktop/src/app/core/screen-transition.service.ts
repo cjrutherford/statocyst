@@ -43,6 +43,8 @@ export class ScreenTransitionService {
   private readonly navigation = inject(NavigationStore);
   private readonly appRef = inject(ApplicationRef);
   private busy = false;
+  private operation = 0;
+  private pendingNavigation: { operation: number; view: View; apply: () => void } | null = null;
 
   /** Read by the foam overlay component. */
   readonly foam = signal<FoamPhase>('idle');
@@ -55,16 +57,42 @@ export class ScreenTransitionService {
   }
 
   go(view: View): Promise<void> {
-    if (view === this.navigation.view()) return Promise.resolve();
-    return this.run(view, () => this.navigation.navigate(view));
+    if (view === this.navigation.view()) {
+      this.cancelPendingNavigation();
+      return Promise.resolve();
+    }
+    const operation = ++this.operation;
+    const apply = () => {
+      if (operation === this.operation) this.navigation.navigate(view);
+      if (this.pendingNavigation?.operation === operation) this.pendingNavigation = null;
+    };
+    this.pendingNavigation = { operation, view, apply };
+    return this.run(view, apply);
+  }
+
+  /** Apply an in-flight destination before dispatching Back against the visible view. */
+  resolvePendingNavigation(): void {
+    const pending = this.pendingNavigation;
+    if (!pending) return;
+    this.operation++;
+    this.pendingNavigation = null;
+    this.navigation.navigate(pending.view);
+  }
+
+  /** Cancels a stale post-transition action when the user starts another navigation. */
+  cancelPendingNavigation(): void {
+    this.operation++;
+    this.pendingNavigation = null;
   }
 
   /** Returns false when there is nowhere to go. */
-  back(): boolean {
+  back(): Promise<boolean> {
     const target = this.navigation.peekBack();
-    if (!target) return false;
-    void this.run(target, () => this.navigation.back());
-    return true;
+    if (!target) return Promise.resolve(false);
+    const operation = ++this.operation;
+    return this.run(target, () => {
+      if (operation === this.operation) this.navigation.back();
+    }).then(() => true);
   }
 
   /** Foam for an in-place change such as a Settings tab. */

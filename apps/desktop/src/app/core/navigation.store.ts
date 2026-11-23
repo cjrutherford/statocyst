@@ -1,40 +1,41 @@
 import { computed, Injectable, signal } from '@angular/core';
 
-export type View = 'library' | 'podcasts' | 'offline' | 'playlists' | 'now' | 'queue' | 'settings';
+export type RootView = 'library' | 'playlists' | 'podcasts' | 'offline' | 'settings';
+export type View = RootView | 'now' | 'queue';
 
-/**
- * Single owner of app navigation. Keeps a linear back stack so Android's
- * hardware back button (and any in-app "back" affordance) can return to the
- * previously viewed section instead of exiting.
- */
+/** Keeps primary destinations independent and gives transient screens a short return path. */
 @Injectable({ providedIn: 'root' })
 export class NavigationStore {
   readonly view = signal<View>('library');
-  private readonly history: View[] = [];
-  readonly canGoBack = computed(() => this.history.length > 0);
+  private readonly transientOrigins: View[] = [];
+  readonly canGoBack = computed(() => this.view() !== 'library' || this.transientOrigins.length > 0);
 
   navigate(view: View): void {
     if (view === this.view()) return;
-    this.history.push(this.view());
-    // Bound the stack so it never grows without limit.
-    if (this.history.length > 20) this.history.shift();
+    if (view === 'now' || view === 'queue') {
+      this.transientOrigins.push(this.view());
+      if (this.transientOrigins.length > 4) this.transientOrigins.shift();
+    } else {
+      this.transientOrigins.length = 0;
+    }
     this.view.set(view);
   }
 
-  /** Returns true when it moved back; false when there is nothing to go back to. */
   back(): boolean {
-    const previous = this.history.pop();
+    const previous = this.peekBack();
     if (!previous) return false;
+    this.transientOrigins.pop();
     this.view.set(previous);
     return true;
   }
 
-  /** The view back would go to, without changing history. */
   peekBack(): View | null {
-    return this.history.length > 0 ? this.history[this.history.length - 1] : null;
+    const origin = this.transientOrigins[this.transientOrigins.length - 1];
+    if (origin) return origin;
+    return this.view() === 'library' ? null : 'library';
   }
 
   clearHistory(): void {
-    this.history.length = 0;
+    this.transientOrigins.length = 0;
   }
 }

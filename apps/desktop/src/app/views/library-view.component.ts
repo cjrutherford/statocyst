@@ -17,12 +17,16 @@ import { IconComponent } from '../components/icon.component';
 import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
 import { LibraryStore } from '../core/library.store';
 import { DownloadsStore } from '../core/downloads.store';
+import { libraryBackLabel } from './library-back-label';
 import { FavoritesStore } from '../core/favorites.store';
 import { PlaylistsStore } from '../core/playlists.store';
 import { PlaybackStore } from '../core/playback.store';
+import { NavigationStore } from '../core/navigation.store';
+import { isCurrentNavigation } from '../core/back-navigation';
 import { RadioStore } from '../core/radio.store';
 import { ToastStore } from '../core/toast.store';
 import { isNativePlatform } from '../core/bridge';
+import { rankAndSortSearchEntities, rankSearchEntity } from '../core/library-search';
 import {
   formatDuration,
   formatLabel,
@@ -31,6 +35,7 @@ import {
 } from '../core/format';
 
 type SortKey = 'artist' | 'title' | 'album' | 'duration';
+type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album: string; artist: string };
 
 @Component({
   selector: 'sc-library-view',
@@ -192,6 +197,27 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         </div>
       } @else {
         <div class="browser">
+          <div class="toolbar">
+            <label class="search">
+              <sc-icon name="search" />
+              <span class="sr-only">Search the library</span>
+              <input
+                id="library-search"
+                type="search"
+                placeholder="Search artists, albums or songs"
+                [value]="search()"
+                (input)="onSearchInput($event)"
+              />
+            </label>
+            @if (downloads.supported) {
+              <button type="button" class="chip-toggle" [class.is-active]="offlineOnly()" [attr.aria-pressed]="offlineOnly()" (click)="offlineOnly.set(!offlineOnly())">
+                <sc-icon name="download" /> Offline
+              </button>
+            }
+            @if (search().trim()) {
+              <span class="result-count">{{ searchArtists().length }} artists · {{ searchAlbums().length }} albums · {{ searchSongs().length }} songs</span>
+            }
+          </div>
           <div class="mode-tabs" role="tablist" aria-label="Browse library">
             <button
               type="button"
@@ -225,30 +251,63 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
             </button>
           </div>
 
-          @if (mode() === 'tracks') {
+          @if (search().trim() && !detail()) {
+            <div class="search-results" aria-label="Library search results">
+              @if (searchArtists().length) {
+                <section class="search-group" aria-labelledby="search-artists-heading">
+                  <h2 class="eyebrow" id="search-artists-heading">Artists</h2>
+                  <div class="artist-grid">
+                    @for (artist of visibleSearchArtists(); track artist.identity) {
+                      <button type="button" class="artist-card" (click)="openArtist(artist.identity)">
+                        <span class="artist-card__initial">{{ artist.identity.charAt(0).toUpperCase() }}</span>
+                        <span class="artist-card__name">{{ artist.identity }}</span><small>{{ artist.tracks }} songs</small>
+                      </button>
+                    }
+                  </div>
+                  @if (searchArtists().length > visibleSearchArtists().length) {
+                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('artists')">Show all {{ searchArtists().length }} artists</button>
+                  }
+                </section>
+              }
+              @if (searchAlbums().length) {
+                <section class="search-group" aria-labelledby="search-albums-heading">
+                  <h2 class="eyebrow" id="search-albums-heading">Albums</h2>
+                  <div class="album-grid">
+                    @for (album of visibleSearchAlbums(); track album.identity) {
+                      <button type="button" class="album-card" (click)="openAlbum(album.album, album.artist)">
+                        <span class="album-card__art"><sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" /></span>
+                        <span class="album-card__name">{{ album.album }}</span><span class="album-card__count">{{ album.artist }} · {{ album.tracks }} songs</span>
+                      </button>
+                    }
+                  </div>
+                  @if (searchAlbums().length > visibleSearchAlbums().length) {
+                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('albums')">Show all {{ searchAlbums().length }} albums</button>
+                  }
+                </section>
+              }
+              @if (searchSongs().length) {
+                <section class="search-group" aria-labelledby="search-songs-heading">
+                  <h2 class="eyebrow" id="search-songs-heading">Songs</h2>
+                  <div class="search-song-list">
+                    @for (track of visibleSearchSongs(); track track.id) {
+                      <button type="button" class="search-song" (click)="play(track, searchSongs())">
+                        <sc-artwork [src]="track.artworkUrl" [altText]="track.title" size="sm" />
+                        <span>{{ track.title }}<small>{{ track.artist }} · {{ track.album }}</small></span>
+                        <sc-icon name="play" />
+                      </button>
+                    }
+                  </div>
+                  @if (searchSongs().length > visibleSearchSongs().length) {
+                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('songs')">Show all {{ searchSongs().length }} songs</button>
+                  }
+                </section>
+              }
+              @if (!searchArtists().length && !searchAlbums().length && !searchSongs().length) {
+                <p class="empty__text">No results. Try another search.</p>
+              }
+            </div>
+          } @else if (mode() === 'tracks' && !detail()) {
           <div class="toolbar">
-            <label class="search">
-              <sc-icon name="search" />
-              <span class="sr-only">Search the library</span>
-              <input
-                id="library-search"
-                type="search"
-                placeholder="Search title, artist or album"
-                [value]="search()"
-                (input)="onSearchInput($event)"
-              />
-            </label>
-            @if (downloads.supported) {
-              <button
-                type="button"
-                class="chip-toggle"
-                [class.is-active]="offlineOnly()"
-                [attr.aria-pressed]="offlineOnly()"
-                (click)="offlineOnly.set(!offlineOnly())"
-              >
-                <sc-icon name="download" /> Offline
-              </button>
-            }
             @if (selectMode()) {
               <span class="select-hint">Tap tracks to select · long-press to start</span>
             }
@@ -432,7 +491,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           }
           } @else if (detail(); as d) {
             <div class="detail">
-              <button type="button" class="btn btn--quiet detail__back" (click)="closeDetail()">← {{ backLabel() }}</button>
+              <button type="button" class="btn btn--quiet detail__back" (click)="back()">← {{ backLabel() }}</button>
               @if (d.kind === 'artist') {
                 <header class="detail__head">
                   <span class="detail__avatar">
@@ -459,7 +518,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                 </header>
                 <div class="album-grid">
                   @for (album of detailAlbums(); track album.album; let index = $index) {
-                    <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, true)">
+                    <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
                       <span class="album-card__art">
                         <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
                       </span>
@@ -534,7 +593,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           } @else if (mode() === 'albums') {
             <div class="album-grid">
               @for (album of library.albums(); track album.album + album.artist; let index = $index) {
-                <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, false)">
+                  <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
                   <span class="album-card__art">
                     <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
                   </span>
@@ -994,6 +1053,48 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 16px;
+      }
+      .search-results {
+        display: grid;
+        gap: 24px;
+      }
+      .search-group {
+        display: grid;
+        justify-items: start;
+        gap: 12px;
+      }
+      .search-group > .eyebrow {
+        margin: 0;
+      }
+      .search-song-list {
+        display: grid;
+        width: 100%;
+        gap: 6px;
+      }
+      .search-song {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface-1);
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+      .search-song > span {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .search-song small {
+        color: var(--muted);
       }
       .album-card {
         display: grid;
@@ -1569,6 +1670,8 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
   private readonly tbody = viewChild<ElementRef<HTMLTableSectionElement>>('tbody');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly navigation = inject(NavigationStore);
+  private navigationGeneration = 0;
   private scrollParent: HTMLElement | null = null;
   private scrollFrame = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -1689,10 +1792,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly pluralize = pluralize;
 
   protected readonly search = signal('');
-  /** Open drill-down page: an artist's albums, or an album's tracks (viaArtist: opened from the artist page). */
-  protected readonly detail = signal<
-    { kind: 'artist'; artist: string } | { kind: 'album'; album: string; artist: string; viaArtist: boolean } | null
-  >(null);
+  protected readonly detail = signal<LibraryDetail | null>(null);
+  private readonly detailHistory = signal<Array<{ mode: 'tracks' | 'albums' | 'artists'; detail: LibraryDetail | null; scrollTop: number }>>([]);
+  private readonly showAllGroups = signal(new Set<'artists' | 'albums' | 'songs'>());
   protected readonly sort = signal<SortKey>('artist');
   protected readonly mode = signal<'tracks' | 'albums' | 'artists'>('tracks');
   protected readonly showJellyfinSetup = signal(false);
@@ -1736,19 +1838,23 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly filtered = computed(() => {
-    const term = this.search().trim().toLowerCase();
+    const term = this.search().trim();
     const offlineOnly = this.offlineOnly();
     const isDownloaded = this.downloads.isDownloaded();
     const rows = this.library.tracks().filter((track) => {
       // "Offline" means it plays with no network: a pinned download or a file
       // imported onto this device.
       if (offlineOnly && !isDownloaded(track.id) && track.sourceId !== 'local') return false;
-      if (!term) return true;
-      return [track.title, track.artist, track.album, track.albumArtist ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(term);
+      return true;
     });
+    if (term) {
+      return rankAndSortSearchEntities(term, rows.map((track) => ({
+        track,
+        identity: track.id,
+        primary: track.title,
+        secondary: [track.albumArtist ?? track.artist, track.album, track.artist],
+      }))).map(({ track }) => track);
+    }
     const sorted = [...rows];
     switch (this.sort()) {
       case 'title':
@@ -1839,6 +1945,45 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       .sort((a, b) => a.artist.localeCompare(b.artist));
   });
 
+  protected readonly searchArtists = computed(() => {
+    const tracks = this.library.tracks().filter((track) => !this.offlineOnly() || this.downloads.isDownloaded()(track.id) || track.sourceId === 'local');
+    const grouped = new Map<string, Track[]>();
+    for (const track of tracks) {
+      const identity = track.albumArtist ?? track.artist;
+      grouped.set(identity, [...(grouped.get(identity) ?? []), track]);
+    }
+    return rankAndSortSearchEntities(this.search(), [...grouped].map(([identity, rows]) => ({
+      identity,
+      primary: identity,
+      secondary: rows.flatMap((track) => [track.artist, track.album, track.title]),
+      tracks: rows.length,
+    })));
+  });
+
+  protected readonly searchAlbums = computed(() => {
+    const grouped = new Map<string, Track[]>();
+    for (const track of this.library.tracks()) {
+      if (this.offlineOnly() && !this.downloads.isDownloaded()(track.id) && track.sourceId !== 'local') continue;
+      const artist = track.albumArtist ?? track.artist;
+      const identity = `${artist}\u0000${track.album}`;
+      grouped.set(identity, [...(grouped.get(identity) ?? []), track]);
+    }
+    return rankAndSortSearchEntities(this.search(), [...grouped].map(([identity, rows]) => ({
+      identity,
+      album: rows[0].album,
+      artist: rows[0].albumArtist ?? rows[0].artist,
+      artwork: rows.find((track) => track.artworkUrl)?.artworkUrl ?? null,
+      tracks: rows.length,
+      primary: rows[0].album,
+      secondary: [rows[0].albumArtist ?? rows[0].artist, ...rows.map((track) => track.title)],
+    })));
+  });
+
+  protected readonly searchSongs = computed(() => this.filtered());
+  protected readonly visibleSearchArtists = computed(() => this.showAllGroups().has('artists') ? this.searchArtists() : this.searchArtists().slice(0, 5));
+  protected readonly visibleSearchAlbums = computed(() => this.showAllGroups().has('albums') ? this.searchAlbums() : this.searchAlbums().slice(0, 5));
+  protected readonly visibleSearchSongs = computed(() => this.showAllGroups().has('songs') ? this.searchSongs() : this.searchSongs().slice(0, 8));
+
   /** Tracks on the open page, in play order: an album by track number, an artist by album then track. */
   protected readonly detailTracks = computed(() => {
     const d = this.detail();
@@ -1883,12 +2028,11 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly backLabel = computed(() => {
-    const d = this.detail();
-    if (d?.kind === 'album' && d.viaArtist) return d.artist;
-    return this.mode() === 'artists' ? 'Artists' : 'Albums';
+    return libraryBackLabel(this.detailHistory(), this.search());
   });
 
   protected setMode(mode: 'tracks' | 'albums' | 'artists'): void {
+    this.detailHistory.set([]);
     this.mode.set(mode);
     this.detail.set(null);
     this.resetScroll();
@@ -1896,6 +2040,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
+    this.showAllGroups.set(new Set());
     this.resetScroll();
   }
 
@@ -1904,21 +2049,54 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     this.resetScroll();
   }
 
-  protected openAlbum(album: string, artist: string, viaArtist: boolean): void {
-    this.detail.set({ kind: 'album', album, artist, viaArtist });
+  protected openAlbum(album: string, artist: string): void {
+    this.pushDetailOrigin();
+    this.detail.set({ kind: 'album', album, artist });
     this.scrollToTop();
   }
 
   protected openArtist(artist: string): void {
-    this.mode.set('artists');
+    this.pushDetailOrigin();
     this.detail.set({ kind: 'artist', artist });
     this.scrollToTop();
   }
 
-  protected closeDetail(): void {
-    const d = this.detail();
-    this.detail.set(d?.kind === 'album' && d.viaArtist ? { kind: 'artist', artist: d.artist } : null);
-    this.scrollToTop();
+  /** Shared by the visible Back button and the app's system Back dispatcher. */
+  back(): boolean {
+    if (this.contextMenu()) {
+      this.closeContextMenu();
+      return true;
+    }
+    if (!this.detail()) return false;
+    let previous: { mode: 'tracks' | 'albums' | 'artists'; detail: LibraryDetail | null; scrollTop: number } | undefined;
+    this.detailHistory.update((history) => {
+      const next = [...history];
+      previous = next.pop();
+      return next;
+    });
+    const generation = ++this.navigationGeneration;
+    this.mode.set(previous?.mode ?? this.mode());
+    this.detail.set(previous?.detail ?? null);
+    setTimeout(() => {
+      if (!isCurrentNavigation('library', generation, this.navigationGeneration, this.navigation.view())) return;
+      if (this.scrollParent && previous) this.scrollParent.scrollTop = previous.scrollTop;
+      this.measure();
+    });
+    return true;
+  }
+
+  protected showAllSearch(group: 'artists' | 'albums' | 'songs'): void {
+    this.showAllGroups.update((groups) => new Set([...groups, group]));
+  }
+
+  private pushDetailOrigin(): void {
+    this.detailHistory.update((history) => [...history, { mode: this.mode(), detail: this.detail(), scrollTop: this.scrollParent?.scrollTop ?? 0 }]);
+  }
+
+  /** Hide the body-mounted menu as soon as another root destination is requested. */
+  onDestinationDeparture(): void {
+    this.navigationGeneration++;
+    this.closeContextMenu();
   }
 
   protected clearFilters(): void {

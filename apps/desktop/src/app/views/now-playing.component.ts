@@ -7,7 +7,6 @@ import { RadioStore } from '../core/radio.store';
 import { LibraryStore } from '../core/library.store';
 import { FavoritesStore } from '../core/favorites.store';
 import { DownloadsStore } from '../core/downloads.store';
-import { ScreenTransitionService } from '../core/screen-transition.service';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
 
 @Component({
@@ -890,12 +889,12 @@ export class NowPlayingViewComponent {
   protected readonly library = inject(LibraryStore);
   protected readonly favorites = inject(FavoritesStore);
   protected readonly downloads = inject(DownloadsStore);
-  private readonly transitions = inject(ScreenTransitionService);
   protected readonly formatDuration = formatDuration;
   protected readonly formatLabel = formatLabel;
   protected readonly pluralize = pluralize;
 
   readonly openQueue = output<void>();
+  readonly requestBack = output<void>();
 
   protected readonly dragging = signal(false);
   protected readonly dragValue = signal(0);
@@ -1011,7 +1010,7 @@ export class NowPlayingViewComponent {
   }
 
   protected minimize(): void {
-    if (!this.transitions.back()) void this.transitions.go('library');
+    this.requestBack.emit();
   }
 
   @HostListener('document:keydown.escape')

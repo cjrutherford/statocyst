@@ -13,6 +13,7 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
     <section class="view" aria-labelledby="queue-heading">
       <header class="view__head">
         <div>
+          <button type="button" class="btn btn--quiet" aria-label="Back" (click)="goBack.emit()">← Back</button>
           <p class="eyebrow">Session queue</p>
           <h1 id="queue-heading">Queue</h1>
           <p class="lede">
@@ -353,6 +354,7 @@ export class QueueViewComponent {
   protected readonly pluralize = pluralize;
 
   readonly openLibrary = output<void>();
+  readonly goBack = output<void>();
 
   protected move(entryId: string, index: number, delta: number): void {
     const target = index + delta;
