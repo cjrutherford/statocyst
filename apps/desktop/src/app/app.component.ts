@@ -385,6 +385,7 @@ interface NavItem {
         grid-column: 2;
         grid-row: 1;
         overflow: auto;
+        min-width: 0;
         min-height: 0;
         outline: none;
         scroll-behavior: smooth;
