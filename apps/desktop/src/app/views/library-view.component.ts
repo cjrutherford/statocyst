@@ -196,7 +196,7 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
           }
         </div>
       } @else {
-        <div class="browser">
+        <div class="browser" (touchstart)="onBrowseTouchStart($event)" (touchmove)="onBrowseTouchMove($event)" (touchend)="onBrowseTouchEnd($event)">
           <div class="toolbar">
             <label class="search">
               <sc-icon name="search" />
@@ -215,16 +215,18 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
               </button>
             }
             @if (search().trim()) {
-              <span class="result-count">{{ searchArtists().length }} artists · {{ searchAlbums().length }} albums · {{ searchSongs().length }} songs</span>
+              <span class="result-count">{{ searchArtists().length }} artists · {{ searchAlbums().length }} albums · {{ filtered().length }} tracks</span>
             }
           </div>
           <div class="mode-tabs" role="tablist" aria-label="Browse library">
             <button
               type="button"
               role="tab"
+              [attr.tabindex]="mode() === 'tracks' ? 0 : -1"
               [attr.aria-selected]="mode() === 'tracks'"
               [class.is-active]="mode() === 'tracks'"
               (click)="setMode('tracks')"
+              (keydown)="onModeTabKeydown($event)"
             >
               Tracks
               <span>{{ library.tracks().length }}</span>
@@ -232,9 +234,11 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
             <button
               type="button"
               role="tab"
+              [attr.tabindex]="mode() === 'albums' ? 0 : -1"
               [attr.aria-selected]="mode() === 'albums'"
               [class.is-active]="mode() === 'albums'"
               (click)="setMode('albums')"
+              (keydown)="onModeTabKeydown($event)"
             >
               Albums
               <span>{{ library.albums().length }}</span>
@@ -242,68 +246,54 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
             <button
               type="button"
               role="tab"
+              [attr.tabindex]="mode() === 'artists' ? 0 : -1"
               [attr.aria-selected]="mode() === 'artists'"
               [class.is-active]="mode() === 'artists'"
               (click)="setMode('artists')"
+              (keydown)="onModeTabKeydown($event)"
             >
               Artists
               <span>{{ artists().length }}</span>
             </button>
           </div>
 
-          @if (search().trim() && !detail()) {
+          @if (mode() !== 'tracks' && search().trim() && !detail()) {
             <div class="search-results" aria-label="Library search results">
-              @if (searchArtists().length) {
-                <section class="search-group" aria-labelledby="search-artists-heading">
-                  <h2 class="eyebrow" id="search-artists-heading">Artists</h2>
-                  <div class="artist-grid">
-                    @for (artist of visibleSearchArtists(); track artist.identity) {
-                      <button type="button" class="artist-card" (click)="openArtist(artist.identity)">
-                        <span class="artist-card__initial">{{ artist.identity.charAt(0).toUpperCase() }}</span>
-                        <span class="artist-card__name">{{ artist.identity }}</span><small>{{ artist.tracks }} songs</small>
-                      </button>
-                    }
-                  </div>
-                  @if (searchArtists().length > visibleSearchArtists().length) {
-                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('artists')">Show all {{ searchArtists().length }} artists</button>
-                  }
-                </section>
-              }
-              @if (searchAlbums().length) {
-                <section class="search-group" aria-labelledby="search-albums-heading">
-                  <h2 class="eyebrow" id="search-albums-heading">Albums</h2>
+              @if (mode() === 'albums') {
+                @if (searchAlbums().length) {
                   <div class="album-grid">
-                    @for (album of visibleSearchAlbums(); track album.identity) {
-                      <button type="button" class="album-card" (click)="openAlbum(album.album, album.artist)">
+                    @for (album of searchAlbums(); track album.identity; let index = $index) {
+                      <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
                         <span class="album-card__art"><sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" /></span>
-                        <span class="album-card__name">{{ album.album }}</span><span class="album-card__count">{{ album.artist }} · {{ album.tracks }} songs</span>
+                        <span class="album-card__name">{{ album.album }}</span>
+                        <span class="album-card__artist">{{ album.artist }}</span>
+                        <span class="album-card__count">{{ album.tracks }} track{{ album.tracks === 1 ? '' : 's' }}</span>
                       </button>
                     }
                   </div>
-                  @if (searchAlbums().length > visibleSearchAlbums().length) {
-                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('albums')">Show all {{ searchAlbums().length }} albums</button>
-                  }
-                </section>
-              }
-              @if (searchSongs().length) {
-                <section class="search-group" aria-labelledby="search-songs-heading">
-                  <h2 class="eyebrow" id="search-songs-heading">Songs</h2>
-                  <div class="search-song-list">
-                    @for (track of visibleSearchSongs(); track track.id) {
-                      <button type="button" class="search-song" (click)="play(track, searchSongs())">
-                        <sc-artwork [src]="track.artworkUrl" [altText]="track.title" size="sm" />
-                        <span>{{ track.title }}<small>{{ track.artist }} · {{ track.album }}</small></span>
-                        <sc-icon name="play" />
+                } @else {
+                  <p class="empty__text">No albums match. Try another search.</p>
+                }
+              } @else {
+                @if (searchArtists().length) {
+                  <div class="artist-grid">
+                    @for (artist of searchArtists(); track artist.identity; let index = $index) {
+                      <button type="button" class="artist-card" [style.--i]="index" (click)="openArtist(artist.identity)">
+                        <span class="artist-card__avatar">
+                          @if (artist.artwork) {
+                            <sc-artwork [src]="artist.artwork" [altText]="artist.identity" size="hero" />
+                          } @else {
+                            <span class="artist-card__initial">{{ artist.identity.charAt(0).toUpperCase() }}</span>
+                          }
+                        </span>
+                        <span class="artist-card__name">{{ artist.identity }}</span>
+                        <span class="artist-card__count">{{ artist.albums }} album{{ artist.albums === 1 ? '' : 's' }} · {{ artist.tracks }} tracks</span>
                       </button>
                     }
                   </div>
-                  @if (searchSongs().length > visibleSearchSongs().length) {
-                    <button type="button" class="btn btn--quiet" (click)="showAllSearch('songs')">Show all {{ searchSongs().length }} songs</button>
-                  }
-                </section>
-              }
-              @if (!searchArtists().length && !searchAlbums().length && !searchSongs().length) {
-                <p class="empty__text">No results. Try another search.</p>
+                } @else {
+                  <p class="empty__text">No artists match. Try another search.</p>
+                }
               }
             </div>
           } @else if (mode() === 'tracks' && !detail()) {
@@ -399,6 +389,7 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
                       (dblclick)="play(track)"
                       (pointerdown)="onRowPointerDown(track, $event)"
                       (pointerup)="onRowPointerUp()"
+                      (pointercancel)="onRowPointerUp()"
                       (pointermove)="onRowPointerMove($event)"
                       (pointerleave)="onRowPointerUp()"
                       (contextmenu)="openContextMenu(track, $event)"
@@ -1605,7 +1596,7 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
         color: var(--danger);
       }
       .track-row {
-        touch-action: none;
+        touch-action: pan-y;
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
@@ -1674,6 +1665,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   private navigationGeneration = 0;
   private scrollParent: HTMLElement | null = null;
   private scrollFrame = 0;
+  private browseTouchStart: { x: number; y: number } | null = null;
+  private browseSwipeClickTimeout: number | null = null;
+  private suppressBrowseSwipeClick = false;
   private resizeObserver: ResizeObserver | null = null;
   private tbodyObserver: ResizeObserver | null = null;
   private observedTbody: HTMLElement | null = null;
@@ -1693,6 +1687,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   // the scroll area, hiding it behind the mini-player. Hosting it on <body> avoids that.
   ngAfterViewInit(): void {
     document.body.appendChild(this.contextLayer().nativeElement);
+    document.addEventListener('click', this.onBrowseSwipeClick, true);
     this.scrollParent = this.host.nativeElement.closest('.main') as HTMLElement | null;
     if (this.scrollParent) {
       this.scrollParent.addEventListener('scroll', this.onScroll, { passive: true });
@@ -1713,6 +1708,8 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     this.scrollParent?.removeEventListener('scroll', this.onScroll);
+    document.removeEventListener('click', this.onBrowseSwipeClick, true);
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
     this.resizeObserver?.disconnect();
     this.tbodyObserver?.disconnect();
     this.contextLayer().nativeElement.remove();
@@ -1794,7 +1791,6 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly search = signal('');
   protected readonly detail = signal<LibraryDetail | null>(null);
   private readonly detailHistory = signal<Array<{ mode: 'tracks' | 'albums' | 'artists'; detail: LibraryDetail | null; scrollTop: number }>>([]);
-  private readonly showAllGroups = signal(new Set<'artists' | 'albums' | 'songs'>());
   protected readonly sort = signal<SortKey>('artist');
   protected readonly mode = signal<'tracks' | 'albums' | 'artists'>('tracks');
   protected readonly showJellyfinSetup = signal(false);
@@ -1956,7 +1952,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       identity,
       primary: identity,
       secondary: rows.flatMap((track) => [track.artist, track.album, track.title]),
+      albums: new Set(rows.map((track) => track.album)).size,
       tracks: rows.length,
+      artwork: rows.find((track) => track.artistArtworkUrl)?.artistArtworkUrl ?? rows.find((track) => track.artworkUrl)?.artworkUrl ?? null,
     })));
   });
 
@@ -1978,11 +1976,6 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       secondary: [rows[0].albumArtist ?? rows[0].artist, ...rows.map((track) => track.title)],
     })));
   });
-
-  protected readonly searchSongs = computed(() => this.filtered());
-  protected readonly visibleSearchArtists = computed(() => this.showAllGroups().has('artists') ? this.searchArtists() : this.searchArtists().slice(0, 5));
-  protected readonly visibleSearchAlbums = computed(() => this.showAllGroups().has('albums') ? this.searchAlbums() : this.searchAlbums().slice(0, 5));
-  protected readonly visibleSearchSongs = computed(() => this.showAllGroups().has('songs') ? this.searchSongs() : this.searchSongs().slice(0, 8));
 
   /** Tracks on the open page, in play order: an album by track number, an artist by album then track. */
   protected readonly detailTracks = computed(() => {
@@ -2038,9 +2031,77 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     this.resetScroll();
   }
 
+  protected onModeTabKeydown(event: KeyboardEvent): void {
+    const keys = ['tracks', 'albums', 'artists'] as const;
+    const current = keys.indexOf(this.mode());
+    const next = event.key === 'ArrowRight' ? (current + 1) % keys.length
+      : event.key === 'ArrowLeft' ? (current + keys.length - 1) % keys.length
+        : event.key === 'Home' ? 0
+          : event.key === 'End' ? keys.length - 1
+            : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    this.setMode(keys[next]);
+    (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+  }
+
+  protected onBrowseTouchStart(event: TouchEvent): void {
+    const touch = event.touches[0];
+    if (!touch || event.touches.length !== 1) {
+      this.browseTouchStart = null;
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const excluded = target?.closest('a, input, select, textarea, [role="button"], [role="slider"], .row-actions, .col-actions, .detail-track, .toolbar, .selection-bar, .mode-tabs');
+    if (excluded || touch.clientX < 28 || touch.clientX > window.innerWidth - 28 || this.selectMode() || this.detail()) {
+      this.browseTouchStart = null;
+      return;
+    }
+    this.browseTouchStart = { x: touch.clientX, y: touch.clientY };
+  }
+
+  protected onBrowseTouchMove(event: TouchEvent): void {
+    const start = this.browseTouchStart;
+    const touch = event.touches[0];
+    if (!start || !touch || event.touches.length !== 1 || this.selectMode() || this.detail()) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Once horizontal intent is clear, stop the browser's synthetic click from
+    // activating a card or track row after the swipe changes tabs.
+    if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.2) event.preventDefault();
+  }
+
+  protected onBrowseTouchEnd(event: TouchEvent): void {
+    const start = this.browseTouchStart;
+    this.browseTouchStart = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch || event.changedTouches.length !== 1 || this.selectMode() || this.detail()) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    this.suppressBrowseSwipeClick = true;
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
+    this.browseSwipeClickTimeout = window.setTimeout(() => {
+      this.suppressBrowseSwipeClick = false;
+      this.browseSwipeClickTimeout = null;
+    }, 400);
+    const next = dx < 0
+      ? this.mode() === 'tracks' ? 'albums' : this.mode() === 'albums' ? 'artists' : null
+      : this.mode() === 'artists' ? 'albums' : this.mode() === 'albums' ? 'tracks' : null;
+    if (next) this.setMode(next);
+  }
+
+  private readonly onBrowseSwipeClick = (event: MouseEvent): void => {
+    if (!this.suppressBrowseSwipeClick) return;
+    this.suppressBrowseSwipeClick = false;
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
+    this.browseSwipeClickTimeout = null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
-    this.showAllGroups.set(new Set());
     this.resetScroll();
   }
 
@@ -2083,10 +2144,6 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       this.measure();
     });
     return true;
-  }
-
-  protected showAllSearch(group: 'artists' | 'albums' | 'songs'): void {
-    this.showAllGroups.update((groups) => new Set([...groups, group]));
   }
 
   private pushDetailOrigin(): void {
