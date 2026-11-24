@@ -1688,6 +1688,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     document.body.appendChild(this.contextLayer().nativeElement);
     document.addEventListener('click', this.onBrowseSwipeClick, true);
+    document.addEventListener('touchstart', this.clearBrowseSwipeClick, true);
     this.scrollParent = this.host.nativeElement.closest('.main') as HTMLElement | null;
     if (this.scrollParent) {
       this.scrollParent.addEventListener('scroll', this.onScroll, { passive: true });
@@ -1709,6 +1710,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     this.scrollParent?.removeEventListener('scroll', this.onScroll);
     document.removeEventListener('click', this.onBrowseSwipeClick, true);
+    document.removeEventListener('touchstart', this.clearBrowseSwipeClick, true);
     if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
     this.resizeObserver?.disconnect();
     this.tbodyObserver?.disconnect();
@@ -2091,11 +2093,15 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     if (next) this.setMode(next);
   }
 
-  private readonly onBrowseSwipeClick = (event: MouseEvent): void => {
-    if (!this.suppressBrowseSwipeClick) return;
+  private readonly clearBrowseSwipeClick = (): void => {
     this.suppressBrowseSwipeClick = false;
     if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
     this.browseSwipeClickTimeout = null;
+  };
+
+  private readonly onBrowseSwipeClick = (event: MouseEvent): void => {
+    if (!this.suppressBrowseSwipeClick) return;
+    this.clearBrowseSwipeClick();
     event.preventDefault();
     event.stopImmediatePropagation();
   };

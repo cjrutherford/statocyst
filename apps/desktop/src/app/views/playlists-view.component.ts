@@ -289,7 +289,7 @@ interface RecommendedItem {
   styles: [
     `
       :host { display: block; min-width: 0; }
-      .view { display: grid; min-width: 0; gap: clamp(16px, 2vw, 26px); padding: clamp(20px, 3vw, 38px); max-width: 1480px; margin: 0 auto; animation: rise 380ms ease both; }
+      .view { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: clamp(16px, 2vw, 26px); padding: clamp(20px, 3vw, 38px); max-width: 1480px; margin: 0 auto; animation: rise 380ms ease both; }
       .view__head { display: flex; flex-direction: column; gap: 4px; }
       .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
       @media (max-width: 640px) {
@@ -318,14 +318,14 @@ interface RecommendedItem {
       .smart-card__count { color: var(--muted); font-size: 0.78rem; }
       .smart-card__download { position: absolute; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; display: inline-grid; place-items: center; }
       .smart-card__download:hover { color: var(--cyan); border-color: var(--cyan); }
-      .list-block { display: grid; gap: 10px; }
+      .list-block { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 10px; }
       .list-block h2 { font-size: 1.1rem; margin: 0; }
       .list-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 14px; }
       .list-hint { color: var(--muted); font-size: 0.78rem; margin: 2px 0 0; }
       .list-count { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
       .list-actions { display: flex; flex-wrap: wrap; gap: 6px; }
       .empty-hint { color: var(--muted); font-size: 0.86rem; margin: 0; }
-      .mini-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+      .mini-list { grid-template-columns: minmax(0, 1fr); min-width: 0; list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
       .mini-list li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.02); }
       .mini-list li.is-selected { border-color: var(--cyan); background: rgba(75, 213, 238, 0.08); }
       .mini-check { display: inline-grid; place-items: center; width: 24px; height: 24px; flex: none; }
