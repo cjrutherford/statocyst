@@ -5,6 +5,7 @@ import {
   HostListener,
   inject,
   signal,
+  ViewChild,
 } from '@angular/core';
 import type { AppInfo } from '@statocyst/contracts';
 import { IconComponent, type IconName } from './components/icon.component';
@@ -12,6 +13,7 @@ import { PlayerBarComponent } from './components/player-bar.component';
 import { TransitionFoamComponent } from './components/transition-foam.component';
 import { UnderwaterBackdropComponent } from './components/underwater-backdrop.component';
 import { AudioEngineService } from './core/audio-engine.service';
+import { cancelPendingForRepeatedDestination, isCurrentNavigation } from './core/back-navigation';
 import { bridge, bridgeAvailable, isNativePlatform } from './core/bridge';
 import { CarSnapshotStore } from './core/car-snapshot.store';
 import { LibraryStore } from './core/library.store';
@@ -98,6 +100,7 @@ interface NavItem {
               <button
                 type="button"
                 class="nav__item"
+                [class.nav__item--desktop-only]="item.id === 'queue'"
                 [class.is-active]="navigation.view() === item.id"
                 [attr.aria-current]="navigation.view() === item.id ? 'page' : null"
                 [attr.aria-label]="item.label"
@@ -139,33 +142,16 @@ interface NavItem {
 
         <main id="main-content" class="main" tabindex="-1">
           <div class="view-host">
-            @switch (navigation.view()) {
-              @case ('library') {
-                <sc-library-view />
-              }
-              @case ('offline') {
-                <sc-offline-view />
-              }
-              @case ('playlists') {
-                <sc-playlists-view />
-              }
-              @case ('podcasts') {
-                <sc-podcasts-view />
-              }
-              @case ('now') {
-                @if (podcastNow()) {
-                  <sc-podcast-now-playing (openPodcasts)="navigate('podcasts')" />
-                } @else {
-                  <sc-now-playing (openQueue)="navigate('queue')" />
-                }
-              }
-              @case ('queue') {
-                <sc-queue-view (openLibrary)="navigate('library')" />
-              }
-              @case ('settings') {
-                <sc-settings-view />
-              }
-            }
+            <div [hidden]="navigation.view() !== 'library'" [attr.inert]="navigation.view() !== 'library' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'library'"><sc-library-view #libraryView /></div>
+            <div [hidden]="navigation.view() !== 'offline'" [attr.inert]="navigation.view() !== 'offline' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'offline'"><sc-offline-view /></div>
+            <div [hidden]="navigation.view() !== 'playlists'" [attr.inert]="navigation.view() !== 'playlists' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'playlists'"><sc-playlists-view /></div>
+            <div [hidden]="navigation.view() !== 'podcasts'" [attr.inert]="navigation.view() !== 'podcasts' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'podcasts'"><sc-podcasts-view #podcastsView /></div>
+            <div [hidden]="navigation.view() !== 'settings'" [attr.inert]="navigation.view() !== 'settings' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'settings'"><sc-settings-view /></div>
+            <div [hidden]="navigation.view() !== 'now'" [attr.inert]="navigation.view() !== 'now' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'now'">
+              @if (podcastNow()) { <sc-podcast-now-playing (openPodcasts)="navigate('podcasts')" (requestBack)="goBack()" /> }
+              @else { <sc-now-playing (openQueue)="navigate('queue')" (requestBack)="goBack()" /> }
+            </div>
+            <div [hidden]="navigation.view() !== 'queue'" [attr.inert]="navigation.view() !== 'queue' ? '' : null" [attr.aria-hidden]="navigation.view() !== 'queue'"><sc-queue-view (openLibrary)="navigate('library')" (goBack)="goBack()" /></div>
           </div>
         </main>
 
@@ -399,6 +385,7 @@ interface NavItem {
         grid-column: 2;
         grid-row: 1;
         overflow: auto;
+        min-width: 0;
         min-height: 0;
         outline: none;
         scroll-behavior: smooth;
@@ -607,6 +594,9 @@ interface NavItem {
         .sidebar__foot {
           display: none;
         }
+        .nav__item--desktop-only {
+          display: none;
+        }
         .nav {
           display: flex;
           width: 100%;
@@ -665,6 +655,9 @@ interface NavItem {
   ],
 })
 export class AppComponent {
+  @ViewChild('libraryView') private libraryView?: LibraryViewComponent;
+  @ViewChild('podcastsView') private podcastsView?: PodcastsViewComponent;
+  private readonly destinationScroll = new Map<View, number>();
   protected readonly library = inject(LibraryStore);
   protected readonly jellyfin = inject(JellyfinStore);
   protected readonly downloads = inject(DownloadsStore);
@@ -703,10 +696,11 @@ export class AppComponent {
     { id: 'library', label: 'Library', icon: 'library' },
     { id: 'playlists', label: 'Playlists', icon: 'sparkles' },
     { id: 'podcasts', label: 'Podcasts', icon: 'podcast' },
-    { id: 'offline', label: 'Offline', icon: 'offline' },
     { id: 'queue', label: 'Queue', icon: 'queue' },
+    { id: 'offline', label: 'Offline', icon: 'offline' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
+  private navigationGeneration = 0;
 
   constructor() {
     // Root-scoped history observer: starting the app must record plays even when
@@ -755,11 +749,41 @@ export class AppComponent {
    * reader users land in the new content instead of staying on the nav button.
    */
   protected navigate(view: View): void {
+    const current = this.navigation.view();
+    if (cancelPendingForRepeatedDestination(current, view, () => this.transitions.cancelPendingNavigation())) {
+      this.navigationGeneration++;
+      return;
+    }
+    const generation = ++this.navigationGeneration;
+    if (current === 'library' && view !== 'library') this.libraryView?.onDestinationDeparture();
+    const main = document.getElementById('main-content');
+    if (current !== 'now' && current !== 'queue' && main) this.destinationScroll.set(current, main.scrollTop);
     void this.transitions.go(view).then(() => {
+      if (!isCurrentNavigation(view, generation, this.navigationGeneration, this.navigation.view())) return;
+      if (view !== 'now' && view !== 'queue' && main) main.scrollTop = this.destinationScroll.get(view) ?? 0;
       queueMicrotask(() => {
-        document.getElementById('main-content')?.focus();
+        if (this.navigation.view() === view) document.getElementById('main-content')?.focus();
       });
     });
+  }
+
+  protected async goBack(): Promise<boolean> {
+    this.transitions.resolvePendingNavigation();
+    const generation = ++this.navigationGeneration;
+    const current = this.navigation.view();
+    if (current === 'library' && this.libraryView?.back()) return true;
+    if (current === 'podcasts' && this.podcastsView?.back()) return true;
+    const target = this.navigation.peekBack();
+    const main = document.getElementById('main-content');
+    if (!(await this.transitions.back())) return false;
+    if (!isCurrentNavigation(target, generation, this.navigationGeneration, this.navigation.view())) return true;
+    if (target && target !== 'now' && target !== 'queue' && main) {
+      main.scrollTop = this.destinationScroll.get(target) ?? 0;
+    }
+    queueMicrotask(() => {
+      if (isCurrentNavigation(target, generation, this.navigationGeneration, this.navigation.view())) main?.focus();
+    });
+    return true;
   }
 
   /**
@@ -779,7 +803,9 @@ export class AppComponent {
     if (!isNativePlatform()) return;
     void import('@capacitor/app').then(({ App }) => {
       App.addListener('backButton', () => {
-        if (!this.transitions.back()) void App.exitApp();
+        void this.goBack().then((handled) => {
+          if (!handled) void App.exitApp();
+        });
       });
     });
   }

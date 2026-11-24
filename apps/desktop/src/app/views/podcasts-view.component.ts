@@ -14,6 +14,7 @@ import { DownloadsStore } from '../core/downloads.store';
 import { PodcastPlaybackStore } from '../core/podcast-playback.store';
 import { PodcastsStore } from '../core/podcasts.store';
 import { ScreenTransitionService } from '../core/screen-transition.service';
+import { dispatchBack } from '../core/back-navigation';
 import { ToastStore } from '../core/toast.store';
 
 type EpisodeFilter = 'all' | 'unplayed' | 'in-progress' | 'video';
@@ -2470,12 +2471,24 @@ export class PodcastsViewComponent {
     });
   }
 
-  protected back(): void {
-    void this.transitions.foamChange(() => {
-      void this.store.selectFeed(null);
-      this.settingsOpen.set(false);
-      this.expanded.set(null);
-    });
+  back(): boolean {
+    return dispatchBack(
+      () => {
+        if (!this.settingsOpen()) return false;
+        this.settingsOpen.set(false);
+        return true;
+      },
+      () => {
+        if (!this.expanded()) return false;
+        this.expanded.set(null);
+        return true;
+      },
+      () => {
+        if (!this.store.selectedFeed()) return false;
+        void this.transitions.foamChange(() => void this.store.selectFeed(null));
+        return true;
+      },
+    );
   }
 
   protected toggleSettings(): void {

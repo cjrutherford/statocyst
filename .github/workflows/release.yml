@@ -127,7 +127,27 @@ jobs:
       - name: Unit tests, release lint, signed release APK and AAB
         if: steps.signing.outputs.available == 'true'
         working-directory: android
-        run: ./gradlew --console=plain testDebugUnitTest lintVitalRelease assembleRelease bundleRelease
+        run: |
+          ./gradlew --console=plain testDebugUnitTest lintVitalRelease assembleRelease bundleRelease
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            ./gradlew --console=plain assembleDebug
+          fi
+
+      - name: Sign the debug test APK with the production certificate
+        if: github.event_name == 'workflow_dispatch' && steps.signing.outputs.available == 'true'
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" sign \
+            --ks "$RUNNER_TEMP/release.jks" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out android/app/build/outputs/apk/debug/app-debug-production-signed.apk \
+            android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Unit tests and debug APK (unsigned release fallback)
         if: steps.signing.outputs.available != 'true'
@@ -149,6 +169,14 @@ jobs:
           if [[ "$actual" != "$EXPECTED_CERT_SHA256" ]]; then
             echo "::error::APK is signed with an unexpected certificate ($actual)"; exit 1
           fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            debug_apk=android/app/build/outputs/apk/debug/app-debug-production-signed.apk
+            debug_certs=$("$apksigner" verify --print-certs "$debug_apk")
+            debug_actual=$(echo "$debug_certs" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+            if [[ "$debug_actual" != "$EXPECTED_CERT_SHA256" ]]; then
+              echo "::error::Debug APK is signed with an unexpected certificate"; exit 1
+            fi
+          fi
           # The AAB carries a JAR signature; compare its certificate fingerprint too.
           aab_actual=$(keytool -printcert -jarfile "$aab" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
           if [[ "$aab_actual" != "$EXPECTED_CERT_SHA256" ]]; then
@@ -164,9 +192,15 @@ jobs:
             aab=android/app/build/outputs/bundle/release/app-release.aab
             cp "$apk" "dist-release/statocyst-$name.apk"
             cp "$aab" "dist-release/statocyst-$name.aab"
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+              cp android/app/build/outputs/apk/debug/app-debug-production-signed.apk "dist-release/statocyst-$name-debug.apk"
+            fi
             # R8 mapping: upload to Play Console (App bundle explorer) to de-obfuscate crash reports.
             cp android/app/build/outputs/mapping/release/mapping.txt "dist-release/statocyst-$name-mapping.txt"
             (cd dist-release && sha256sum "statocyst-$name.apk" "statocyst-$name.aab" > SHA256SUMS)
+            if [[ -f "dist-release/statocyst-$name-debug.apk" ]]; then
+              (cd dist-release && sha256sum "statocyst-$name-debug.apk" >> SHA256SUMS)
+            fi
           else
             # Without release secrets the release APK would be unsigned and uninstallable.
             # A debug-signed APK is still useful for sideloading a merge build.

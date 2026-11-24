@@ -17,12 +17,16 @@ import { IconComponent } from '../components/icon.component';
 import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
 import { LibraryStore } from '../core/library.store';
 import { DownloadsStore } from '../core/downloads.store';
+import { libraryBackLabel } from './library-back-label';
 import { FavoritesStore } from '../core/favorites.store';
 import { PlaylistsStore } from '../core/playlists.store';
 import { PlaybackStore } from '../core/playback.store';
+import { NavigationStore } from '../core/navigation.store';
+import { isCurrentNavigation } from '../core/back-navigation';
 import { RadioStore } from '../core/radio.store';
 import { ToastStore } from '../core/toast.store';
 import { isNativePlatform } from '../core/bridge';
+import { rankAndSortSearchEntities, rankSearchEntity } from '../core/library-search';
 import {
   formatDuration,
   formatLabel,
@@ -31,6 +35,7 @@ import {
 } from '../core/format';
 
 type SortKey = 'artist' | 'title' | 'album' | 'duration';
+type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album: string; artist: string };
 
 @Component({
   selector: 'sc-library-view',
@@ -191,41 +196,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           }
         </div>
       } @else {
-        <div class="browser">
-          <div class="mode-tabs" role="tablist" aria-label="Browse library">
-            <button
-              type="button"
-              role="tab"
-              [attr.aria-selected]="mode() === 'tracks'"
-              [class.is-active]="mode() === 'tracks'"
-              (click)="setMode('tracks')"
-            >
-              Tracks
-              <span>{{ library.tracks().length }}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              [attr.aria-selected]="mode() === 'albums'"
-              [class.is-active]="mode() === 'albums'"
-              (click)="setMode('albums')"
-            >
-              Albums
-              <span>{{ library.albums().length }}</span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              [attr.aria-selected]="mode() === 'artists'"
-              [class.is-active]="mode() === 'artists'"
-              (click)="setMode('artists')"
-            >
-              Artists
-              <span>{{ artists().length }}</span>
-            </button>
-          </div>
-
-          @if (mode() === 'tracks') {
+        <div class="browser" (touchstart)="onBrowseTouchStart($event)" (touchmove)="onBrowseTouchMove($event)" (touchend)="onBrowseTouchEnd($event)">
           <div class="toolbar">
             <label class="search">
               <sc-icon name="search" />
@@ -233,22 +204,100 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
               <input
                 id="library-search"
                 type="search"
-                placeholder="Search title, artist or album"
+                placeholder="Search artists, albums or songs"
                 [value]="search()"
                 (input)="onSearchInput($event)"
               />
             </label>
             @if (downloads.supported) {
-              <button
-                type="button"
-                class="chip-toggle"
-                [class.is-active]="offlineOnly()"
-                [attr.aria-pressed]="offlineOnly()"
-                (click)="offlineOnly.set(!offlineOnly())"
-              >
+              <button type="button" class="chip-toggle" [class.is-active]="offlineOnly()" [attr.aria-pressed]="offlineOnly()" (click)="offlineOnly.set(!offlineOnly())">
                 <sc-icon name="download" /> Offline
               </button>
             }
+            @if (search().trim()) {
+              <span class="result-count">{{ searchArtists().length }} artists · {{ searchAlbums().length }} albums · {{ filtered().length }} tracks</span>
+            }
+          </div>
+          <div class="mode-tabs" role="tablist" aria-label="Browse library">
+            <button
+              type="button"
+              role="tab"
+              [attr.tabindex]="mode() === 'tracks' ? 0 : -1"
+              [attr.aria-selected]="mode() === 'tracks'"
+              [class.is-active]="mode() === 'tracks'"
+              (click)="setMode('tracks')"
+              (keydown)="onModeTabKeydown($event)"
+            >
+              Tracks
+              <span>{{ library.tracks().length }}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              [attr.tabindex]="mode() === 'albums' ? 0 : -1"
+              [attr.aria-selected]="mode() === 'albums'"
+              [class.is-active]="mode() === 'albums'"
+              (click)="setMode('albums')"
+              (keydown)="onModeTabKeydown($event)"
+            >
+              Albums
+              <span>{{ library.albums().length }}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              [attr.tabindex]="mode() === 'artists' ? 0 : -1"
+              [attr.aria-selected]="mode() === 'artists'"
+              [class.is-active]="mode() === 'artists'"
+              (click)="setMode('artists')"
+              (keydown)="onModeTabKeydown($event)"
+            >
+              Artists
+              <span>{{ artists().length }}</span>
+            </button>
+          </div>
+
+          @if (mode() !== 'tracks' && search().trim() && !detail()) {
+            <div class="search-results" aria-label="Library search results">
+              @if (mode() === 'albums') {
+                @if (searchAlbums().length) {
+                  <div class="album-grid">
+                    @for (album of searchAlbums(); track album.identity; let index = $index) {
+                      <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
+                        <span class="album-card__art"><sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" /></span>
+                        <span class="album-card__name">{{ album.album }}</span>
+                        <span class="album-card__artist">{{ album.artist }}</span>
+                        <span class="album-card__count">{{ album.tracks }} track{{ album.tracks === 1 ? '' : 's' }}</span>
+                      </button>
+                    }
+                  </div>
+                } @else {
+                  <p class="empty__text">No albums match. Try another search.</p>
+                }
+              } @else {
+                @if (searchArtists().length) {
+                  <div class="artist-grid">
+                    @for (artist of searchArtists(); track artist.identity; let index = $index) {
+                      <button type="button" class="artist-card" [style.--i]="index" (click)="openArtist(artist.identity)">
+                        <span class="artist-card__avatar">
+                          @if (artist.artwork) {
+                            <sc-artwork [src]="artist.artwork" [altText]="artist.identity" size="hero" />
+                          } @else {
+                            <span class="artist-card__initial">{{ artist.identity.charAt(0).toUpperCase() }}</span>
+                          }
+                        </span>
+                        <span class="artist-card__name">{{ artist.identity }}</span>
+                        <span class="artist-card__count">{{ artist.albums }} album{{ artist.albums === 1 ? '' : 's' }} · {{ artist.tracks }} tracks</span>
+                      </button>
+                    }
+                  </div>
+                } @else {
+                  <p class="empty__text">No artists match. Try another search.</p>
+                }
+              }
+            </div>
+          } @else if (mode() === 'tracks' && !detail()) {
+          <div class="toolbar">
             @if (selectMode()) {
               <span class="select-hint">Tap tracks to select · long-press to start</span>
             }
@@ -340,6 +389,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                       (dblclick)="play(track)"
                       (pointerdown)="onRowPointerDown(track, $event)"
                       (pointerup)="onRowPointerUp()"
+                      (pointercancel)="onRowPointerUp()"
                       (pointermove)="onRowPointerMove($event)"
                       (pointerleave)="onRowPointerUp()"
                       (contextmenu)="openContextMenu(track, $event)"
@@ -432,7 +482,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           }
           } @else if (detail(); as d) {
             <div class="detail">
-              <button type="button" class="btn btn--quiet detail__back" (click)="closeDetail()">← {{ backLabel() }}</button>
+              <button type="button" class="btn btn--quiet detail__back" (click)="back()">← {{ backLabel() }}</button>
               @if (d.kind === 'artist') {
                 <header class="detail__head">
                   <span class="detail__avatar">
@@ -459,7 +509,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
                 </header>
                 <div class="album-grid">
                   @for (album of detailAlbums(); track album.album; let index = $index) {
-                    <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, true)">
+                    <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
                       <span class="album-card__art">
                         <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
                       </span>
@@ -534,7 +584,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
           } @else if (mode() === 'albums') {
             <div class="album-grid">
               @for (album of library.albums(); track album.album + album.artist; let index = $index) {
-                <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist, false)">
+                  <button type="button" class="album-card" [style.--i]="index" (click)="openAlbum(album.album, album.artist)">
                   <span class="album-card__art">
                     <sc-artwork [src]="album.artwork" [altText]="album.album" size="hero" />
                   </span>
@@ -994,6 +1044,48 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
         gap: 16px;
+      }
+      .search-results {
+        display: grid;
+        gap: 24px;
+      }
+      .search-group {
+        display: grid;
+        justify-items: start;
+        gap: 12px;
+      }
+      .search-group > .eyebrow {
+        margin: 0;
+      }
+      .search-song-list {
+        display: grid;
+        width: 100%;
+        gap: 6px;
+      }
+      .search-song {
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface-1);
+        color: var(--text);
+        text-align: left;
+        cursor: pointer;
+      }
+      .search-song > span {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .search-song small {
+        color: var(--muted);
       }
       .album-card {
         display: grid;
@@ -1504,7 +1596,7 @@ type SortKey = 'artist' | 'title' | 'album' | 'duration';
         color: var(--danger);
       }
       .track-row {
-        touch-action: none;
+        touch-action: pan-y;
         -webkit-user-select: none;
         user-select: none;
         -webkit-touch-callout: none;
@@ -1569,8 +1661,13 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
   private readonly tbody = viewChild<ElementRef<HTMLTableSectionElement>>('tbody');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly navigation = inject(NavigationStore);
+  private navigationGeneration = 0;
   private scrollParent: HTMLElement | null = null;
   private scrollFrame = 0;
+  private browseTouchStart: { x: number; y: number } | null = null;
+  private browseSwipeClickTimeout: number | null = null;
+  private suppressBrowseSwipeClick = false;
   private resizeObserver: ResizeObserver | null = null;
   private tbodyObserver: ResizeObserver | null = null;
   private observedTbody: HTMLElement | null = null;
@@ -1590,6 +1687,8 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   // the scroll area, hiding it behind the mini-player. Hosting it on <body> avoids that.
   ngAfterViewInit(): void {
     document.body.appendChild(this.contextLayer().nativeElement);
+    document.addEventListener('click', this.onBrowseSwipeClick, true);
+    document.addEventListener('touchstart', this.clearBrowseSwipeClick, true);
     this.scrollParent = this.host.nativeElement.closest('.main') as HTMLElement | null;
     if (this.scrollParent) {
       this.scrollParent.addEventListener('scroll', this.onScroll, { passive: true });
@@ -1610,6 +1709,9 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     this.scrollParent?.removeEventListener('scroll', this.onScroll);
+    document.removeEventListener('click', this.onBrowseSwipeClick, true);
+    document.removeEventListener('touchstart', this.clearBrowseSwipeClick, true);
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
     this.resizeObserver?.disconnect();
     this.tbodyObserver?.disconnect();
     this.contextLayer().nativeElement.remove();
@@ -1689,10 +1791,8 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly pluralize = pluralize;
 
   protected readonly search = signal('');
-  /** Open drill-down page: an artist's albums, or an album's tracks (viaArtist: opened from the artist page). */
-  protected readonly detail = signal<
-    { kind: 'artist'; artist: string } | { kind: 'album'; album: string; artist: string; viaArtist: boolean } | null
-  >(null);
+  protected readonly detail = signal<LibraryDetail | null>(null);
+  private readonly detailHistory = signal<Array<{ mode: 'tracks' | 'albums' | 'artists'; detail: LibraryDetail | null; scrollTop: number }>>([]);
   protected readonly sort = signal<SortKey>('artist');
   protected readonly mode = signal<'tracks' | 'albums' | 'artists'>('tracks');
   protected readonly showJellyfinSetup = signal(false);
@@ -1736,19 +1836,23 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly filtered = computed(() => {
-    const term = this.search().trim().toLowerCase();
+    const term = this.search().trim();
     const offlineOnly = this.offlineOnly();
     const isDownloaded = this.downloads.isDownloaded();
     const rows = this.library.tracks().filter((track) => {
       // "Offline" means it plays with no network: a pinned download or a file
       // imported onto this device.
       if (offlineOnly && !isDownloaded(track.id) && track.sourceId !== 'local') return false;
-      if (!term) return true;
-      return [track.title, track.artist, track.album, track.albumArtist ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(term);
+      return true;
     });
+    if (term) {
+      return rankAndSortSearchEntities(term, rows.map((track) => ({
+        track,
+        identity: track.id,
+        primary: track.title,
+        secondary: [track.albumArtist ?? track.artist, track.album, track.artist],
+      }))).map(({ track }) => track);
+    }
     const sorted = [...rows];
     switch (this.sort()) {
       case 'title':
@@ -1839,6 +1943,42 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
       .sort((a, b) => a.artist.localeCompare(b.artist));
   });
 
+  protected readonly searchArtists = computed(() => {
+    const tracks = this.library.tracks().filter((track) => !this.offlineOnly() || this.downloads.isDownloaded()(track.id) || track.sourceId === 'local');
+    const grouped = new Map<string, Track[]>();
+    for (const track of tracks) {
+      const identity = track.albumArtist ?? track.artist;
+      grouped.set(identity, [...(grouped.get(identity) ?? []), track]);
+    }
+    return rankAndSortSearchEntities(this.search(), [...grouped].map(([identity, rows]) => ({
+      identity,
+      primary: identity,
+      secondary: rows.flatMap((track) => [track.artist, track.album, track.title]),
+      albums: new Set(rows.map((track) => track.album)).size,
+      tracks: rows.length,
+      artwork: rows.find((track) => track.artistArtworkUrl)?.artistArtworkUrl ?? rows.find((track) => track.artworkUrl)?.artworkUrl ?? null,
+    })));
+  });
+
+  protected readonly searchAlbums = computed(() => {
+    const grouped = new Map<string, Track[]>();
+    for (const track of this.library.tracks()) {
+      if (this.offlineOnly() && !this.downloads.isDownloaded()(track.id) && track.sourceId !== 'local') continue;
+      const artist = track.albumArtist ?? track.artist;
+      const identity = `${artist}\u0000${track.album}`;
+      grouped.set(identity, [...(grouped.get(identity) ?? []), track]);
+    }
+    return rankAndSortSearchEntities(this.search(), [...grouped].map(([identity, rows]) => ({
+      identity,
+      album: rows[0].album,
+      artist: rows[0].albumArtist ?? rows[0].artist,
+      artwork: rows.find((track) => track.artworkUrl)?.artworkUrl ?? null,
+      tracks: rows.length,
+      primary: rows[0].album,
+      secondary: [rows[0].albumArtist ?? rows[0].artist, ...rows.map((track) => track.title)],
+    })));
+  });
+
   /** Tracks on the open page, in play order: an album by track number, an artist by album then track. */
   protected readonly detailTracks = computed(() => {
     const d = this.detail();
@@ -1883,16 +2023,88 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly backLabel = computed(() => {
-    const d = this.detail();
-    if (d?.kind === 'album' && d.viaArtist) return d.artist;
-    return this.mode() === 'artists' ? 'Artists' : 'Albums';
+    return libraryBackLabel(this.detailHistory(), this.search());
   });
 
   protected setMode(mode: 'tracks' | 'albums' | 'artists'): void {
+    this.detailHistory.set([]);
     this.mode.set(mode);
     this.detail.set(null);
     this.resetScroll();
   }
+
+  protected onModeTabKeydown(event: KeyboardEvent): void {
+    const keys = ['tracks', 'albums', 'artists'] as const;
+    const current = keys.indexOf(this.mode());
+    const next = event.key === 'ArrowRight' ? (current + 1) % keys.length
+      : event.key === 'ArrowLeft' ? (current + keys.length - 1) % keys.length
+        : event.key === 'Home' ? 0
+          : event.key === 'End' ? keys.length - 1
+            : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    this.setMode(keys[next]);
+    (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+  }
+
+  protected onBrowseTouchStart(event: TouchEvent): void {
+    const touch = event.touches[0];
+    if (!touch || event.touches.length !== 1) {
+      this.browseTouchStart = null;
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    const excluded = target?.closest('a, input, select, textarea, [role="button"], [role="slider"], .row-actions, .col-actions, .detail-track, .toolbar, .selection-bar, .mode-tabs');
+    if (excluded || touch.clientX < 28 || touch.clientX > window.innerWidth - 28 || this.selectMode() || this.detail()) {
+      this.browseTouchStart = null;
+      return;
+    }
+    this.browseTouchStart = { x: touch.clientX, y: touch.clientY };
+  }
+
+  protected onBrowseTouchMove(event: TouchEvent): void {
+    const start = this.browseTouchStart;
+    const touch = event.touches[0];
+    if (!start || !touch || event.touches.length !== 1 || this.selectMode() || this.detail()) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    // Once horizontal intent is clear, stop the browser's synthetic click from
+    // activating a card or track row after the swipe changes tabs.
+    if (Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy) * 1.2) event.preventDefault();
+  }
+
+  protected onBrowseTouchEnd(event: TouchEvent): void {
+    const start = this.browseTouchStart;
+    this.browseTouchStart = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch || event.changedTouches.length !== 1 || this.selectMode() || this.detail()) return;
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.35) return;
+    this.suppressBrowseSwipeClick = true;
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
+    this.browseSwipeClickTimeout = window.setTimeout(() => {
+      this.suppressBrowseSwipeClick = false;
+      this.browseSwipeClickTimeout = null;
+    }, 400);
+    const next = dx < 0
+      ? this.mode() === 'tracks' ? 'albums' : this.mode() === 'albums' ? 'artists' : null
+      : this.mode() === 'artists' ? 'albums' : this.mode() === 'albums' ? 'tracks' : null;
+    if (next) this.setMode(next);
+  }
+
+  private readonly clearBrowseSwipeClick = (): void => {
+    this.suppressBrowseSwipeClick = false;
+    if (this.browseSwipeClickTimeout !== null) window.clearTimeout(this.browseSwipeClickTimeout);
+    this.browseSwipeClickTimeout = null;
+  };
+
+  private readonly onBrowseSwipeClick = (event: MouseEvent): void => {
+    if (!this.suppressBrowseSwipeClick) return;
+    this.clearBrowseSwipeClick();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
 
   protected onSearchInput(event: Event): void {
     this.search.set((event.target as HTMLInputElement).value);
@@ -1904,21 +2116,50 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     this.resetScroll();
   }
 
-  protected openAlbum(album: string, artist: string, viaArtist: boolean): void {
-    this.detail.set({ kind: 'album', album, artist, viaArtist });
+  protected openAlbum(album: string, artist: string): void {
+    this.pushDetailOrigin();
+    this.detail.set({ kind: 'album', album, artist });
     this.scrollToTop();
   }
 
   protected openArtist(artist: string): void {
-    this.mode.set('artists');
+    this.pushDetailOrigin();
     this.detail.set({ kind: 'artist', artist });
     this.scrollToTop();
   }
 
-  protected closeDetail(): void {
-    const d = this.detail();
-    this.detail.set(d?.kind === 'album' && d.viaArtist ? { kind: 'artist', artist: d.artist } : null);
-    this.scrollToTop();
+  /** Shared by the visible Back button and the app's system Back dispatcher. */
+  back(): boolean {
+    if (this.contextMenu()) {
+      this.closeContextMenu();
+      return true;
+    }
+    if (!this.detail()) return false;
+    let previous: { mode: 'tracks' | 'albums' | 'artists'; detail: LibraryDetail | null; scrollTop: number } | undefined;
+    this.detailHistory.update((history) => {
+      const next = [...history];
+      previous = next.pop();
+      return next;
+    });
+    const generation = ++this.navigationGeneration;
+    this.mode.set(previous?.mode ?? this.mode());
+    this.detail.set(previous?.detail ?? null);
+    setTimeout(() => {
+      if (!isCurrentNavigation('library', generation, this.navigationGeneration, this.navigation.view())) return;
+      if (this.scrollParent && previous) this.scrollParent.scrollTop = previous.scrollTop;
+      this.measure();
+    });
+    return true;
+  }
+
+  private pushDetailOrigin(): void {
+    this.detailHistory.update((history) => [...history, { mode: this.mode(), detail: this.detail(), scrollTop: this.scrollParent?.scrollTop ?? 0 }]);
+  }
+
+  /** Hide the body-mounted menu as soon as another root destination is requested. */
+  onDestinationDeparture(): void {
+    this.navigationGeneration++;
+    this.closeContextMenu();
   }
 
   protected clearFilters(): void {
