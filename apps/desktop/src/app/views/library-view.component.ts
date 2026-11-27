@@ -13,6 +13,7 @@ import {
 } from '@angular/core';
 import type { Track } from '@statocyst/contracts';
 import { ArtworkComponent } from '../components/artwork.component';
+import { SettingsStore } from '../core/settings.store';
 import { IconComponent } from '../components/icon.component';
 import { JellyfinPanelComponent } from '../components/jellyfin-panel.component';
 import { LibraryStore } from '../core/library.store';
@@ -1601,6 +1602,23 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
         user-select: none;
         -webkit-touch-callout: none;
       }
+      /* Compact density: shorter rows and tighter grids. Row height must match COMPACT_ROW_HEIGHT. */
+      :host-context([data-density='compact']) .view {
+        gap: 12px;
+      }
+      :host-context([data-density='compact']) .track-row {
+        height: 48px;
+        contain-intrinsic-size: auto 48px;
+      }
+      :host-context([data-density='compact']) .track-row td {
+        padding-top: 4px;
+        padding-bottom: 4px;
+      }
+      :host-context([data-density='compact']) .album-grid,
+      :host-context([data-density='compact']) .artist-grid {
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 10px;
+      }
       @keyframes rise {
         from {
           opacity: 0;
@@ -1656,8 +1674,9 @@ type LibraryDetail = { kind: 'artist'; artist: string } | { kind: 'album'; album
 export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   private static readonly VIRTUAL_THRESHOLD = 200;
   private static readonly OVERSCAN = 10;
-  /** Must match `.track-row` in the component styles; used for spacer math. */
+  /** Must match `.track-row` (comfortable / compact) in the component styles; used for spacer math. */
   private static readonly ROW_HEIGHT = 61;
+  private static readonly COMPACT_ROW_HEIGHT = 48;
   private readonly contextLayer = viewChild.required<ElementRef<HTMLElement>>('contextLayer');
   private readonly tbody = viewChild<ElementRef<HTMLTableSectionElement>>('tbody');
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -1778,6 +1797,12 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     this.closeContextMenu();
   }
   protected readonly library = inject(LibraryStore);
+  private readonly settingsStore = inject(SettingsStore);
+  private readonly rowHeight = computed(() =>
+    this.settingsStore.settings().density === 'compact'
+      ? LibraryViewComponent.COMPACT_ROW_HEIGHT
+      : LibraryViewComponent.ROW_HEIGHT,
+  );
   protected readonly downloads = inject(DownloadsStore);
   protected readonly favorites = inject(FavoritesStore);
   protected readonly playlists = inject(PlaylistsStore);
@@ -1891,7 +1916,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
     if (total <= LibraryViewComponent.VIRTUAL_THRESHOLD) return 0;
     const relative = this.scrollTop() - this.tbodyTop();
     if (relative <= 0) return 0;
-    const first = Math.floor(relative / Math.max(1, LibraryViewComponent.ROW_HEIGHT));
+    const first = Math.floor(relative / Math.max(1, this.rowHeight()));
     return Math.max(0, Math.min(total - 1, first - LibraryViewComponent.OVERSCAN));
   });
 
@@ -1899,7 +1924,7 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   protected readonly endIndex = computed(() => {
     const total = this.filtered().length;
     if (total <= LibraryViewComponent.VIRTUAL_THRESHOLD) return total;
-    const visible = Math.ceil(this.viewportHeight() / Math.max(1, LibraryViewComponent.ROW_HEIGHT));
+    const visible = Math.ceil(this.viewportHeight() / Math.max(1, this.rowHeight()));
     return Math.min(
       total,
       this.startIndex() + visible + LibraryViewComponent.OVERSCAN * 2,
@@ -1913,12 +1938,12 @@ export class LibraryViewComponent implements AfterViewInit, OnDestroy {
   });
 
   protected readonly topSpacer = computed(() =>
-    this.virtualized() ? this.startIndex() * LibraryViewComponent.ROW_HEIGHT : 0,
+    this.virtualized() ? this.startIndex() * this.rowHeight() : 0,
   );
 
   protected readonly bottomSpacer = computed(() =>
     this.virtualized()
-      ? Math.max(0, (this.filtered().length - this.endIndex()) * LibraryViewComponent.ROW_HEIGHT)
+      ? Math.max(0, (this.filtered().length - this.endIndex()) * this.rowHeight())
       : 0,
   );
 

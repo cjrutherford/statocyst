@@ -8,6 +8,7 @@ import { LibraryStore } from '../core/library.store';
 import { FavoritesStore } from '../core/favorites.store';
 import { DownloadsStore } from '../core/downloads.store';
 import { formatDuration, formatLabel, pluralize } from '../core/format';
+import { isSwipeDismiss, swipeDismissOffset } from '../core/swipe-dismiss';
 
 @Component({
   selector: 'sc-now-playing',
@@ -15,7 +16,16 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
   imports: [ArtworkComponent, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="view" aria-labelledby="now-heading">
+    <section
+      class="view"
+      aria-labelledby="now-heading"
+      [class.is-swiping]="swipeOffset() > 0"
+      [style.transform]="swipeOffset() ? 'translateY(' + swipeOffset() + 'px)' : null"
+      (touchstart)="onSwipeStart($event)"
+      (touchmove)="onSwipeMove($event)"
+      (touchend)="onSwipeEnd($event)"
+      (touchcancel)="onSwipeCancel()"
+    >
       <header class="view__head">
         <div>
           <p class="eyebrow">Now playing</p>
@@ -266,7 +276,12 @@ import { formatDuration, formatLabel, pluralize } from '../core/format';
   `,
   styles: [
     `
+      .view.is-swiping {
+        transition: none;
+        animation: none;
+      }
       .view {
+        transition: transform 180ms ease;
         display: grid;
         gap: clamp(24px, 3vw, 40px);
         padding: clamp(20px, 3vw, 38px);
@@ -897,6 +912,9 @@ export class NowPlayingViewComponent {
   readonly requestBack = output<void>();
 
   protected readonly dragging = signal(false);
+  /** How far the screen follows a swipe-down that will minimize it. */
+  protected readonly swipeOffset = signal(0);
+  private swipeStart: { x: number; y: number; atTop: boolean } | null = null;
   protected readonly dragValue = signal(0);
   protected readonly volumeOpen = signal(false);
   protected readonly pulsing = signal(false);
@@ -1011,6 +1029,46 @@ export class NowPlayingViewComponent {
 
   protected minimize(): void {
     this.requestBack.emit();
+  }
+
+  /**
+   * Swiping down from the top of the screen minimizes it, the same as the
+   * Minimize button: back to the mini player and the screen the user came from.
+   * Touch events are used because Android WebView cancels pointer events once it
+   * takes over a vertical pan.
+   */
+  protected onSwipeStart(event: TouchEvent): void {
+    const touch = event.touches[0];
+    const target = event.target as HTMLElement | null;
+    // Sliders and the volume popover keep their own vertical/horizontal drags.
+    if (event.touches.length !== 1 || !touch || target?.closest('input, .range, .volume-pop')) {
+      this.swipeStart = null;
+      return;
+    }
+    const scroller = document.getElementById('main-content');
+    this.swipeStart = { x: touch.clientX, y: touch.clientY, atTop: (scroller?.scrollTop ?? 0) <= 0 };
+  }
+
+  protected onSwipeMove(event: TouchEvent): void {
+    const touch = event.touches[0];
+    if (!this.swipeStart || !touch) return;
+    this.swipeOffset.set(
+      swipeDismissOffset(touch.clientX - this.swipeStart.x, touch.clientY - this.swipeStart.y, this.swipeStart.atTop),
+    );
+  }
+
+  protected onSwipeEnd(event: TouchEvent): void {
+    const start = this.swipeStart;
+    const touch = event.changedTouches[0];
+    this.swipeStart = null;
+    this.swipeOffset.set(0);
+    if (!start || !touch) return;
+    if (isSwipeDismiss(touch.clientX - start.x, touch.clientY - start.y, start.atTop)) this.minimize();
+  }
+
+  protected onSwipeCancel(): void {
+    this.swipeStart = null;
+    this.swipeOffset.set(0);
   }
 
   @HostListener('document:keydown.escape')

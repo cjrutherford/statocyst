@@ -1341,6 +1341,27 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        /**
+         * The streaming quality setting changed: apply it to the queue now instead of only to
+         * songs resolved later. Switching to Lossless swaps every transcode, the playing song
+         * included (at its current position, as the original can be joined anywhere), for the
+         * original. Switching to Adaptive re-decides the next few songs and leaves the playing one alone.
+         */
+        fun onQualityChanged() = instance?.let { svc ->
+            svc.scope.launch {
+                val auto = AdaptiveQuality.isAuto(svc)
+                val current = svc.player.currentMediaItemIndex
+                for (i in 0 until svc.player.mediaItemCount) {
+                    if (auto) {
+                        // Later songs are decided again when they start; only the next few are worth it now.
+                        if (i > current && i <= current + 3) svc.refreshItem(i)
+                    } else if (JellyfinAuth.isTranscodeUrl(svc.player.getMediaItemAt(i).localConfiguration?.uri?.toString())) {
+                        svc.refreshItem(i, AdaptiveQuality.Mode.DIRECT)
+                    }
+                }
+            }
+        }
+
         /** Favorites/playlists were replaced by the web layer. */
         fun onUserStateChanged() = instance?.let { svc ->
             svc.scope.launch {
