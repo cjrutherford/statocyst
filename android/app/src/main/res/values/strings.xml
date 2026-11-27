@@ -29,4 +29,19 @@
     <string name="widget_favorites_label">Favorites</string>
     <string name="widget_history_and_favorites">History &amp; favorites</string>
     <string name="widget_speed_dial_description">Scrolling covers from your history and favorites</string>
+    <string name="widget_preview_title" translatable="false">Midnight Signal</string>
+    <string name="widget_preview_artist" translatable="false">Neon Harbor</string>
+    <string name="widget_preview_eyebrow" translatable="false">Playing</string>
+    <string name="widget_preview_fav_1" translatable="false">Midnight Signal</string>
+    <string name="widget_preview_fav_2" translatable="false">Glass Tide</string>
+    <string name="widget_preview_fav_3" translatable="false">Static Bloom</string>
+    <string name="widget_preview_fav_4" translatable="false">Low Orbit</string>
+    <string name="widget_preview_art_1" translatable="false">Neon Harbor</string>
+    <string name="widget_preview_art_2" translatable="false">Aurora Lines</string>
+    <string name="widget_preview_art_3" translatable="false">Tidal</string>
+    <string name="widget_preview_art_4" translatable="false">Deep Field</string>
+    <string name="widget_preview_art_5" translatable="false">Afterglow</string>
+    <string name="widget_preview_art_6" translatable="false">Paper Moons</string>
+    <string name="widget_preview_art_7" translatable="false">Hollow Sun</string>
+    <string name="widget_preview_art_8" translatable="false">Slow Static</string>
 </resources>

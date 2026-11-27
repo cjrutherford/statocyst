@@ -4,6 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.widget.RemoteViews
@@ -65,10 +66,28 @@ internal fun rowText(rank: Int, row: Tile): CharSequence {
 
 private fun refreshOnUpdate(context: Context) = Widgets.refresh(context)
 
+/** Android 12+ swaps size-mapped layouts itself; older launchers need a re-render at the new size. */
+private fun refreshOnResize(context: Context, appWidgetId: Int) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) Widgets.refresh(context, appWidgetId)
+}
+
+/** The large layout's extras: the favorite heart. */
+internal fun bindFavorite(context: Context, views: RemoteViews, data: WidgetData) {
+    views.setImageViewResource(
+        R.id.widget_favorite,
+        if (data.currentIsFavorite) R.drawable.ic_widget_heart else R.drawable.ic_widget_heart_outline,
+    )
+    views.setContentDescription(R.id.widget_favorite, context.getString(R.string.widget_favorite))
+    views.setViewVisibility(R.id.widget_favorite, if (data.state.hasTrack) View.VISIBLE else View.INVISIBLE)
+    views.setOnClickPendingIntent(R.id.widget_favorite, Widgets.toggleFavorite(context))
+}
+
 /** Now playing plus the top of the favorites list. */
 class NowPlayingWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) =
+        refreshOnResize(context, appWidgetId)
 
     companion object {
         /** Kept for callers outside the widget package. */
@@ -76,6 +95,15 @@ class NowPlayingWidget : AppWidgetProvider() {
 
         private val rowIds = intArrayOf(R.id.widget_fav_1, R.id.widget_fav_2, R.id.widget_fav_3, R.id.widget_fav_4)
 
+        /** The layout for a widget of this size. */
+        internal fun render(context: Context, data: WidgetData, widthDp: Float, heightDp: Float): RemoteViews =
+            when (nowPlayingTier(widthDp, heightDp)) {
+                Tier.COMPACT -> NowPlayingCompactWidget.render(context, data)
+                Tier.LARGE -> NowPlayingLargeWidget.render(context, data)
+                Tier.FULL -> render(context, data)
+            }
+
+        /** Full layout: player plus favorites. */
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing)
             bindNowPlaying(context, views, data.state, ART_PX)
@@ -103,18 +131,20 @@ class NowPlayingWidget : AppWidgetProvider() {
 class NowPlayingLargeWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) =
+        refreshOnResize(context, appWidgetId)
 
     companion object {
+        internal fun render(context: Context, data: WidgetData, widthDp: Float, heightDp: Float): RemoteViews =
+            when (nowPlayingLargeTier(widthDp, heightDp)) {
+                Tier.COMPACT -> NowPlayingCompactWidget.render(context, data)
+                else -> render(context, data)
+            }
+
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing_large)
             bindNowPlaying(context, views, data.state, ART_PX)
-            views.setImageViewResource(
-                R.id.widget_favorite,
-                if (data.currentIsFavorite) R.drawable.ic_widget_heart else R.drawable.ic_widget_heart_outline,
-            )
-            views.setContentDescription(R.id.widget_favorite, context.getString(R.string.widget_favorite))
-            views.setViewVisibility(R.id.widget_favorite, if (data.state.hasTrack) View.VISIBLE else View.INVISIBLE)
-            views.setOnClickPendingIntent(R.id.widget_favorite, Widgets.toggleFavorite(context))
+            bindFavorite(context, views, data)
             return views
         }
 
@@ -126,8 +156,16 @@ class NowPlayingLargeWidget : AppWidgetProvider() {
 class NowPlayingCompactWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) =
+        refreshOnResize(context, appWidgetId)
 
     companion object {
+        internal fun render(context: Context, data: WidgetData, widthDp: Float, heightDp: Float): RemoteViews =
+            when (nowPlayingCompactTier(widthDp, heightDp)) {
+                Tier.COMPACT -> render(context, data)
+                else -> NowPlayingLargeWidget.render(context, data)
+            }
+
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_now_playing_compact)
             bindNowPlaying(context, views, data.state, ART_PX, withEyebrow = false)
@@ -145,6 +183,8 @@ class NowPlayingCompactWidget : AppWidgetProvider() {
 class QuickPicksWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) =
+        refreshOnResize(context, appWidgetId)
 
     companion object {
         private val cells = listOf(
@@ -163,11 +203,18 @@ class QuickPicksWidget : AppWidgetProvider() {
             (data.recents + data.favorites.filter { fav -> data.recents.none { it.trackId == fav.trackId } })
                 .take(Widgets.QUICK_PICKS)
 
-        internal fun render(context: Context, data: WidgetData): RemoteViews {
+        internal fun render(context: Context, data: WidgetData): RemoteViews = render(context, data, 250f, Breakpoints.UNKNOWN)
+
+        internal fun render(context: Context, data: WidgetData, widthDp: Float, heightDp: Float): RemoteViews {
+            val tier = quickPicksTier(widthDp, heightDp)
             val views = RemoteViews(context.packageName, R.layout.widget_quick_picks)
             val picks = picks(data)
             views.setViewVisibility(R.id.picks_empty, if (picks.isEmpty()) View.VISIBLE else View.GONE)
-            views.setViewVisibility(R.id.picks_row_2, if (picks.size > 4) View.VISIBLE else View.GONE)
+            views.setViewVisibility(R.id.picks_header, if (tier == PicksTier.STRIP) View.GONE else View.VISIBLE)
+            views.setViewVisibility(
+                R.id.picks_row_2,
+                if (tier == PicksTier.TWO_ROWS && picks.size > 4) View.VISIBLE else View.GONE,
+            )
             views.setOnClickPendingIntent(R.id.picks_header, Widgets.openApp(context))
             cells.forEachIndexed { i, (cell, art, title) ->
                 val tile = picks.getOrNull(i)
@@ -194,6 +241,8 @@ class QuickPicksWidget : AppWidgetProvider() {
 class SpeedDialWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) = refreshOnUpdate(context)
     override fun onEnabled(context: Context) = refreshOnUpdate(context)
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) =
+        refreshOnResize(context, appWidgetId)
 
     companion object {
         /** History and favorites interleaved, history first, songs shown once, minus the current song. */
@@ -218,6 +267,12 @@ class SpeedDialWidget : AppWidgetProvider() {
                 else -> R.string.widget_speed_dial
             },
         )
+
+        internal fun render(context: Context, data: WidgetData, widthDp: Float, heightDp: Float): RemoteViews =
+            when (speedDialTier(widthDp, heightDp)) {
+                Tier.COMPACT -> NowPlayingCompactWidget.render(context, data)
+                else -> render(context, data)
+            }
 
         internal fun render(context: Context, data: WidgetData): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_speed_dial)

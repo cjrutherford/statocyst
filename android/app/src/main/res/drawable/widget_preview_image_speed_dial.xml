@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static sketch of the widget for pickers without previewLayout support (Android 11 and older). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_bg" />
+    <item android:left="14dp" android:top="12dp" android:width="44dp" android:height="44dp" android:drawable="@drawable/widget_preview_art_1" />
+    <item android:left="68dp" android:top="18dp" android:width="60dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CC38E1FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="68dp" android:top="28dp" android:width="110dp" android:height="8dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="4.0dp" /></shape>
+    </item>
+    <item android:left="68dp" android:top="42dp" android:width="80dp" android:height="6dp">
+        <shape android:shape="rectangle"><solid android:color="#99A9C0D8" /><corners android:radius="3.0dp" /></shape>
+    </item>
+    <item android:left="14dp" android:top="66dp" android:width="222dp" android:height="1dp">
+        <shape android:shape="rectangle"><solid android:color="#4494C5FF" /><corners android:radius="0.5dp" /></shape>
+    </item>
+    <item android:left="14dp" android:top="76dp" android:width="70dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CC38E1FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="16dp" android:top="90dp" android:width="50dp" android:height="50dp" android:drawable="@drawable/widget_preview_art_1" />
+    <item android:left="16dp" android:top="144dp" android:width="50dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="74dp" android:top="90dp" android:width="50dp" android:height="50dp" android:drawable="@drawable/widget_preview_art_2" />
+    <item android:left="74dp" android:top="144dp" android:width="50dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="132dp" android:top="90dp" android:width="50dp" android:height="50dp" android:drawable="@drawable/widget_preview_art_3" />
+    <item android:left="132dp" android:top="144dp" android:width="50dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="190dp" android:top="90dp" android:width="50dp" android:height="50dp" android:drawable="@drawable/widget_preview_art_4" />
+    <item android:left="190dp" android:top="144dp" android:width="50dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+</layer-list>
