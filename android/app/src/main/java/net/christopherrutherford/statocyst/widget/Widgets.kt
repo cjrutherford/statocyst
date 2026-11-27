@@ -7,8 +7,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.util.SizeF
 import android.view.KeyEvent
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 import androidx.media3.session.MediaButtonReceiver
 import kotlinx.coroutines.runBlocking
 import net.christopherrutherford.statocyst.R
@@ -46,28 +49,53 @@ object Widgets {
 
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "widget-render").apply { isDaemon = true } }
 
-    private val providers: List<Pair<Class<out AppWidgetProvider>, (Context, WidgetData) -> RemoteViews>> = listOf(
-        NowPlayingWidget::class.java to NowPlayingWidget::render,
-        NowPlayingLargeWidget::class.java to NowPlayingLargeWidget::render,
-        NowPlayingCompactWidget::class.java to NowPlayingCompactWidget::render,
-        QuickPicksWidget::class.java to QuickPicksWidget::render,
-        SpeedDialWidget::class.java to SpeedDialWidget::render,
+    /** A provider class, how it renders at a given size (dp), and the sizes its layouts switch at. */
+    private class Spec(
+        val cls: Class<out AppWidgetProvider>,
+        val render: (Context, WidgetData, Float, Float) -> RemoteViews,
+        val sizes: List<Pair<Float, Float>>,
     )
 
-    /** Re-renders every placed widget on a worker thread (database and artwork reads). */
-    fun refresh(context: Context) {
+    private val providers = listOf(
+        Spec(NowPlayingWidget::class.java, NowPlayingWidget::render, nowPlayingSizes),
+        Spec(NowPlayingLargeWidget::class.java, NowPlayingLargeWidget::render, nowPlayingLargeSizes),
+        Spec(NowPlayingCompactWidget::class.java, NowPlayingCompactWidget::render, nowPlayingCompactSizes),
+        Spec(QuickPicksWidget::class.java, QuickPicksWidget::render, quickPicksSizes),
+        Spec(SpeedDialWidget::class.java, SpeedDialWidget::render, speedDialSizes),
+    )
+
+    /** Android 12+: every layout variant ships in one RemoteViews and the launcher picks per size. */
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun responsive(context: Context, data: WidgetData, spec: Spec): RemoteViews =
+        RemoteViews(spec.sizes.associate { (w, h) -> SizeF(w, h) to spec.render(context, data, w, h) })
+
+    /** Older launchers: choose the layout from the widget's current size (portrait: min width x max height). */
+    private fun renderAtCurrentSize(context: Context, manager: AppWidgetManager, id: Int, data: WidgetData, spec: Spec): RemoteViews {
+        val options = manager.getAppWidgetOptions(id)
+        val w = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0).takeIf { it > 0 }?.toFloat() ?: 250f
+        val h = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0).takeIf { it > 0 }?.toFloat() ?: Breakpoints.UNKNOWN
+        return spec.render(context, data, w, h)
+    }
+
+    /** Re-renders every placed widget (or just [onlyId]) on a worker thread (database and artwork reads). */
+    fun refresh(context: Context, onlyId: Int? = null) {
         val app = context.applicationContext
         val manager = AppWidgetManager.getInstance(app)
         val placed = providers
-            .map { (cls, render) -> Triple(manager.getAppWidgetIds(ComponentName(app, cls)), render, cls) }
-            .filter { it.first.isNotEmpty() }
+            .map { spec -> spec to manager.getAppWidgetIds(ComponentName(app, spec.cls)).filter { onlyId == null || it == onlyId } }
+            .filter { it.second.isNotEmpty() }
         if (placed.isEmpty()) return
         worker.execute {
             try {
                 val data = load(app)
-                placed.forEach { (ids, render, cls) ->
-                    manager.updateAppWidget(ids, render(app, data))
-                    if (cls == SpeedDialWidget::class.java) manager.notifyAppWidgetViewDataChanged(ids, R.id.dial_grid)
+                placed.forEach { (spec, idList) ->
+                    val ids = idList.toIntArray()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        manager.updateAppWidget(ids, responsive(app, data, spec))
+                    } else {
+                        ids.forEach { id -> manager.updateAppWidget(id, renderAtCurrentSize(app, manager, id, data, spec)) }
+                    }
+                    if (spec.cls == SpeedDialWidget::class.java) manager.notifyAppWidgetViewDataChanged(ids, R.id.dial_grid)
                 }
             } catch (e: Exception) {
                 android.util.Log.w("Widgets", "render failed", e)

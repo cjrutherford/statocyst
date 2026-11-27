@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static sketch of the widget for pickers without previewLayout support (Android 11 and older). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_bg" />
+    <item android:left="12dp" android:top="11dp" android:width="88dp" android:height="88dp" android:drawable="@drawable/widget_preview_art_1" />
+    <item android:left="112dp" android:top="20dp" android:width="50dp" android:height="5dp">
+        <shape android:shape="rectangle"><solid android:color="#CC38E1FF" /><corners android:radius="2.5dp" /></shape>
+    </item>
+    <item android:left="112dp" android:top="32dp" android:width="110dp" android:height="9dp">
+        <shape android:shape="rectangle"><solid android:color="#CCE9F4FF" /><corners android:radius="4dp" /></shape>
+    </item>
+    <item android:left="112dp" android:top="48dp" android:width="80dp" android:height="6dp">
+        <shape android:shape="rectangle"><solid android:color="#99A9C0D8" /><corners android:radius="3.0dp" /></shape>
+    </item>
+    <item android:left="112dp" android:top="70dp" android:width="24dp" android:height="24dp">
+        <shape android:shape="oval"><solid android:color="#FF6B8A" /></shape>
+    </item>
+    <item android:left="144dp" android:top="70dp" android:width="24dp" android:height="24dp">
+        <shape android:shape="oval"><solid android:color="#A9C0D8" /></shape>
+    </item>
+    <item android:left="176dp" android:top="66dp" android:width="32dp" android:height="32dp">
+        <shape android:shape="oval"><solid android:color="#38E1FF" /></shape>
+    </item>
+</layer-list>

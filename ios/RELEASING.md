@@ -16,8 +16,8 @@ pnpm run ios:sync
 
 In `ios/App/App.xcodeproj/project.pbxproj`, keep both version keys aligned with `android/app/build.gradle`:
 
-- `MARKETING_VERSION = 2.3.2;` (matches `versionName`)
-- `CURRENT_PROJECT_VERSION = 58;` (matches `versionCode`, strictly increasing integer)
+- `MARKETING_VERSION = 2.3.3;` (matches `versionName`)
+- `CURRENT_PROJECT_VERSION = 59;` (matches `versionCode`, strictly increasing integer)
 
 ## 3. Sideloading the CI `.ipa`
 
