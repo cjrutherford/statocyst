@@ -1,3 +1,2 @@
-Now Playing: swipe down to return to the mini player and the screen you were on.
-Streaming quality: changing Lossless/Adaptive now applies immediately, including to the song that is playing.
-Compact density: tighter track rows, album and artist grids, queue and playlist lists.
+Widgets: the widget picker now shows a filled-in preview of every widget.
+Widgets: all widgets resize both horizontally and vertically, adapting their layout to the space.
