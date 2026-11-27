@@ -355,6 +355,8 @@ interface RecommendedItem {
         .mini-list--reasons .reason-chip { max-width: none; margin-left: 44px; }
         .mini-when { display: none; }
       }
+      :host-context([data-density='compact']) .mini-list { gap: 3px; }
+      :host-context([data-density='compact']) .mini-list li { padding: 4px 8px; border-radius: 10px; }
     `,
   ],
 })

@@ -956,7 +956,7 @@ export class CapacitorBridge {
     const density = densityRaw ?? 'comfortable';
     const volume = parseFloat(volumeRaw ?? '0.85');
     const muted = mutedRaw === 'true';
-    const quality = (qualityRaw ?? 'lossless') as Settings['quality'];
+    const quality: Settings['quality'] = qualityRaw === 'auto' ? 'auto' : 'lossless';
     const budget = Number(budgetRaw ?? 2 * 1024 * 1024 * 1024);
     const listeningHistory = listeningHistoryRaw === 'true';
     const downloadWifiOnly = downloadWifiOnlyRaw !== 'false';
@@ -979,6 +979,12 @@ export class CapacitorBridge {
       podcastRefreshOnLaunch: podcastRefreshOnLaunchRaw !== 'false',
     };
     this.settingsCache = settings;
+    // The native player keeps its own copy of the streaming quality. Push the stored choice
+    // down on load so it cannot drift from what Settings shows (for example after a restore,
+    // or a choice made before the native copy existed).
+    void Promise.resolve()
+      .then(() => (window as any).Capacitor?.Plugins?.['Statocyst']?.setQuality?.({ quality }))
+      .catch(() => undefined);
     return settings;
   }
   async setSettings(patch: Partial<Settings>): Promise<Settings> {

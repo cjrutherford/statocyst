@@ -704,6 +704,7 @@ class StatocystPlugin : Plugin() {
     @PluginMethod
     fun setQuality(call: PluginCall) {
         AdaptiveQuality.setPreference(context, if (call.getString("quality") == "auto") "auto" else "lossless")
+        PlaybackService.onQualityChanged()
         call.resolve()
     }
 

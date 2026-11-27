@@ -113,6 +113,10 @@ export type ArtworkSize = 'sm' | 'md' | 'lg' | 'hero';
       .art--sm .art__missing {
         display: none;
       }
+      :host-context([data-density='compact']) .art--sm {
+        width: 36px;
+        border-radius: 8px;
+      }
     `,
   ],
 })

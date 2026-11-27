@@ -1,3 +1,3 @@
-Navigation: improved Back behavior restores Library context, scroll position, and focus across destinations and Now Playing.
-Android: fixed playlist layout overflow and improved tap handling during navigation.
-Podcasts and playback: stability improvements and smoother transitions across player screens.
+Now Playing: swipe down to return to the mini player and the screen you were on.
+Streaming quality: changing Lossless/Adaptive now applies immediately, including to the song that is playing.
+Compact density: tighter track rows, album and artist grids, queue and playlist lists.

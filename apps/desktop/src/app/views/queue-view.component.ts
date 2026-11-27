@@ -344,6 +344,13 @@ import { formatDuration, formatLongDuration, pluralize } from '../core/format';
           display: none;
         }
       }
+      :host-context([data-density='compact']) .queue {
+        gap: 3px;
+      }
+      :host-context([data-density='compact']) .queue__item {
+        padding: 4px 10px;
+        border-radius: 10px;
+      }
     `,
   ],
 })
